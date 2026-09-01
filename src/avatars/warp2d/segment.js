@@ -398,6 +398,50 @@ export function buildMasks(px, markers) {
     }
   }
 
+  // Colour alone is not enough to say what is cloth. This character's gloves are
+  // the same red as the scarf, so a pure hue test hands the hands to the cloth
+  // solver and the arms start flowing like fabric. Cloth is what the neck can
+  // actually reach: flood out from the anchor and drop anything disconnected,
+  // handing it back to the body so it moves with the torso instead.
+  {
+    const reach = new Uint8Array(n);
+    const queue = new Int32Array(n);
+    let qh = 0, qt = 0;
+
+    const ax = Math.round(markers.pivotX * w);
+    const ay = Math.round(markers.pivotY * h);
+    const seedR = Math.max(6, Math.round(Math.min(w, h) * 0.08));
+    for (let y = Math.max(0, ay - seedR); y <= Math.min(h - 1, ay + seedR); y++) {
+      for (let x = Math.max(0, ax - seedR); x <= Math.min(w - 1, ax + seedR); x++) {
+        const i = y * w + x;
+        if (cloth[i] > 0 && !reach[i]) { reach[i] = 1; queue[qt++] = i; }
+      }
+    }
+    while (qh < qt) {
+      const i = queue[qh++];
+      const x = i % w;
+      const y = (i - x) / w;
+      if (x > 0 && cloth[i - 1] > 0 && !reach[i - 1]) { reach[i - 1] = 1; queue[qt++] = i - 1; }
+      if (x < w - 1 && cloth[i + 1] > 0 && !reach[i + 1]) { reach[i + 1] = 1; queue[qt++] = i + 1; }
+      if (y > 0 && cloth[i - w] > 0 && !reach[i - w]) { reach[i - w] = 1; queue[qt++] = i - w; }
+      if (y < h - 1 && cloth[i + w] > 0 && !reach[i + w]) { reach[i + w] = 1; queue[qt++] = i + w; }
+    }
+
+    // Only bother if the flood actually found the scarf; if the anchor is
+    // nowhere near any cloth, keep the hue result rather than erasing it all.
+    let found = 0;
+    for (let i = 0; i < n; i++) if (reach[i]) found++;
+    if (found > n * 0.002) {
+      for (let i = 0; i < n; i++) {
+        if (cloth[i] <= 0 || reach[i]) continue;
+        cloth[i] = 0;
+        const y = (i - (i % w)) / w;
+        if (y < waist) torso[i] = 1;
+        else lower[i] = 1;
+      }
+    }
+  }
+
   // Cloth wrapped over the head should ride with the head, not swing.
   for (let i = 0; i < n; i++) if (cloth[i] > 0 && head[i] > 0.6) head[i] = Math.max(head[i], cloth[i]);
 

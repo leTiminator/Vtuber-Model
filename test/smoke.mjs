@@ -47,6 +47,17 @@ page.on('console', (m) => {
   if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
 });
 
+// The stage canvas may be 2D or WebGL depending on the backend; read either.
+const READ_CANVAS = `window.readCanvas = (c) => {
+  const two = c.getContext('2d');
+  if (two) return two.getImageData(0, 0, c.width, c.height);
+  const gl = c.getContext('webgl2') || c.getContext('webgl');
+  const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+  gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  return { data };
+};`;
+await page.addInitScript(READ_CANVAS);
+
 try {
   await page.goto('http://127.0.0.1:5188/', { waitUntil: 'load' });
 
@@ -54,15 +65,14 @@ try {
     await page.locator('#stage').isVisible() && await page.locator('#panel').isVisible());
 
   const groups = await page.locator('#panel-body .group').count();
-  check('control panel builds every group', groups === 9, `${groups} groups`);
+  check('control panel builds every group', groups === 8, `${groups} groups`);
 
   check('avatar canvas is mounted', await page.locator('#avatar-host canvas').count() === 1);
 
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
   const idlePixels = await page.evaluate(() => {
     const c = document.querySelector('#avatar-host canvas');
-    const ctx = c.getContext('2d');
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    const { data } = readCanvas(c);
     let painted = 0;
     for (let i = 3; i < data.length; i += 4 * 97) if (data[i] > 8) painted++;
     return painted;
@@ -72,7 +82,7 @@ try {
   // Scarf physics must actually move between frames.
   const moved = await page.evaluate(async () => {
     const c = document.querySelector('#avatar-host canvas');
-    const grab = () => c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const grab = () => readCanvas(c).data;
     const before = grab().slice();
     await new Promise((r) => setTimeout(r, 700));
     const after = grab();
@@ -99,20 +109,27 @@ try {
   const fps = await page.locator('#fps').textContent();
   check('frame-rate counter is wired up', /^\d+ fps$/.test(fps ?? ''), fps ?? 'none');
 
-  // Hotkeys: holding "2" should visibly change the render (anger).
-  const angerDelta = await page.evaluate(async () => {
-    const c = document.querySelector('#avatar-host canvas');
-    const grab = () => c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    const before = grab().slice();
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2' }));
-    await new Promise((r) => setTimeout(r, 500));
-    const after = grab();
-    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Digit2' }));
+  // A pose the rigged artwork honours: closing the eyes must move pixels.
+  const blinkDelta = await page.evaluate(async () => {
+    const { avatars, emptyRig } = window.__vtuber;
+    const avatar = avatars.warp2d;
+    const shot = (blink) => {
+      const rig = emptyRig();
+      rig.eyes.blinkL = blink;
+      rig.eyes.blinkR = blink;
+      avatar.render(rig, 1 / 60);
+      const gl = avatar.gl;
+      const buf = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+      gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      return buf;
+    };
+    const open = shot(0).slice();
+    const shut = shot(1);
     let diff = 0;
-    for (let i = 0; i < after.length; i += 4 * 31) if (Math.abs(after[i] - before[i]) > 10) diff++;
+    for (let i = 0; i < shut.length; i += 4 * 31) if (Math.abs(shut[i] - open[i]) > 10) diff++;
     return diff;
   });
-  check('expression hotkey changes the render', angerDelta > 5, `${angerDelta} changed samples`);
+  check('closing the eyes changes the render', blinkDelta > 5, `${blinkDelta} changed samples`);
 
   // Settings must survive a reload: flip a real control, come back, check it
   // stuck. Reading localStorage alone would not prove the store reloads it.

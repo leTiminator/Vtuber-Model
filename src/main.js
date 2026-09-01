@@ -7,7 +7,6 @@ import * as store from './core/store.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { Rig, emptyRig } from './tracking/rig.js';
-import { Procedural2D } from './avatars/procedural2d/index.js';
 import { Layered2D } from './avatars/layered2d/index.js';
 import { Warp2D } from './avatars/warp2d/index.js';
 import { RigEditor } from './avatars/warp2d/editor.js';
@@ -38,7 +37,6 @@ const mic = new MicLevel();
 const rig = new Rig();
 
 const avatars = {
-  procedural2d: new Procedural2D(),
   layered2d: new Layered2D(),
   warp2d: new Warp2D(),
 };
@@ -50,7 +48,7 @@ rigEditor.setMaskSource(() => avatars.warp2d.masks);
 /* ------------------------------------------------------------- rendering */
 
 function mountAvatar(id) {
-  const next = avatars[id] ?? avatars.procedural2d;
+  const next = avatars[id] ?? avatars.warp2d;
   if (next === current) return;
   dom.host.replaceChildren();
   current = next;
@@ -248,10 +246,21 @@ mountAvatar(store.get('stage.avatar'));
 applyBackground();
 // Bring back artwork rigged in a previous session before the first frame, so
 // the model does not flash the built-in character on the way in.
-artwork.recall().then((saved) => {
-  if (!saved) return;
-  // Restoring a save: keep whatever markers the user already adjusted.
-  avatars.warp2d.setImage(saved.image, false);
+// The model ships with its artwork. Anything saved locally wins, but a fresh
+// browser — including the separate one inside OBS, which keeps its own storage —
+// falls back to the bundled art rather than to an empty stage.
+artwork.recall().then(async (saved) => {
+  if (saved) {
+    // Restoring a save: keep whatever markers the user already adjusted.
+    avatars.warp2d.setImage(saved.image, false);
+  } else {
+    try {
+      const image = await artwork.loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
+      avatars.warp2d.setImage(image, true);
+    } catch (err) {
+      console.warn('bundled artwork could not be loaded', err);
+    }
+  }
   if (store.get('stage.avatar') === 'warp2d') mountAvatar('warp2d');
 });
 

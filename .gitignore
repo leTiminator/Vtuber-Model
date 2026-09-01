@@ -6,8 +6,6 @@ dist/
 public/mediapipe/
 public/models/
 
-# Your own avatar art stays local unless you choose to commit it.
-public/avatars/
 
 *.log
 .DS_Store

@@ -48,7 +48,7 @@ export const DEFAULTS = {
   'body.hairPhysics': 1.0,
 
   // --- stage -----------------------------------------------------------
-  'stage.avatar': 'procedural2d', // procedural2d | layered2d | warp2d
+  'stage.avatar': 'warp2d', // warp2d | layered2d
   'stage.background': 'transparent', // transparent | chroma | color
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
@@ -88,23 +88,6 @@ export const DEFAULTS = {
   'warp.keyWhite': 0, // 0 = off, otherwise the luminance threshold
   'warp.mesh': 48, // grid resolution; higher bends more smoothly
 
-  // --- character (procedural2d) ----------------------------------------
-  // A masked ninja: charcoal helmet, glowing visor eyes, long red scarf.
-  // There is no mouth, so every expression is carried by the eye shapes.
-  'char.suit': '#474d55',
-  'char.suitLight': '#6d747e',
-  'char.visor': '#8e99ac',
-  'char.visorDark': '#262a31',
-  'char.glow': '#f2f7ff',
-  'char.scarf': '#c9302c',
-  'char.scarfShade': '#8a1d18',
-  'char.accent': '#7a6a55',
-  'char.lineArt': '#141416',
-  'char.hair': '#3f444b',
-  'char.eyeStyle': 'slash', // slash | round | band
-  'char.scarfLength': 'long', // short | medium | long
-  'char.scarfFloat': 1.0, // how much the tails billow upward
-  'char.accessory': 'none', // none | horns | goggles | antenna
 };
 
 const listeners = new Set();

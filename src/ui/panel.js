@@ -81,35 +81,6 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'body.breathRate', label: 'Breath rate', min: 0.05, max: 0.8, step: 0.01, format: hz },
         { type: 'slider', key: 'body.swayAmount', label: 'Idle sway', min: 0, max: 2.5, step: 0.05, format: x },
         { type: 'slider', key: 'body.hairPhysics', label: 'Tuft lag', min: 0, max: 2.5, step: 0.05, format: x },
-        { type: 'select', key: 'char.scarfLength', label: 'Scarf length', options: [
-          ['short', 'Short'], ['medium', 'Medium'], ['long', 'Long'],
-        ] },
-        { type: 'slider', key: 'char.scarfFloat', label: 'Scarf lift', min: 0, max: 2.5, step: 0.05, format: x,
-          hint: 'How hard the tails billow upward. Drop to 0 to let them hang.' },
-      ],
-    },
-    {
-      title: 'Look',
-      controls: [
-        { type: 'select', key: 'char.eyeStyle', label: 'Visor eyes', options: [
-          ['slash', 'Angular slash'], ['round', 'Round'], ['band', 'Wide band'],
-        ] },
-        { type: 'select', key: 'char.accessory', label: 'Accessory', options: [
-          ['none', 'None'], ['horns', 'Horns'], ['goggles', 'Goggles'], ['antenna', 'Antenna'],
-        ] },
-        { type: 'colors', label: 'Colours', keys: [
-          ['char.suit', 'Helmet'],
-          ['char.suitLight', 'Helmet light'],
-          ['char.visor', 'Visor'],
-          ['char.visorDark', 'Visor rim'],
-          ['char.glow', 'Eye glow'],
-          ['char.scarf', 'Scarf'],
-          ['char.scarfShade', 'Scarf shade'],
-          ['char.hair', 'Tufts'],
-          ['char.accent', 'Straps'],
-          ['char.lineArt', 'Outlines'],
-        ] },
-        { type: 'presets' },
       ],
     },
     {
@@ -132,7 +103,6 @@ export function buildPanel(root, ctx) {
       title: 'Your own artwork',
       controls: [
         { type: 'select', key: 'stage.avatar', label: 'Model', options: [
-          ['procedural2d', 'Built-in ninja'],
           ['warp2d', 'My artwork (rigged)'],
           ['layered2d', 'My PNG layers'],
         ] },
@@ -268,36 +238,11 @@ const BUILDERS = {
     return field;
   },
 
-  colors(spec) {
-    const field = el('div', 'field');
-    field.append(labelledRow(spec.label));
-    const grid = el('div', 'swatches');
-    for (const [key, label] of spec.keys) {
-      grid.append(BUILDERS.color({ key, label }));
-    }
-    field.append(grid);
-    return field;
-  },
 
   note(spec) {
     return el('p', 'note', spec.text);
   },
 
-  presets(_spec, ctx) {
-    const field = el('div', 'field');
-    field.append(labelledRow('Colour presets'));
-    const row = el('div', 'panel__actions');
-    row.style.padding = '0';
-    row.style.borderBottom = 'none';
-    for (const [name, values] of Object.entries(PRESETS)) {
-      const button = el('button', 'btn', name);
-      button.type = 'button';
-      button.addEventListener('click', () => store.patch(values));
-      row.append(button);
-    }
-    field.append(row);
-    return field;
-  },
 
   cameras(_spec, ctx) {
     const field = el('div', 'field');
@@ -447,25 +392,3 @@ const BUILDERS = {
   },
 };
 
-const PRESETS = {
-  Crimson: {
-    'char.suit': '#3f444d', 'char.suitLight': '#5c636f', 'char.visor': '#7f8ca3',
-    'char.visorDark': '#2c313a', 'char.glow': '#f2f7ff', 'char.scarf': '#c62b2b',
-    'char.scarfShade': '#8b1a1a', 'char.hair': '#4b515b', 'char.accent': '#7a6a55',
-  },
-  Toxic: {
-    'char.suit': '#2f3630', 'char.suitLight': '#4a5548', 'char.visor': '#6f8a72',
-    'char.visorDark': '#232a24', 'char.glow': '#ccff8f', 'char.scarf': '#7bc043',
-    'char.scarfShade': '#3f7024', 'char.hair': '#3c463c', 'char.accent': '#5f6b4a',
-  },
-  Cobalt: {
-    'char.suit': '#2d3442', 'char.suitLight': '#495571', 'char.visor': '#6f86ad',
-    'char.visorDark': '#222836', 'char.glow': '#9fe8ff', 'char.scarf': '#2f6fd0',
-    'char.scarfShade': '#1c4382', 'char.hair': '#394152', 'char.accent': '#4e5b73',
-  },
-  Bone: {
-    'char.suit': '#d9d3c6', 'char.suitLight': '#f2efe6', 'char.visor': '#9a9488',
-    'char.visorDark': '#3a382f', 'char.glow': '#ff8a5c', 'char.scarf': '#2c2c2c',
-    'char.scarfShade': '#141414', 'char.hair': '#8d8474', 'char.accent': '#a5947a',
-  },
-};

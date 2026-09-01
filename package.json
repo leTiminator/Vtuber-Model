@@ -13,7 +13,6 @@
     "test": "node test/rig.mjs && node test/smoke.mjs && node test/warp.mjs",
     "test:rig": "node test/rig.mjs",
     "test:smoke": "node test/smoke.mjs",
-    "poses": "node scripts/visual/shoot.mjs preview.png",
     "test:warp": "node test/warp.mjs",
     "warp-demo": "node scripts/visual/warp-demo.mjs warp-demo.png",
     "closeup": "node scripts/visual/closeup.mjs closeup.png"
