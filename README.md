@@ -118,9 +118,9 @@ That works on any phone, on mobile data, with the computer switched off — Page
 serves HTTPS, so the camera is allowed and there is no certificate to accept.
 It runs entirely in the phone's browser; no video leaves the device.
 
-Two one-time steps in the repo's settings enable it: the repository has to be
-public (Pages from a private repo needs a paid plan), and **Settings → Pages →
-Source** has to be set to **GitHub Actions**.
+The only prerequisite is that the repository is public — Pages from a private
+repo needs a paid plan. The workflow enables Pages itself on the first run, so
+there is nothing to click in Settings.
 
 **Prefer no certificate warning?** Plug the phone in over USB with developer
 mode on, open `chrome://inspect/#devices` on the computer, and add a port

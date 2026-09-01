@@ -44,7 +44,12 @@ jobs:
           # not silently 404 every model and leave a blank stage.
           VTUBER_BASE: /${{ github.event.repository.name }}/
 
+      # enablement creates the Pages site if it does not exist yet, so this
+      # needs no click in Settings first. Without it the whole run dies on
+      # "Get Pages site failed" after a build that otherwise went fine.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
