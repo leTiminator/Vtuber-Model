@@ -7,7 +7,13 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 // over the LAN the camera is simply unavailable without a certificate.
 const phone = process.env.VTUBER_PHONE === '1';
 
+// A GitHub project page is served from /<repo>/, not from the root, so every
+// asset URL needs that prefix. The workflow passes it in; locally it stays '/'
+// so `npm run dev` and a plain `npm run build` are unaffected.
+const base = process.env.VTUBER_BASE ?? '/';
+
 export default defineConfig({
+  base,
   plugins: phone ? [basicSsl()] : [],
   server: {
     host: phone ? true : '127.0.0.1',

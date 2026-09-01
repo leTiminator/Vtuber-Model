@@ -106,6 +106,22 @@ reason — it has to allow incoming connections on port 5173. Guest Wi-Fi and
 some routers also isolate devices from each other, in which case nothing on the
 phone will reach the computer.
 
+### Or open it from anywhere
+
+Pushing to this branch publishes the app to GitHub Pages:
+
+```
+https://letiminator.github.io/Vtuber-Model/
+```
+
+That works on any phone, on mobile data, with the computer switched off — Pages
+serves HTTPS, so the camera is allowed and there is no certificate to accept.
+It runs entirely in the phone's browser; no video leaves the device.
+
+Two one-time steps in the repo's settings enable it: the repository has to be
+public (Pages from a private repo needs a paid plan), and **Settings → Pages →
+Source** has to be set to **GitHub Actions**.
+
 **Prefer no certificate warning?** Plug the phone in over USB with developer
 mode on, open `chrome://inspect/#devices` on the computer, and add a port
 forward from `5173` to `localhost:5173`. Then `npm run dev` as usual and open

@@ -1,0 +1,60 @@
+# Publishes the app to GitHub Pages, so it can be opened on a phone from
+# anywhere without the computer running.
+#
+# Pages serves over HTTPS, which is the part that matters: browsers refuse
+# getUserMedia on an insecure origin, so a plain HTTP host would load the page
+# and then silently have no camera.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/vtuber-model-creation-lzx8mi
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer push supersedes one still queued.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall fetches the wasm runtime and both tracking models, about
+      # 26 MB. They are deliberately not committed: they are reproducible.
+      - run: npm ci
+
+      - run: npm run build
+        env:
+          # Derived from the repo rather than hardcoded, so renaming it does
+          # not silently 404 every model and leave a blank stage.
+          VTUBER_BASE: /${{ github.event.repository.name }}/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
