@@ -15,6 +15,7 @@ precision highp float;
 
 in vec2 a_pos;   // image space, 0..1 across the whole artwork
 in vec2 a_uv;    // into this part's own texture
+in vec2 a_sd;    // cloth only: distance along the spine, and offset from it
 
 uniform mat3 u_model;      // this part's joint transform, in image space
 uniform float u_aspect;    // image width / height
@@ -26,10 +27,40 @@ uniform float u_cylR;
 uniform float u_yaw;
 uniform float u_pitch;
 
+// Cloth skinning. The part is bound to a centreline; moving the line's bones
+// carries the art with it, so the ribbon genuinely bends instead of sliding.
+uniform float u_spineMode;
+uniform vec2 u_spine[16];
+
 uniform vec2 u_viewScale;
 uniform vec2 u_viewOffset;
 
 out vec2 v_uv;
+
+/**
+ * Rebuild a point from its position along the spine and its offset from it.
+ * Walking the deformed spine and stepping sideways along the local normal is
+ * what turns a moving chain of bones back into a sheet of cloth.
+ */
+vec2 fromSpine(vec2 sd, float aspect) {
+  float f = clamp(sd.x, 0.0, 1.0) * 15.0;
+  int i = int(floor(f));
+  int j = min(i + 1, 15);
+  float t = fract(f);
+
+  vec2 a = u_spine[i];
+  vec2 b = u_spine[j];
+  vec2 here = mix(a, b, t);
+
+  // Tangent from the neighbouring bones, so the normal turns smoothly along
+  // the ribbon rather than kinking at every joint.
+  vec2 prev = u_spine[max(i - 1, 0)];
+  vec2 next = u_spine[min(j + 1, 15)];
+  vec2 tangent = normalize((mix(b, next, t) - mix(prev, a, t)) * vec2(aspect, 1.0) + 1e-6);
+  vec2 normal = vec2(-tangent.y, tangent.x);
+
+  return here + normal * sd.y / vec2(aspect, 1.0);
+}
 
 /**
  * Rotate a point on a cylinder of radius R and read off its new position.
@@ -41,7 +72,7 @@ float cylinder(float x, float R, float angle) {
 }
 
 void main() {
-  vec2 p = a_pos;
+  vec2 p = u_spineMode > 0.5 ? fromSpine(a_sd, u_aspect) : a_pos;
 
   if (u_warp > 0.5) {
     vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);

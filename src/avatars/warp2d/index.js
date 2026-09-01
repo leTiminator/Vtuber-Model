@@ -364,8 +364,11 @@ export class Warp2D {
     // forces want to be order 1 — not order 60, which is a tear.
     const wind = 0.11 * store.get('warp.wind');
     // Inertia opposes the motion, hence the negation.
-    const fx = clamp(-this.inertia.ax, -25, 25) * 0.22;
-    const fy = clamp(-this.inertia.ay, -25, 25) * 0.22;
+    // Scale note: the chain settles at force/rest, so with rest ~26 a tip that
+    // should travel a few percent of the image wants forces below one. The
+    // earlier gain produced ~5 and railed the chain against its own limit.
+    const fx = clamp(-this.inertia.ax, -12, 12) * 0.16;
+    const fy = clamp(-this.inertia.ay, -12, 12) * 0.16;
 
     gl.uniform2fv(L.u_cloth, this.cloth.step(fx, fy, wind, dt));
     gl.uniform2fv(L.u_tuft, this.tuft.step(fx * 0.7, fy * 0.7, wind * 0.4, dt));

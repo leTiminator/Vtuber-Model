@@ -17,7 +17,8 @@
     "warp-demo": "node scripts/visual/warp-demo.mjs warp-demo.png",
     "closeup": "node scripts/visual/closeup.mjs closeup.png",
     "parts": "node scripts/visual/parts.mjs parts.png",
-    "puppet": "node scripts/visual/puppet.mjs puppet.png"
+    "puppet": "node scripts/visual/puppet.mjs puppet.png",
+    "scarf": "node scripts/visual/scarf.mjs scarf.png"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.22"

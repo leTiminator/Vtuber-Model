@@ -76,6 +76,14 @@ export class ChainField {
     // The anchor never moves relative to what it is bolted to.
     dx[0] = 0; dy[0] = 0; vx[0] = 0; vy[0] = 0;
 
+    // Read positions from the previous state, so every node sees the same
+    // configuration. Updating in place makes the coupling asymmetric, which is
+    // exactly the failure this replaced.
+    const px = this.px ?? (this.px = new Float32Array(n));
+    const py = this.py ?? (this.py = new Float32Array(n));
+    px.set(dx);
+    py.set(dy);
+
     for (let i = 1; i < n; i++) {
       const t = i / (n - 1);
       const weight = 1 + (this.tipBias - 1) * t * t;
@@ -85,9 +93,21 @@ export class ChainField {
       const windX = (Math.sin(phase) + 0.45 * Math.sin(phase * 2.3 + 1.1)) * wind;
       const windY = Math.cos(phase * 0.8 + 0.5) * wind * 0.45;
 
-      const ax = (dx[i - 1] - dx[i]) * this.chain - dx[i] * this.rest
+      // Pulled toward BOTH neighbours, not just the previous one.
+      //
+      // A one-way follower chain looks like cloth but is not: each node chases
+      // the one before it, and because each stage is underdamped it overshoots
+      // by half again. Over fifteen nodes that compounds into runaway. Coupling
+      // both ways is a real spring chain — conservative, so it carries a wave
+      // down the length instead of amplifying it.
+      const upX = px[i - 1] - px[i];
+      const upY = py[i - 1] - py[i];
+      const downX = (i < n - 1 ? px[i + 1] : px[i]) - px[i];
+      const downY = (i < n - 1 ? py[i + 1] : py[i]) - py[i];
+
+      const ax = (upX + downX) * this.chain - px[i] * this.rest
         - vx[i] * this.damping + (fx + windX) * weight;
-      const ay = (dy[i - 1] - dy[i]) * this.chain - dy[i] * this.rest
+      const ay = (upY + downY) * this.chain - py[i] * this.rest
         - vy[i] * this.damping + (fy + windY) * weight;
 
       vx[i] += ax * h;
@@ -96,11 +116,17 @@ export class ChainField {
       dy[i] += vy[i] * h;
     }
 
-    // Hard clamp: a displacement larger than this would tear the mesh no matter
-    // what the artwork is, so cap it rather than let a spike propagate.
+    // Cap the displacement, and cancel the velocity pushing into the cap.
+    //
+    // Clamping position alone is a trap: the position pins at the boundary but
+    // the velocity survives, so every step shoves it back out and the chain
+    // sits railed instead of relaxing.
+    const LIMIT = 0.08;
     for (let i = 1; i < n; i++) {
-      dx[i] = clamp(dx[i], -0.06, 0.06);
-      dy[i] = clamp(dy[i], -0.06, 0.06);
+      if (dx[i] > LIMIT) { dx[i] = LIMIT; if (vx[i] > 0) vx[i] = 0; }
+      else if (dx[i] < -LIMIT) { dx[i] = -LIMIT; if (vx[i] < 0) vx[i] = 0; }
+      if (dy[i] > LIMIT) { dy[i] = LIMIT; if (vy[i] > 0) vy[i] = 0; }
+      else if (dy[i] < -LIMIT) { dy[i] = -LIMIT; if (vy[i] < 0) vy[i] = 0; }
     }
   }
 

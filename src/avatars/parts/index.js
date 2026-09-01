@@ -18,13 +18,18 @@ import { cutParts } from './cut.js';
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
 import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
 import { parseRect } from '../warp2d/index.js';
+import { extractSpine } from './spine.js';
 
 const UNIFORMS = [
   'u_model', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle', 'u_lidL', 'u_lidR',
   'u_blink', 'u_squint', 'u_glow', 'u_glowPulse',
+  'u_spineMode', 'u_spine',
 ];
+
+const SPINE_NODES = 16;
+const CLOTH_GRID = 26; // the cloth bends along its whole length, so it needs rows
 
 const HEAD_GRID = 12; // the head bends, so it needs more than a quad
 
@@ -46,6 +51,7 @@ export class Parts2D {
     this.inertia = new HeadInertia();
     this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
     this.glowPulse = 1;
+    this.bones = new Float32Array(SPINE_NODES * 2);
 
     this.unsubscribe = store.subscribe((key) => {
       if (key.startsWith('warp.')) this.rebuild = true;
@@ -82,6 +88,7 @@ export class Parts2D {
     this.attr = {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
+      sd: gl.getAttribLocation(program, 'a_sd'),
     };
 
     gl.enable(gl.BLEND);
@@ -142,6 +149,9 @@ export class Parts2D {
     const px = readPixels(this.image);
     this.lids = px ? sampleLidColours(px, m, m.eyeAngle) : null;
 
+    const tails = parts.find((p) => p.name === 'tails');
+    this.spine = tails ? findSpine(tails, this.image, width, height, m) : null;
+
     this.parts = parts
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m));
@@ -164,18 +174,25 @@ export class Parts2D {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-    // The head bends, so it gets a grid; everything else is a quad for now.
-    const n = part.name === 'head' ? HEAD_GRID : 1;
+    // The head bends and the cloth bends along its whole length, so both need
+    // a grid; everything else is a quad.
+    const skinned = part.name === 'tails' && this.spine;
+    const n = part.name === 'head' ? HEAD_GRID : skinned ? CLOTH_GRID : 1;
     const pos = [];
     const uv = [];
+    const sd = [];
     const idx = [];
     for (let row = 0; row <= n; row++) {
       for (let col = 0; col <= n; col++) {
         const s = col / n;
         const t = row / n;
         // Image space: where this pixel actually sits in the whole artwork.
-        pos.push((part.x + s * part.w) / width, (part.y + t * part.h) / height);
+        const px = (part.x + s * part.w) / width;
+        const py = (part.y + t * part.h) / height;
+        pos.push(px, py);
         uv.push(s, t);
+        // Bind to the centreline: how far along it, and how far off it.
+        sd.push(...(skinned ? projectToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0]));
       }
     }
     for (let row = 0; row < n; row++) {
@@ -189,6 +206,7 @@ export class Parts2D {
     gl.bindVertexArray(vao);
     bind(gl, this.attr.pos, new Float32Array(pos), 2);
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
+    bind(gl, this.attr.sd, new Float32Array(sd), 2);
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
@@ -204,7 +222,7 @@ export class Parts2D {
 
     return {
       ...part,
-      texture, vao, indexCount: idx.length,
+      texture, vao, indexCount: idx.length, skinned,
       eyeL: socket(m.eyeL),
       eyeR: socket(m.eyeR),
     };
@@ -268,22 +286,33 @@ export class Parts2D {
     this.inertia.update(proxyX, proxyY, dt);
     const stiff = clamp(store.get('warp.clothStiffness'), 0.1, 4);
     this.scarf.configure({ rest: 26 * stiff, damping: 4.4 * Math.sqrt(stiff) });
-    const fx = clamp(-this.inertia.ax, -25, 25) * 0.22;
-    const fy = clamp(-this.inertia.ay, -25, 25) * 0.22;
+    // Scale note: the chain settles at force/rest, so with rest ~26 a tip that
+    // should travel a few percent of the image wants forces below one. The
+    // earlier gain produced ~5 and railed the chain against its own limit.
+    const fx = clamp(-this.inertia.ax, -12, 12) * 0.16;
+    const fy = clamp(-this.inertia.ay, -12, 12) * 0.16;
     const swing = this.scarf.step(fx, fy, 0.11 * store.get('warp.wind'), dt);
-    // Until the bone chain lands, the tails ride their chain's tip as a whole.
-    const tailShift = [swing[30] * store.get('warp.clothWeight'), swing[31] * store.get('warp.clothWeight')];
+
+    // Displace each bone by its own node in the chain. The chain's later nodes
+    // move further, so the ribbon lags along its length and folds rather than
+    // sliding as one piece — the whole reason for the skeleton.
+    const weight = store.get('warp.clothWeight');
+    if (this.spine) {
+      for (let i = 0; i < SPINE_NODES; i++) {
+        this.bones[i * 2] = this.spine.nodes[i][0] + swing[i * 2] * weight;
+        this.bones[i * 2 + 1] = this.spine.nodes[i][1] + swing[i * 2 + 1] * weight;
+      }
+    }
 
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
     this.glowPulse = damp(this.glowPulse, 0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare, 9, dt);
 
     // --- draw, back to front ---------------------------------------------
     for (const part of this.parts) {
-      const model = joints[part.joint] ?? IDENTITY;
-      const shifted = part.name === 'tails'
-        ? translate(model, tailShift[0], tailShift[1])
-        : model;
-      gl.uniformMatrix3fv(L.u_model, false, shifted);
+      gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
+
+      gl.uniform1f(L.u_spineMode, part.skinned ? 1 : 0);
+      if (part.skinned) gl.uniform2fv(L.u_spine, this.bones);
 
       const isHead = part.name === 'head';
       gl.uniform1f(L.u_warp, isHead ? 1 : 0);
@@ -421,4 +450,74 @@ function linkProgram(gl, vertexSource, fragmentSource) {
     return null;
   }
   return program;
+}
+
+
+/* ------------------------------------------------------------------ cloth */
+
+/**
+ * Thin the cloth to its centreline and resample it into bones.
+ *
+ * Run on the real artwork's alpha, not the part's: the dilated margin is opaque
+ * too, and including it would fatten the shape and bow the centreline outward.
+ */
+function findSpine(part, image, width, height, m) {
+  const scale = 0.5; // thinning is iterative; half resolution is plenty
+  const mw = Math.round(width * scale);
+  const mh = Math.round(height * scale);
+
+  const partCanvas = document.createElement('canvas');
+  partCanvas.width = mw;
+  partCanvas.height = mh;
+  const pc = partCanvas.getContext('2d', { willReadFrequently: true });
+  pc.drawImage(part.canvas, part.x * scale, part.y * scale, part.w * scale, part.h * scale);
+  const pd = pc.getImageData(0, 0, mw, mh).data;
+
+  const artCanvas = document.createElement('canvas');
+  artCanvas.width = mw;
+  artCanvas.height = mh;
+  const ac = artCanvas.getContext('2d', { willReadFrequently: true });
+  ac.drawImage(image, 0, 0, mw, mh);
+  const ad = ac.getImageData(0, 0, mw, mh).data;
+
+  const mask = new Uint8Array(mw * mh);
+  for (let i = 0; i < mw * mh; i++) {
+    if (pd[i * 4 + 3] > 120 && ad[i * 4 + 3] > 40) mask[i] = 1;
+  }
+
+  return extractSpine(mask, mw, mh, { x: m.pivotX * mw, y: m.pivotY * mh }, SPINE_NODES);
+}
+
+/**
+ * Where a point sits relative to the centreline: how far along it, and how far
+ * off to one side. Storing this once lets the shader rebuild the point from
+ * wherever the bones have moved to.
+ */
+function projectToSpine(px, py, nodes, aspect) {
+  const a = aspect || 1;
+  let bestDist = Infinity;
+  let bestSeg = 0;
+  let bestT = 0;
+
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const ax = nodes[i][0] * a, ay = nodes[i][1];
+    const bx = nodes[i + 1][0] * a, by = nodes[i + 1][1];
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy || 1e-9;
+    const t = clamp(((px * a - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+    const cx = ax + dx * t, cy = ay + dy * t;
+    const d = (px * a - cx) ** 2 + (py - cy) ** 2;
+    if (d < bestDist) { bestDist = d; bestSeg = i; bestT = t; }
+  }
+
+  const ax = nodes[bestSeg][0] * a, ay = nodes[bestSeg][1];
+  const bx = nodes[bestSeg + 1][0] * a, by = nodes[bestSeg + 1][1];
+  let dx = bx - ax, dy = by - ay;
+  const len = Math.hypot(dx, dy) || 1e-9;
+  dx /= len; dy /= len;
+  const cx = ax + dx * len * bestT, cy = ay + dy * len * bestT;
+  // Signed: which side of the line the point is on, via the 2D cross product.
+  const offset = (px * a - cx) * -dy + (py - cy) * dx;
+
+  return [(bestSeg + bestT) / (nodes.length - 1), offset];
 }
