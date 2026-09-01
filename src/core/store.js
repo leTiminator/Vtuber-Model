@@ -48,7 +48,7 @@ export const DEFAULTS = {
   'body.hairPhysics': 1.0,
 
   // --- stage -----------------------------------------------------------
-  'stage.avatar': 'procedural2d', // procedural2d | layered2d | vrm3d
+  'stage.avatar': 'procedural2d', // procedural2d | layered2d
   'stage.background': 'transparent', // transparent | chroma | color
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
@@ -58,17 +58,22 @@ export const DEFAULTS = {
   'stage.showPreview': true,
 
   // --- character (procedural2d) ----------------------------------------
-  'char.skin': '#ffdcc6',
-  'char.blush': '#ff9e9e',
-  'char.hair': '#4a5686',
-  'char.hairLight': '#6f7db4',
-  'char.eye': '#4aa3d8',
-  'char.outfit': '#3b4260',
-  'char.outfitAccent': '#e9698d',
-  'char.lineArt': '#2b2333',
-  'char.hairStyle': 'medium', // short | medium | long | twintails
-  'char.eyeStyle': 'round', // round | sharp | soft
-  'char.accessory': 'none', // none | headphones | glasses | bow
+  // A masked ninja: charcoal helmet, glowing visor eyes, long red scarf.
+  // There is no mouth, so every expression is carried by the eye shapes.
+  'char.suit': '#3f444d',
+  'char.suitLight': '#5c636f',
+  'char.visor': '#7f8ca3',
+  'char.visorDark': '#2c313a',
+  'char.glow': '#f2f7ff',
+  'char.scarf': '#c62b2b',
+  'char.scarfShade': '#8b1a1a',
+  'char.accent': '#7a6a55',
+  'char.lineArt': '#15161c',
+  'char.hair': '#4b515b',
+  'char.eyeStyle': 'slash', // slash | round | band
+  'char.scarfLength': 'long', // short | medium | long
+  'char.scarfFloat': 1.0, // how much the tails billow upward
+  'char.accessory': 'none', // none | horns | goggles | antenna
 };
 
 const listeners = new Set();

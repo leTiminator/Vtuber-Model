@@ -1,31 +1,41 @@
 /**
- * The built-in character, drawn procedurally with Canvas 2D so it works with
- * no art assets at all. Everything lives in a 1000x1000 virtual space that the
- * renderer scales to the output canvas.
+ * The built-in character: a masked ninja. Charcoal helmet, a glowing visor,
+ * and a long red scarf that flies on its own physics.
  *
- * Pseudo-3D head turn: each facial feature is treated as a point sitting at
- * (offset, depth) on the head, and rotated rigidly about the head's axis —
+ * Drawn procedurally with Canvas 2D, so it needs no art assets and recolours
+ * live. Everything lives in a 1000x1000 virtual space the renderer scales.
+ *
+ * Pseudo-3D head turn: each feature is a point sitting at (offset, depth) on
+ * the helmet, rotated rigidly about the head's axis —
  *
  *     x' = offset*cos(yaw) + depth*sin(yaw)
  *
- * so features shift and crowd together exactly the way a real face does. The
- * same point's surface normal, cos(atan2(offset, depth) + yaw), says how
- * side-on it now is, which drives foreshortening and hides the far ear.
+ * so features shift and crowd together the way a real head does. The same
+ * point's surface normal, cos(atan2(offset, depth) + yaw), says how side-on it
+ * has become, which drives foreshortening and hides the far eye on a hard turn.
+ *
+ * There is no mouth on this design, so the eye glows carry every expression:
+ * they narrow, slant, round out and flare. The speech channel drives a vent
+ * glow along the bottom of the visor instead.
  */
 import { clamp, lerp, TAU } from '../../core/math.js';
 import { mix, shade, withAlpha } from './palette.js';
+import { Ribbon } from './ribbon.js';
 
-const HEAD = { cx: 500, cy: 376, rx: 184, ry: 210 };
+const HEAD = { cx: 500, cy: 368, rx: 176, ry: 194 };
 
-// Depths are "how far this sits in front of the head's rotation axis".
-const DEPTH = { eye: 104, brow: 112, nose: 150, mouth: 122, cheek: 96, ear: -46 };
+// How far each feature sits in front of the helmet's rotation axis.
+const DEPTH = { visor: 128, eye: 150, vent: 140, wrap: 96, tuft: -90 };
 
-/** Rigid rotation of a feature point about the head axis. */
+const EYE_X = 74;
+const EYE_Y = -6;
+
+const K = 0.5523; // circle-to-bezier handle constant
+
 const rotX = (offset, depth, yaw) => offset * Math.cos(yaw) + depth * Math.sin(yaw);
 const rotY = (offset, depth, pitch) => offset * Math.cos(pitch) + depth * Math.sin(pitch);
-/** 1 when the feature faces us square-on, 0 at the silhouette edge. */
 const facing = (offset, depth, angle) =>
-  clamp(Math.cos(Math.atan2(offset, Math.max(depth, 1)) + angle), 0, 1);
+  clamp(Math.cos(Math.atan2(offset, depth) + angle), 0, 1);
 
 function stroke(ctx, color, width) {
   ctx.strokeStyle = color;
@@ -45,143 +55,10 @@ function place(H, offX, offY, depth) {
   };
 }
 
-export function drawCharacter(ctx, rig, pal, clock) {
-  const yaw = clamp(rig.head.yaw, -0.85, 0.85);
-  const pitch = clamp(rig.head.pitch, -0.6, 0.6);
-
-  ctx.save();
-
-  const bodyX = rig.head.x * 46 + rig.body.leanX * 26;
-  const bodyY = -rig.head.y * 40 + rig.body.bounce * 6;
-  const zoom = 1 + rig.head.z * 0.06;
-  ctx.translate(500 + bodyX, 540 + bodyY);
-  ctx.scale(zoom, zoom);
-  ctx.translate(-500, -540);
-
-  drawBody(ctx, rig, pal);
-
-  // Head group, rotated about the base of the neck so a tilt swings the whole
-  // head rather than spinning it in place.
-  ctx.save();
-  const pivotX = HEAD.cx + Math.sin(yaw) * 14;
-  const pivotY = HEAD.cy + HEAD.ry * 1.15;
-  ctx.translate(pivotX, pivotY);
-  ctx.rotate(rig.head.roll);
-  ctx.translate(-pivotX, -pivotY);
-
-  const H = {
-    cx: HEAD.cx,
-    cy: HEAD.cy,
-    rx: HEAD.rx,
-    ry: HEAD.ry,
-    yaw,
-    pitch,
-    shift: Math.sin(yaw) * 20 + rig.head.x * 12,
-    lift: -Math.sin(pitch) * 16 - rig.head.y * 10,
-  };
-
-  drawBackHair(ctx, H, pal, rig);
-  drawEars(ctx, H, pal);
-  drawFace(ctx, H, pal, rig);
-  drawBlush(ctx, H, pal, rig);
-  drawBrows(ctx, H, pal, rig);
-  drawEyes(ctx, H, pal, rig, clock);
-  drawNose(ctx, H, pal);
-  drawMouth(ctx, H, pal, rig);
-  drawFrontHair(ctx, H, pal, rig);
-  drawAccessory(ctx, H, pal, rig);
-  drawEffects(ctx, H, pal, rig, clock);
-
-  ctx.restore();
-  ctx.restore();
-}
-
-/* ------------------------------------------------------------------ body */
-
-function drawBody(ctx, rig, pal) {
-  const lean = rig.body.leanX * 30;
-  const twist = rig.body.twist * 0.3;
-  const breath = rig.body.breath;
-  const halfW = 286 + breath * 6;
-  const neckTop = 566;
-
-  ctx.save();
-  ctx.translate(500, 980);
-  ctx.rotate(twist);
-  ctx.translate(-500 + lean, -980);
-
-  ctx.beginPath();
-  ctx.moveTo(500 - 46, neckTop);
-  ctx.lineTo(500 - 54, 682);
-  ctx.lineTo(500 + 54, 682);
-  ctx.lineTo(500 + 46, neckTop);
-  ctx.closePath();
-  ctx.fillStyle = pal.skin;
-  ctx.fill();
-  stroke(ctx, pal.line, 5);
-
-  // Shadow the jaw casts down the throat.
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(500 - 60, neckTop - 4, 120, 70);
-  ctx.clip();
-  ctx.beginPath();
-  ctx.ellipse(500, neckTop - 26, 92, 62, 0, 0, TAU);
-  ctx.fillStyle = pal.skinShade;
-  ctx.fill();
-  ctx.restore();
-
-  // Torso.
-  ctx.beginPath();
-  ctx.moveTo(500 - 56, 664);
-  ctx.bezierCurveTo(500 - 150, 686, 500 - halfW, 760, 500 - halfW - 20, 1010);
-  ctx.lineTo(500 + halfW + 20, 1010);
-  ctx.bezierCurveTo(500 + halfW, 760, 500 + 150, 686, 500 + 56, 664);
-  ctx.closePath();
-  ctx.fillStyle = pal.outfit;
-  ctx.fill();
-  stroke(ctx, pal.line, 5);
-
-  // Shoulder shading on the leading side.
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(500 - 56, 664);
-  ctx.bezierCurveTo(500 - 150, 686, 500 - halfW, 760, 500 - halfW - 20, 1010);
-  ctx.lineTo(500 + halfW + 20, 1010);
-  ctx.bezierCurveTo(500 + halfW, 760, 500 + 150, 686, 500 + 56, 664);
-  ctx.closePath();
-  ctx.clip();
-  ctx.beginPath();
-  ctx.ellipse(500 - halfW * 0.86, 900, halfW * 0.5, 260, 0.2, 0, TAU);
-  ctx.fillStyle = withAlpha(pal.outfitShade, 0.6);
-  ctx.fill();
-  ctx.restore();
-
-  // Collar.
-  ctx.beginPath();
-  ctx.moveTo(500 - 104, 676);
-  ctx.bezierCurveTo(500 - 70, 790, 500 + 70, 790, 500 + 104, 676);
-  ctx.bezierCurveTo(500 + 84, 664, 500 + 66, 660, 500 + 56, 662);
-  ctx.bezierCurveTo(500 + 40, 730, 500 - 40, 730, 500 - 56, 662);
-  ctx.bezierCurveTo(500 - 66, 660, 500 - 84, 664, 500 - 104, 676);
-  ctx.closePath();
-  ctx.fillStyle = pal.outfitAccent;
-  ctx.fill();
-  stroke(ctx, pal.line, 4.5);
-
-  ctx.restore();
-}
-
-/* ------------------------------------------------------------------ face */
-
-/** Circle-to-bezier constant: handle length for a quarter arc of radius r. */
-const K = 0.5523;
-
 /**
- * Upper half of an egg, as two quarter arcs with tangent-aligned handles.
- * Handles must not overshoot the apex — a cubic whose control points sit at
- * the target height sails well above it, which is what turns a scalp into a
- * balloon poking out through the hair.
+ * Upper half of an egg as two quarter arcs with tangent-aligned handles.
+ * Handles must not overshoot the apex — a cubic whose controls sit at the
+ * target height sails well above it.
  */
 function domeTop(ctx, x, y, rx, ry, l, r, waistY) {
   const leftX = x - rx * l;
@@ -192,614 +69,595 @@ function domeTop(ctx, x, y, rx, ry, l, r, waistY) {
   ctx.bezierCurveTo(x + K * rx * r, y - ry, rightX, waistY - K * rise, rightX, waistY);
 }
 
-function facePath(ctx, H) {
+const SCARF_LENGTH = { short: 0.55, medium: 0.8, long: 1.15 };
+
+export class Character {
+  constructor() {
+    // Two tails of different lengths so they never move in lockstep.
+    this.tails = [
+      { ribbon: new Ribbon(18, 40, 0.949), side: -1, w0: 46, w1: 7, bias: -1.0, phase: 0, loft: 1.0 },
+      { ribbon: new Ribbon(13, 34, 0.94), side: 1, w0: 32, w1: 5, bias: -0.66, phase: 2.4, loft: 0.42 },
+    ];
+    this.clock = 0;
+  }
+
+  draw(ctx, rig, pal, dt, clock) {
+    this.clock = clock;
+    const yaw = clamp(rig.head.yaw, -0.85, 0.85);
+    const pitch = clamp(rig.head.pitch, -0.6, 0.6);
+
+    ctx.save();
+
+    const bodyX = rig.head.x * 44 + rig.body.leanX * 26;
+    const bodyY = -rig.head.y * 38 + rig.body.bounce * 6;
+    const zoom = 1 + rig.head.z * 0.06;
+    ctx.translate(500 + bodyX, 540 + bodyY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-500, -540);
+
+    const H = {
+      cx: HEAD.cx, cy: HEAD.cy, rx: HEAD.rx, ry: HEAD.ry,
+      yaw, pitch,
+      shift: Math.sin(yaw) * 22 + rig.head.x * 12,
+      lift: -Math.sin(pitch) * 18 - rig.head.y * 10,
+      roll: rig.head.roll,
+    };
+
+    // Tails hang off the body, so they are stepped and drawn outside the
+    // head's rotation group.
+    this.stepTails(rig, pal, H, dt);
+    this.drawTails(ctx, pal);
+
+    ctx.save();
+    const pivotX = HEAD.cx + Math.sin(yaw) * 14;
+    const pivotY = HEAD.cy + HEAD.ry * 1.2;
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(H.roll);
+    ctx.translate(-pivotX, -pivotY);
+
+    drawTufts(ctx, H, pal, rig);
+    ctx.restore();
+
+    drawBody(ctx, rig, pal);
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(H.roll);
+    ctx.translate(-pivotX, -pivotY);
+
+    drawHelmet(ctx, H, pal, rig);
+    drawVisor(ctx, H, pal, rig);
+    drawEyes(ctx, H, pal, rig, clock);
+    drawVent(ctx, H, pal, rig);
+    drawScarfWrap(ctx, H, pal, rig);
+    drawAccessory(ctx, H, pal, rig, clock);
+    drawEffects(ctx, H, pal, rig, clock);
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  stepTails(rig, pal, H, dt) {
+    const lenScale = SCARF_LENGTH[pal.style.scarfLength] ?? 0.8;
+    const float = pal.style.scarfFloat ?? 1;
+
+    for (const tail of this.tails) {
+      tail.ribbon.segment = 40 * lenScale * (tail.side < 0 ? 1 : 0.88);
+
+      // Anchored at the shoulders, just behind the neck.
+      const ax = 500 + tail.side * 76 + rig.body.leanX * 26 + rig.head.x * 18;
+      const ay = 664 + rig.body.bounce * 5;
+
+      const t = this.clock + tail.phase;
+      // A steady updraught keeps the tails aloft the way the reference art
+      // has them; turbulence and the head's turn add the drift.
+      const billow = 44000 * float;
+      const gust = -rig.head.yaw * 34000 - rig.body.leanX * 16000;
+      const windX = tail.bias * billow * 0.62 + gust + Math.sin(t * 1.7) * 6000 + Math.sin(t * 0.53) * 4200;
+      const windY = -billow * tail.loft + Math.sin(t * 2.3 + 1.2) * 4500 - Math.abs(rig.head.pitch) * 9000;
+
+      tail.ribbon.step(ax, ay, windX, windY, dt);
+    }
+  }
+
+  drawTails(ctx, pal) {
+    for (const tail of this.tails) {
+      const r = tail.ribbon;
+      r.path(ctx, tail.w0, tail.w1);
+      ctx.fillStyle = pal.scarf;
+      ctx.fill();
+      stroke(ctx, pal.line, 5);
+
+      // Darker underside along one edge reads as the cloth folding over.
+      ctx.save();
+      r.path(ctx, tail.w0, tail.w1);
+      ctx.clip();
+      const pts = r.points;
+      const mid = pts[Math.floor(pts.length / 2)];
+      const grad = ctx.createLinearGradient(mid.x - 60, mid.y - 60, mid.x + 60, mid.y + 60);
+      grad.addColorStop(0, withAlpha(pal.scarfShade, 0.85));
+      grad.addColorStop(0.5, withAlpha(pal.scarfShade, 0));
+      grad.addColorStop(1, withAlpha(pal.scarfShade, 0.7));
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1000, 1000);
+      ctx.restore();
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- helmet */
+
+function helmetPath(ctx, H, inset = 0) {
   const { cx, cy, rx, ry, yaw, pitch, shift, lift } = H;
   const x = cx + shift;
   const y = cy + lift;
-  // The cheek swinging toward us bulges; the one turning away flattens.
   const s = Math.sin(yaw);
-  const l = 1 + Math.max(0, -s) * 0.1 - Math.max(0, s) * 0.2;
-  const r = 1 + Math.max(0, s) * 0.1 - Math.max(0, -s) * 0.2;
-  // Looking up shows more jaw, looking down more cranium.
-  const chinY = y + ry * (1.0 + Math.sin(pitch) * 0.12);
-  const waistY = y - ry * 0.06;
+  const l = 1 + Math.max(0, -s) * 0.08 - Math.max(0, s) * 0.16;
+  const r = 1 + Math.max(0, s) * 0.08 - Math.max(0, -s) * 0.16;
+  const RX = rx - inset;
+  const RY = ry - inset;
+  const jawY = y + RY * (0.98 + Math.sin(pitch) * 0.1);
+  const waistY = y + RY * 0.02;
 
   ctx.beginPath();
-  domeTop(ctx, x, y, rx, ry, l, r, waistY);
-  // Jaw: short horizontal handles at the chin keep the taper pointed.
+  domeTop(ctx, x, y, RX, RY, l, r, waistY);
+  // A helmet has no chin: the jaw stays round and full.
   ctx.bezierCurveTo(
-    x + rx * r, waistY + (chinY - waistY) * 0.52,
-    x + rx * 0.44 * r + s * 26, chinY,
-    x + s * 26, chinY,
+    x + RX * r, waistY + (jawY - waistY) * 0.58,
+    x + RX * 0.62 * r + s * 22, jawY,
+    x + s * 22, jawY,
   );
   ctx.bezierCurveTo(
-    x - rx * 0.44 * l + s * 26, chinY,
-    x - rx * l, waistY + (chinY - waistY) * 0.52,
-    x - rx * l, waistY,
+    x - RX * 0.62 * l + s * 22, jawY,
+    x - RX * l, waistY + (jawY - waistY) * 0.58,
+    x - RX * l, waistY,
   );
   ctx.closePath();
 }
 
-function drawFace(ctx, H, pal, rig) {
-  facePath(ctx, H);
-  ctx.fillStyle = pal.skin;
-  ctx.fill();
-  stroke(ctx, pal.line, 5.5);
-
-  // Soft ambient occlusion where the fringe sits against the forehead. Kept
-  // faint and gradient-edged: a hard wedge here reads as a second hairline.
-  ctx.save();
-  facePath(ctx, H);
-  ctx.clip();
+function drawHelmet(ctx, H, pal, rig) {
   const x = H.cx + H.shift;
   const y = H.cy + H.lift;
-  const g = ctx.createLinearGradient(0, y - H.ry, 0, y - H.ry * 0.12);
-  g.addColorStop(0, withAlpha(mix(pal.skinShade, pal.hair, 0.25), 0.34));
-  g.addColorStop(1, withAlpha(mix(pal.skinShade, pal.hair, 0.25), 0));
-  ctx.fillStyle = g;
-  ctx.fillRect(x - H.rx * 1.2, y - H.ry * 1.2, H.rx * 2.4, H.ry * 1.1);
 
-  // Cheek tone tucked under each side lock.
-  for (const side of [-1, 1]) {
-    const cg = ctx.createLinearGradient(x + side * H.rx, 0, x + side * H.rx * 0.5, 0);
-    cg.addColorStop(0, withAlpha(pal.skinShade, 0.5));
-    cg.addColorStop(1, withAlpha(pal.skinShade, 0));
-    ctx.fillStyle = cg;
-    ctx.fillRect(x + (side < 0 ? -H.rx * 1.1 : H.rx * 0.5), y - H.ry * 0.3, H.rx * 0.6, H.ry * 1.2);
-  }
+  helmetPath(ctx, H);
+  ctx.fillStyle = pal.suit;
+  ctx.fill();
+  stroke(ctx, pal.line, 6);
+
+  ctx.save();
+  helmetPath(ctx, H);
+  ctx.clip();
+
+  // Top light: a broad sheen across the crown.
+  const sheen = ctx.createLinearGradient(0, y - H.ry, 0, y + H.ry * 0.4);
+  sheen.addColorStop(0, withAlpha(pal.suitLight, 0.85));
+  sheen.addColorStop(0.55, withAlpha(pal.suitLight, 0.08));
+  sheen.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(x - H.rx * 1.3, y - H.ry * 1.3, H.rx * 2.6, H.ry * 2.6);
+
+  // Core shadow on whichever side has turned away from us.
+  const away = Math.sin(H.yaw);
+  const sx = x - Math.sign(away || 1) * H.rx * 1.05;
+  const core = ctx.createLinearGradient(sx, 0, sx + Math.sign(away || 1) * H.rx * 1.1, 0);
+  core.addColorStop(0, withAlpha(pal.suitShade, 0.9));
+  core.addColorStop(1, withAlpha(pal.suitShade, 0));
+  ctx.fillStyle = core;
+  ctx.fillRect(x - H.rx * 1.3, y - H.ry * 1.3, H.rx * 2.6, H.ry * 2.6);
+
+  // Hard specular blob, the thing that makes it read as a hard shell.
+  const hl = place(H, -H.rx * 0.42, -H.ry * 0.6, 60);
+  ctx.beginPath();
+  ctx.ellipse(hl.x, hl.y, H.rx * 0.24, H.ry * 0.15, -0.5, 0, TAU);
+  ctx.fillStyle = withAlpha(pal.suitLight, 0.55 * hl.fx);
+  ctx.fill();
   ctx.restore();
+
+  // Crown seam.
+  const a = place(H, 0, -H.ry * 0.95, 40);
+  const b = place(H, 0, H.ry * 0.1, DEPTH.visor);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2, b.x, b.y);
+  stroke(ctx, withAlpha(pal.line, 0.32 * Math.cos(H.yaw)), 4);
 }
 
-function drawEars(ctx, H, pal) {
-  for (const side of [-1, 1]) {
-    const p = place(H, side * H.rx * 0.95, H.ry * 0.06, DEPTH.ear);
-    // The ear on the side turning away slides behind the head.
-    const vis = clamp(p.fx * 2.2 - 0.35, 0, 1);
-    if (vis < 0.04) continue;
-    ctx.save();
-    ctx.globalAlpha = vis;
+/** Spiky tufts escaping the back of the helmet. */
+function drawTufts(ctx, H, pal, rig) {
+  const specs = [
+    [-0.82, -0.46, -1.78, -0.62, 0.2],
+    [-0.66, -0.7, -1.52, -1.06, 0.18],
+    [-0.24, -0.88, -0.62, -1.46, 0.15],
+    [0.24, -0.88, 0.66, -1.44, 0.15],
+    [0.66, -0.7, 1.54, -1.02, 0.18],
+    [0.82, -0.46, 1.8, -0.58, 0.2],
+  ];
+  const sway = rig.body.hairX * 0.34;
+  const bob = rig.body.hairY * 0.22;
+
+  for (const [bx, by, tx, ty, w] of specs) {
+    const base = place(H, H.rx * bx, H.ry * by, DEPTH.tuft);
+    const tip = place(H, H.rx * (tx + sway), H.ry * (ty + bob), DEPTH.tuft);
+    const nx = -(tip.y - base.y);
+    const ny = tip.x - base.x;
+    const len = Math.hypot(nx, ny) || 1;
+    const hw = H.rx * w;
+
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y, H.rx * 0.14, H.ry * 0.2, side * -0.18, 0, TAU);
-    ctx.fillStyle = pal.skin;
+    ctx.moveTo(base.x + (nx / len) * hw, base.y + (ny / len) * hw);
+    ctx.quadraticCurveTo(
+      (base.x + tip.x) / 2 + (nx / len) * hw * 0.6,
+      (base.y + tip.y) / 2 + (ny / len) * hw * 0.6,
+      tip.x, tip.y,
+    );
+    ctx.quadraticCurveTo(
+      (base.x + tip.x) / 2 - (nx / len) * hw * 0.6,
+      (base.y + tip.y) / 2 - (ny / len) * hw * 0.6,
+      base.x - (nx / len) * hw, base.y - (ny / len) * hw,
+    );
+    ctx.closePath();
+    ctx.fillStyle = pal.hair;
     ctx.fill();
     stroke(ctx, pal.line, 4.5);
-    ctx.restore();
   }
+}
+
+/* ----------------------------------------------------------------- visor */
+
+function visorBounds(H) {
+  const left = place(H, -H.rx * 0.82, 0, DEPTH.visor);
+  const right = place(H, H.rx * 0.82, 0, DEPTH.visor);
+  const top = place(H, 0, -H.ry * 0.5, DEPTH.visor);
+  const bottom = place(H, 0, H.ry * 0.52, DEPTH.visor);
+  return { left, right, top, bottom, cx: (left.x + right.x) / 2, cy: (top.y + bottom.y) / 2 };
+}
+
+function visorPath(ctx, H, pad = 0) {
+  const v = visorBounds(H);
+  const lx = v.left.x - pad;
+  const rx = v.right.x + pad;
+  const ty = v.top.y - pad;
+  const by = v.bottom.y + pad;
+  const w = (rx - lx) / 2;
+
+  // Wide rounded top, narrowing to a soft point at the bottom — a faceplate.
+  ctx.beginPath();
+  ctx.moveTo(lx, ty + (by - ty) * 0.3);
+  ctx.bezierCurveTo(lx, ty + (by - ty) * 0.06, lx + w * 0.45, ty, v.cx, ty);
+  ctx.bezierCurveTo(rx - w * 0.45, ty, rx, ty + (by - ty) * 0.06, rx, ty + (by - ty) * 0.3);
+  ctx.bezierCurveTo(rx, ty + (by - ty) * 0.72, rx - w * 0.5, by, v.cx, by);
+  ctx.bezierCurveTo(lx + w * 0.5, by, lx, ty + (by - ty) * 0.72, lx, ty + (by - ty) * 0.3);
+  ctx.closePath();
+}
+
+function drawVisor(ctx, H, pal, rig) {
+  const v = visorBounds(H);
+
+  visorPath(ctx, H, 5);
+  ctx.fillStyle = pal.visorDark;
+  ctx.fill();
+
+  visorPath(ctx, H);
+  const grad = ctx.createLinearGradient(0, v.top.y, 0, v.bottom.y);
+  grad.addColorStop(0, pal.visorLight);
+  grad.addColorStop(0.45, pal.visor);
+  grad.addColorStop(1, mix(pal.visor, pal.visorDark, 0.75));
+  ctx.fillStyle = grad;
+  ctx.fill();
+  stroke(ctx, pal.line, 5);
+
+  // Glass reflection sweeping across the upper plate.
+  ctx.save();
+  visorPath(ctx, H);
+  ctx.clip();
+  ctx.beginPath();
+  ctx.moveTo(v.left.x, v.top.y + (v.bottom.y - v.top.y) * 0.42);
+  ctx.lineTo(v.right.x, v.top.y + (v.bottom.y - v.top.y) * 0.16);
+  ctx.lineTo(v.right.x, v.top.y - 20);
+  ctx.lineTo(v.left.x, v.top.y - 20);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.fill();
+  ctx.restore();
 }
 
 /* ------------------------------------------------------------------ eyes */
 
-const EYE_X = 88;
-const EYE_Y = 52;
-const BROW_Y = EYE_Y - 96;
-
-function eyeGeometry(H, side) {
-  const p = place(H, side * EYE_X, EYE_Y, DEPTH.eye);
-  return { ...p, squash: lerp(0.34, 1, p.fx) };
+/** Eye glow outline in canonical space: +x is outward, origin at the centre. */
+function eyeShape(ctx, w, h, style) {
+  ctx.beginPath();
+  if (style === 'round') {
+    ctx.ellipse(0, 0, w * 0.78, h * 0.9, 0, 0, TAU);
+  } else if (style === 'band') {
+    ctx.moveTo(-w, -h * 0.5);
+    ctx.lineTo(w, -h * 0.62);
+    ctx.lineTo(w, h * 0.62);
+    ctx.lineTo(-w, h * 0.5);
+    ctx.closePath();
+  } else {
+    // Angular slash: broad at the outer end, tapering to a point inboard.
+    ctx.moveTo(w, -h * 0.98);
+    ctx.lineTo(-w * 0.86, -h * 0.2);
+    ctx.lineTo(-w * 1.06, h * 0.26);
+    ctx.lineTo(w * 0.88, h * 0.62);
+    ctx.closePath();
+  }
 }
 
 function drawEyes(ctx, H, pal, rig, clock) {
-  const aspect = { round: 1.0, sharp: 0.84, soft: 1.14 }[pal.style.eye] ?? 1;
+  const style = pal.style.eye;
 
   for (const side of [-1, 1]) {
-    const g = eyeGeometry(H, side);
-    if (g.fx < 0.12) continue;
+    const p = place(H, side * EYE_X, EYE_Y, DEPTH.eye);
+    if (p.fx < 0.12) continue;
 
     const blink = side < 0 ? rig.eyes.blinkL : rig.eyes.blinkR;
     const squint = side < 0 ? rig.eyes.squintL : rig.eyes.squintR;
     const wide = side < 0 ? rig.eyes.wideL : rig.eyes.wideR;
-    const open = clamp((1 - blink) * (1 - squint * 0.42) * (1 + wide * 0.22), 0, 1.2);
+    const brow = side < 0 ? rig.eyes.browL : rig.eyes.browR;
 
-    const w = 74 * g.squash;
-    const h = 60 * aspect;
+    const open = clamp((1 - blink) * (1 - squint * 0.55) * (1 + wide * 0.3), 0, 1.4);
+    // With no mouth, speech shows as the glow breathing a little.
+    const talk = rig.mouth.open * 0.12 + rig.mouth.smile * 0.08;
+
+    const w = 52 * lerp(0.3, 1, p.fx);
+    const h = 30 * (open + talk) * (1 + rig.expression.shock * 0.5);
+
+    // Brows slant the glow; anger drives the inner tip down hard.
+    const slant = -brow * 0.22 - rig.expression.anger * 0.34 + rig.eyes.browInner * 0.16;
 
     ctx.save();
-    ctx.translate(g.x, g.y);
-    ctx.globalAlpha = clamp((g.fx - 0.1) * 4, 0, 1);
+    ctx.globalAlpha = clamp((p.fx - 0.1) * 4, 0, 1);
+    ctx.translate(p.x, p.y);
+    ctx.scale(side, 1);
+    ctx.translate(
+      clamp(rig.eyes.gazeX, -1, 1) * side * 14,
+      clamp(-rig.eyes.gazeY, -1, 1) * 9,
+    );
+    ctx.rotate(slant);
 
-    if (open < 0.08) {
-      drawClosedEye(ctx, pal, w, side, rig);
+    if (h < 2.5) {
+      // Fully shut: a bright hairline, which reads far better than nothing.
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.9, 0);
+      ctx.lineTo(w * 0.95, -h * 0.1 - 2);
+      stroke(ctx, withAlpha(pal.glow, 0.85), 4);
       ctx.restore();
       continue;
     }
 
-    const hh = h * open;
+    const hot = rig.expression.anger > 0.3 ? mix(pal.glow, '#ff5a4a', rig.expression.anger * 0.7) : pal.glow;
 
+    // Bloom underneath, so the glow looks emissive rather than painted on.
     ctx.save();
-    eyeAperture(ctx, w, hh, side, pal.style.eye);
-    ctx.clip();
-
-    ctx.fillStyle = '#fdfbff';
-    ctx.fillRect(-w * 1.2, -h * 1.6, w * 2.4, h * 3.4);
-
-    const grad = ctx.createLinearGradient(0, -hh, 0, hh * 0.5);
-    grad.addColorStop(0, withAlpha(pal.eyeDeep, 0.42));
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(-w * 1.2, -h * 1.6, w * 2.4, h * 3.4);
-
-    const ir = Math.min(w * 0.56, h * 0.8);
-    const gx = clamp(rig.eyes.gazeX, -1, 1) * Math.max(0, w - ir) * 0.9;
-    const gy = clamp(-rig.eyes.gazeY, -1, 1) * Math.max(0, hh - ir * 0.7) * 0.9;
-    drawIris(ctx, pal, gx, gy, ir, rig);
-    ctx.restore();
-
-    // Anime eyes are drawn with a heavy upper lash and only a hint of a lower
-    // lid — a full outline reads as spectacles.
-    drawLash(ctx, pal, w, hh, side);
+    ctx.globalAlpha *= 0.5 + rig.expression.sparkle * 0.4;
+    const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, w * 1.9);
+    bloom.addColorStop(0, withAlpha(hot, 0.55));
+    bloom.addColorStop(1, withAlpha(hot, 0));
+    ctx.fillStyle = bloom;
     ctx.beginPath();
-    ctx.moveTo(-w * 0.86, hh * 0.72);
-    ctx.quadraticCurveTo(0, hh * 1.06, w * 0.86, hh * 0.72);
-    stroke(ctx, withAlpha(pal.line, 0.45), 3.5);
+    ctx.ellipse(0, 0, w * 1.9, h * 2.6, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    eyeShape(ctx, w, h, style);
+    ctx.fillStyle = hot;
+    ctx.fill();
+
+    // Hot core.
+    ctx.save();
+    eyeShape(ctx, w, h, style);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.ellipse(w * 0.22, -h * 0.12, w * 0.5, h * 0.5, 0, 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+    ctx.restore();
 
     ctx.restore();
   }
 }
 
-function eyeAperture(ctx, w, h, side, style) {
-  ctx.beginPath();
-  if (style === 'sharp') {
-    const tip = side < 0 ? -1 : 1;
-    ctx.moveTo(-w, -h * 0.08 - tip * h * 0.12);
-    ctx.bezierCurveTo(-w * 0.55, -h * 1.42, w * 0.55, -h * 1.42, w, -h * 0.08 + tip * h * 0.12);
-    ctx.bezierCurveTo(w * 0.5, h * 1.12, -w * 0.5, h * 1.12, -w, -h * 0.08 - tip * h * 0.12);
-  } else if (style === 'soft') {
-    ctx.moveTo(-w, 0);
-    ctx.bezierCurveTo(-w * 0.58, -h * 1.5, w * 0.58, -h * 1.5, w, 0);
-    ctx.bezierCurveTo(w * 0.58, h * 1.4, -w * 0.58, h * 1.4, -w, 0);
-  } else {
-    ctx.moveTo(-w, -h * 0.06);
-    ctx.bezierCurveTo(-w * 0.6, -h * 1.46, w * 0.6, -h * 1.46, w, -h * 0.06);
-    ctx.bezierCurveTo(w * 0.6, h * 1.34, -w * 0.6, h * 1.34, -w, -h * 0.06);
-  }
-  ctx.closePath();
-}
+/** Speech vent along the bottom of the visor — the mouth channel's outlet. */
+function drawVent(ctx, H, pal, rig) {
+  const p = place(H, 0, H.ry * 0.36, DEPTH.vent);
+  if (p.fx < 0.2) return;
+  const open = clamp(rig.mouth.open, 0, 1);
+  const w = 40 * lerp(0.35, 1, p.fx);
 
-function drawIris(ctx, pal, gx, gy, r, rig) {
   ctx.save();
-  ctx.translate(gx, gy);
-
-  const grad = ctx.createRadialGradient(0, -r * 0.25, r * 0.08, 0, 0, r);
-  grad.addColorStop(0, pal.eyeBright);
-  grad.addColorStop(0.5, pal.eye);
-  grad.addColorStop(1, pal.eyeDeep);
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, TAU);
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // Bounce light along the lower rim — what makes anime eyes read as glossy.
-  ctx.beginPath();
-  ctx.arc(0, r * 0.2, r * 0.74, 0.2, Math.PI - 0.2);
-  ctx.fillStyle = withAlpha(pal.eyeBright, 0.6);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.ellipse(0, 0, r * 0.34, r * 0.42, 0, 0, TAU);
-  ctx.fillStyle = mix(pal.eyeDeep, '#000000', 0.6);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, TAU);
-  stroke(ctx, withAlpha(pal.eyeDeep, 0.75), 3);
-
-  ctx.beginPath();
-  ctx.ellipse(-r * 0.36, -r * 0.42, r * 0.3, r * 0.24, -0.4, 0, TAU);
-  ctx.fillStyle = 'rgba(255,255,255,0.96)';
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(r * 0.38, r * 0.36, r * 0.15, 0, TAU);
-  ctx.fillStyle = 'rgba(255,255,255,0.72)';
-  ctx.fill();
-
-  if (rig.expression.sparkle > 0.02) {
-    ctx.globalAlpha = rig.expression.sparkle;
-    drawStar(ctx, 0, -r * 0.08, r * 0.6, 'rgba(255,255,255,0.92)');
+  ctx.globalAlpha = clamp((p.fx - 0.15) * 3, 0, 1);
+  for (let i = 0; i < 3; i++) {
+    const t = i / 2;
+    const bar = 2.5 + open * 7 * (1 - Math.abs(t - 0.5));
+    const y = p.y + (i - 1) * 9;
+    ctx.beginPath();
+    ctx.moveTo(p.x - w * (1 - Math.abs(t - 0.5) * 0.5), y);
+    ctx.lineTo(p.x + w * (1 - Math.abs(t - 0.5) * 0.5), y);
+    stroke(ctx, withAlpha(pal.glow, 0.25 + open * 0.6), bar);
   }
   ctx.restore();
 }
 
-function drawLash(ctx, pal, w, h, side) {
-  ctx.beginPath();
-  ctx.moveTo(-w * 0.99, -h * 0.02);
-  ctx.bezierCurveTo(-w * 0.6, -h * 1.62, w * 0.6, -h * 1.62, w * 0.99, -h * 0.02);
-  stroke(ctx, pal.line, 9);
+/* ----------------------------------------------------------------- scarf */
 
-  const tip = side < 0 ? -w : w;
-  ctx.beginPath();
-  ctx.moveTo(tip * 0.94, -h * 0.14);
-  ctx.quadraticCurveTo(tip * 1.2, -h * 0.9, tip * 1.34, -h * 0.62);
-  stroke(ctx, pal.line, 7);
-}
+function drawScarfWrap(ctx, H, pal, rig) {
+  const { rx, ry } = H;
+  const x = H.cx + H.shift;
+  const y = H.cy + H.lift;
+  const s = Math.sin(H.yaw);
+  const topY = y + ry * (0.5 + Math.sin(H.pitch) * 0.16);
+  const botY = y + ry * 1.52;
 
-function drawClosedEye(ctx, pal, w, side, rig) {
-  const happy = rig.mouth.smile > 0.45 || rig.expression.sparkle > 0.3;
+  // Band across the lower helmet, hiding where a jaw would be.
   ctx.beginPath();
-  if (happy) {
-    ctx.moveTo(-w * 0.92, w * 0.18);
-    ctx.quadraticCurveTo(0, -w * 0.46, w * 0.92, w * 0.18);
-  } else {
-    ctx.moveTo(-w * 0.94, -w * 0.06);
-    ctx.quadraticCurveTo(0, w * 0.3, w * 0.94, -w * 0.06);
-  }
-  stroke(ctx, pal.line, 8);
-
-  const tip = side < 0 ? -w : w;
-  ctx.beginPath();
-  ctx.moveTo(tip * 0.92, happy ? w * 0.16 : -w * 0.06);
-  ctx.quadraticCurveTo(tip * 1.18, -w * 0.32, tip * 1.32, -w * 0.2);
+  ctx.moveTo(x - rx * 1.04 + s * 14, topY - ry * 0.16);
+  ctx.bezierCurveTo(
+    x - rx * 0.5 + s * 20, topY + ry * 0.12,
+    x + rx * 0.5 + s * 20, topY + ry * 0.12,
+    x + rx * 1.04 + s * 14, topY - ry * 0.16,
+  );
+  ctx.bezierCurveTo(
+    x + rx * 1.0 + s * 10, botY - ry * 0.5,
+    x + rx * 0.6 + s * 24, botY - ry * 0.08,
+    x + s * 24, botY,
+  );
+  ctx.bezierCurveTo(
+    x - rx * 0.6 + s * 24, botY - ry * 0.08,
+    x - rx * 1.0 + s * 10, botY - ry * 0.5,
+    x - rx * 1.04 + s * 14, topY - ry * 0.16,
+  );
+  ctx.closePath();
+  ctx.fillStyle = pal.scarf;
+  ctx.fill();
   stroke(ctx, pal.line, 6);
-}
-
-/* ----------------------------------------------------------------- brows */
-
-function drawBrows(ctx, H, pal, rig) {
-  for (const side of [-1, 1]) {
-    const lift = (side < 0 ? rig.eyes.browL : rig.eyes.browR) * 24 + rig.eyes.browInner * 8;
-    const p = place(H, side * (EYE_X + 2), BROW_Y - lift, DEPTH.brow);
-    if (p.fx < 0.12) continue;
-
-    const w = 58 * lerp(0.34, 1, p.fx);
-    const innerDrop = rig.expression.anger * 22 - rig.eyes.browInner * 12;
-
-    ctx.save();
-    ctx.globalAlpha = clamp((p.fx - 0.1) * 4, 0, 1);
-    ctx.beginPath();
-    ctx.moveTo(p.x - side * w, p.y + innerDrop);
-    ctx.quadraticCurveTo(p.x, p.y - 16 - lift * 0.2, p.x + side * w, p.y + 10);
-    stroke(ctx, mix(pal.hair, pal.line, 0.4), 11);
-    ctx.restore();
-  }
-}
-
-/* ------------------------------------------------------------ nose/mouth */
-
-function drawNose(ctx, H, pal) {
-  const p = place(H, 0, 96, DEPTH.nose);
-  const dir = H.yaw >= 0 ? 1 : -1;
-  ctx.beginPath();
-  ctx.moveTo(p.x - dir * 3, p.y - 9);
-  ctx.quadraticCurveTo(p.x + dir * 9, p.y + 2, p.x - dir * 2, p.y + 7);
-  stroke(ctx, withAlpha(pal.skinDeep, 0.8), 5);
-}
-
-function drawMouth(ctx, H, pal, rig) {
-  const m = rig.mouth;
-  const p = place(H, m.shift * 12, 146, DEPTH.mouth);
-  const f = clamp(Math.cos(H.yaw), 0.45, 1);
-
-  const open = clamp(m.open, 0, 1);
-  const smile = clamp(m.smile - m.frown, -1, 1);
-  const w = Math.max(14, (42 + smile * 20 + m.wide * 22 - m.pucker * 24) * f);
-  const h = open * 46 + m.pucker * 8;
 
   ctx.save();
-  ctx.translate(p.x, p.y);
-
-  if (h < 4) {
-    ctx.beginPath();
-    ctx.moveTo(-w, -smile * 6);
-    ctx.quadraticCurveTo(0, smile * 22 + 7, w, -smile * 6);
-    stroke(ctx, pal.line, 6);
-    ctx.restore();
-    return;
-  }
-
-  const mw = m.pucker > 0.4 ? w * 0.6 : w;
-  const shape = () => {
-    ctx.beginPath();
-    ctx.moveTo(-mw, 0);
-    ctx.quadraticCurveTo(0, -h * 0.46 + smile * 10, mw, 0);
-    ctx.quadraticCurveTo(0, h, -mw, 0);
-    ctx.closePath();
-  };
-
-  shape();
-  ctx.fillStyle = mix(pal.line, '#7d2f42', 0.5);
-  ctx.fill();
-
-  ctx.save();
-  shape();
   ctx.clip();
-  ctx.beginPath();
-  ctx.ellipse(0, h * (0.66 - m.tongue * 0.55), mw * 0.74, h * 0.54, 0, 0, TAU);
-  ctx.fillStyle = '#e2708a';
-  ctx.fill();
-  if (open > 0.24) {
+  // Shade the underside of the wrap.
+  const grad = ctx.createLinearGradient(0, topY, 0, botY);
+  grad.addColorStop(0, withAlpha(pal.scarfLight, 0.5));
+  grad.addColorStop(0.45, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, withAlpha(pal.scarfShade, 0.85));
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - rx * 1.4, topY - 40, rx * 2.8, botY - topY + 80);
+
+  // Fold creases, splayed from the knot at one side.
+  const knotX = x + rx * 0.52 + s * 24;
+  for (let i = -1; i <= 1; i++) {
     ctx.beginPath();
-    ctx.moveTo(-mw, -h * 0.04);
-    ctx.quadraticCurveTo(0, -h * 0.48 + smile * 10, mw, -h * 0.04);
-    ctx.lineTo(mw, -h * 0.34);
-    ctx.lineTo(-mw, -h * 0.34);
-    ctx.closePath();
-    ctx.fillStyle = '#fffafd';
-    ctx.fill();
+    ctx.moveTo(knotX, topY + ry * 0.08);
+    ctx.quadraticCurveTo(
+      x - rx * 0.2 + i * rx * 0.3, topY + ry * (0.4 + i * 0.12),
+      x - rx * 1.0, topY + ry * (0.34 + i * 0.3),
+    );
+    stroke(ctx, withAlpha(pal.scarfShade, 0.7), 4);
   }
   ctx.restore();
 
-  shape();
-  stroke(ctx, pal.line, 5.5);
-  ctx.restore();
-}
-
-function drawBlush(ctx, H, pal, rig) {
-  const amount = clamp(rig.expression.blush + rig.cheeks.puff * 0.5 + rig.mouth.smile * 0.16, 0, 1);
-  if (amount < 0.02) return;
-  for (const side of [-1, 1]) {
-    const p = place(H, side * 120, 104, DEPTH.cheek);
-    if (p.fx < 0.12) continue;
-    const rw = 44 * lerp(0.4, 1, p.fx);
-    ctx.save();
-    ctx.globalAlpha = amount * 0.55 * p.fx;
-    const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, rw);
-    g.addColorStop(0, withAlpha(pal.blush, 0.95));
-    g.addColorStop(1, withAlpha(pal.blush, 0));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y, rw, 24, 0, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-/* ------------------------------------------------------------------ hair */
-
-const HAIR_LENGTH = { short: 0.34, medium: 0.9, long: 1.7, twintails: 0.8 };
-
-function drawBackHair(ctx, H, pal, rig) {
-  const { cx, cy, rx, ry, shift, lift } = H;
-  const x = cx + shift * 0.7;
-  const y = cy + lift * 0.7;
-  const sway = rig.body.hairX * 44;
-  const len = HAIR_LENGTH[pal.style.hair] ?? 0.9;
-
+  // Knot.
   ctx.beginPath();
-  domeTop(ctx, x, y, rx * 1.05, ry * 1.08, 1, 1, y - ry * 0.24);
-  ctx.bezierCurveTo(
-    x + rx * 1.2 + sway, y + ry * (0.44 + len * 0.9),
-    x + rx * 0.8 + sway * 1.4, y + ry * (0.92 + len * 1.15),
-    x + sway * 1.7, y + ry * (0.98 + len * 1.3),
-  );
-  ctx.bezierCurveTo(
-    x - rx * 0.8 + sway * 1.4, y + ry * (0.92 + len * 1.15),
-    x - rx * 1.2 + sway, y + ry * (0.44 + len * 0.9),
-    x - rx * 1.05, y - ry * 0.24,
-  );
-  ctx.closePath();
-  ctx.fillStyle = pal.hairShade;
+  ctx.ellipse(knotX, topY + ry * 0.16, rx * 0.2, ry * 0.15, -0.3, 0, TAU);
+  ctx.fillStyle = pal.scarf;
   ctx.fill();
-  stroke(ctx, pal.hairLine, 5);
-
-  if (pal.style.hair === 'twintails') drawTwintails(ctx, H, pal, rig);
+  stroke(ctx, pal.line, 5);
 }
 
-function drawTwintails(ctx, H, pal, rig) {
-  const { cx, cy, rx, ry, shift, lift } = H;
-  const swayX = rig.body.hairX * 66;
-  const swayY = rig.body.hairY * 38;
-  for (const side of [-1, 1]) {
-    const bx = cx + shift * 0.7 + side * rx * 1.0;
-    const by = cy + lift * 0.7 - ry * 0.46;
-    ctx.beginPath();
-    ctx.moveTo(bx, by - 26);
-    ctx.bezierCurveTo(
-      bx + side * 128 + swayX, by + 64 + swayY,
-      bx + side * 136 + swayX * 1.5, by + 244 + swayY,
-      bx + side * 60 + swayX * 1.9, by + 402 + swayY * 1.4,
-    );
-    ctx.bezierCurveTo(
-      bx + side * 8 + swayX * 1.4, by + 254 + swayY,
-      bx - side * 36 + swayX, by + 112 + swayY,
-      bx - side * 26, by - 20,
-    );
-    ctx.closePath();
-    ctx.fillStyle = pal.hair;
-    ctx.fill();
-    stroke(ctx, pal.hairLine, 5);
+/* ------------------------------------------------------------------ body */
 
-    ctx.beginPath();
-    ctx.ellipse(bx + side * 14, by + 8, 26, 15, side * 0.4, 0, TAU);
-    ctx.fillStyle = pal.outfitAccent;
-    ctx.fill();
-    stroke(ctx, pal.line, 4);
-  }
-}
+function drawBody(ctx, rig, pal) {
+  const lean = rig.body.leanX * 30;
+  const twist = rig.body.twist * 0.3;
+  const halfW = 292 + rig.body.breath * 6;
 
-/**
- * Cap plus fringe, in one path. The cap's handles overshoot to ry*1.5 so the
- * curve actually clears the top of the skull, then the fringe descends in
- * three pointed locks with deep notches so plenty of forehead stays visible.
- */
-/**
- * One tapering strand: a broad base up on the crown sweeping to a point.
- * Bases overlap generously so neighbouring locks read as layered hair rather
- * than leaving wedge-shaped gaps down to the scalp.
- */
-function lock(ctx, x, y, rx, ry, a, b, tip, bowOut, bowIn) {
-  const ax = x + rx * a[0], ay = y + ry * a[1];
-  const bx = x + rx * b[0], by = y + ry * b[1];
-  const tx = x + rx * tip[0], ty = y + ry * tip[1];
-  ctx.beginPath();
-  ctx.moveTo(ax, ay);
-  ctx.quadraticCurveTo(
-    (ax + tx) / 2 + rx * bowOut[0], (ay + ty) / 2 + ry * bowOut[1], tx, ty,
-  );
-  ctx.quadraticCurveTo(
-    (bx + tx) / 2 + rx * bowIn[0], (by + ty) / 2 + ry * bowIn[1], bx, by,
-  );
-  ctx.closePath();
-}
-
-// base A, base B, tip, outer bow, inner bow — all in head-relative units.
-const FRINGE = [
-  [[1.08, -0.24], [0.28, -0.86], [0.9, 0.02], [0.1, -0.14], [-0.06, 0.06]],
-  [[0.72, -0.68], [-0.12, -0.92], [0.46, -0.08], [0.08, -0.1], [-0.06, 0.04]],
-  [[0.22, -0.9], [-0.58, -0.76], [0.02, -0.14], [0.06, -0.1], [-0.08, 0.02]],
-  [[-0.26, -0.86], [-0.94, -0.46], [-0.5, -0.08], [-0.06, -0.1], [0.08, 0.04]],
-  [[-0.7, -0.66], [-1.08, -0.22], [-0.9, 0.02], [-0.1, -0.14], [0.06, 0.06]],
-];
-
-function drawFrontHair(ctx, H, pal, rig) {
-  const { cx, cy, rx, ry, shift, lift } = H;
-  // The cap is rigidly attached to the skull, so it takes the head's full
-  // offset; only the hanging locks below get to lag behind.
-  const x = cx + shift;
-  const y = cy + lift;
-  const sway = rig.body.hairX * 22;
-  const part = Math.sin(H.yaw) * 0.09;
-  const waistY = y - ry * 0.02;
-  const len = HAIR_LENGTH[pal.style.hair] ?? 0.9;
-
-  // Cap over the cranium, closing along a hairline arc rather than straight
-  // across — the locks below are what actually shape the fringe.
-  ctx.beginPath();
-  domeTop(ctx, x, y, rx * 1.06, ry * 1.09, 1, 1, waistY);
-  ctx.bezierCurveTo(x + rx * 0.94, y - ry * 0.46, x + rx * 0.52, y - ry * 0.66, x, y - ry * 0.64);
-  ctx.bezierCurveTo(x - rx * 0.52, y - ry * 0.66, x - rx * 0.94, y - ry * 0.46, x - rx * 1.06, waistY);
-  ctx.closePath();
-  ctx.fillStyle = pal.hair;
-  ctx.fill();
-  stroke(ctx, pal.hairLine, 5);
-
-  // Side locks first, so the fringe overlaps them at the temples.
-  for (const side of [-1, 1]) {
-    const bx = x + side * rx * 1.0;
-    const tipX = bx - side * 10 + sway * 1.8;
-    const tipY = y + ry * (0.5 + len * 0.6);
-    ctx.beginPath();
-    ctx.moveTo(bx + side * 6, y - ry * 0.56);
-    ctx.bezierCurveTo(
-      bx + side * 22 + sway, y + ry * 0.14,
-      bx + side * 14 + sway * 1.5, y + ry * (0.3 + len * 0.4),
-      tipX, tipY,
-    );
-    ctx.bezierCurveTo(
-      bx - side * 24 + sway * 1.2, y + ry * (0.22 + len * 0.3),
-      bx - side * 40 + sway * 0.5, y - ry * 0.02,
-      bx - side * 30, y - ry * 0.5,
-    );
-    ctx.closePath();
-    ctx.fillStyle = pal.hair;
-    ctx.fill();
-    stroke(ctx, pal.hairLine, 4.5);
-
-    ctx.save();
-    ctx.clip();
-    ctx.beginPath();
-    ctx.ellipse(bx - side * 46, y + ry * 0.3, rx * 0.3, ry * 0.9, 0, 0, TAU);
-    ctx.fillStyle = withAlpha(pal.hairShade, 0.55);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // Fringe, outer locks first so each successive one overlaps the last. Each
-  // lock's base sits up on the crown for coverage, but only the part below the
-  // hairline is drawn — otherwise their outlines web across the scalp.
   ctx.save();
+  ctx.translate(500, 980);
+  ctx.rotate(twist);
+  ctx.translate(-500 + lean, -980);
+
+  // Neck.
   ctx.beginPath();
-  ctx.moveTo(x - rx * 1.5, y - ry * 0.6);
-  ctx.bezierCurveTo(x - rx * 0.6, y - ry * 0.74, x + rx * 0.6, y - ry * 0.74, x + rx * 1.5, y - ry * 0.6);
-  ctx.lineTo(x + rx * 1.5, y + ry * 2);
-  ctx.lineTo(x - rx * 1.5, y + ry * 2);
+  ctx.moveTo(500 - 52, 560);
+  ctx.lineTo(500 - 58, 682);
+  ctx.lineTo(500 + 58, 682);
+  ctx.lineTo(500 + 52, 560);
   ctx.closePath();
+  ctx.fillStyle = pal.suitShade;
+  ctx.fill();
+  stroke(ctx, pal.line, 5);
+
+  // Torso.
+  ctx.beginPath();
+  ctx.moveTo(500 - 60, 632);
+  ctx.bezierCurveTo(500 - 152, 672, 500 - halfW, 754, 500 - halfW - 22, 1010);
+  ctx.lineTo(500 + halfW + 22, 1010);
+  ctx.bezierCurveTo(500 + halfW, 754, 500 + 152, 672, 500 + 60, 632);
+  ctx.closePath();
+  ctx.fillStyle = pal.suit;
+  ctx.fill();
+  stroke(ctx, pal.line, 6);
+
+  ctx.save();
   ctx.clip();
+  // Shoulder core shadow.
+  ctx.beginPath();
+  ctx.ellipse(500 - halfW * 0.9, 900, halfW * 0.46, 250, 0.18, 0, TAU);
+  ctx.fillStyle = withAlpha(pal.suitShade, 0.75);
+  ctx.fill();
 
-  for (let i = 0; i < FRINGE.length; i++) {
-    const [a, b, tip, bowOut, bowIn] = FRINGE[i];
-    const drift = sway / rx;
-    lock(
-      ctx, x, y, rx, ry,
-      [a[0] + part, a[1]],
-      [b[0] + part, b[1]],
-      [tip[0] + part * 1.6 + drift, tip[1]],
-      bowOut, bowIn,
-    );
-    ctx.fillStyle = i % 2 === 0 ? pal.hair : mix(pal.hair, pal.hairLight, 0.13);
-    ctx.fill();
-    stroke(ctx, pal.hairLine, 4.5);
+  // Leather harness straps over each shoulder.
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(500 + side * 96, 700);
+    ctx.quadraticCurveTo(500 + side * 210, 760, 500 + side * 250, 1010);
+    stroke(ctx, pal.accent, 34);
+    stroke(ctx, withAlpha(pal.accentShade, 0.5), 10);
   }
+
+  // Scarf sweeping across the chest.
+  ctx.beginPath();
+  ctx.moveTo(500 - 150, 700);
+  ctx.bezierCurveTo(500 - 60, 800, 500 + 90, 830, 500 + 210, 1010);
+  ctx.lineTo(500 + 90, 1010);
+  ctx.bezierCurveTo(500 + 30, 850, 500 - 80, 800, 500 - 190, 742);
+  ctx.closePath();
+  ctx.fillStyle = pal.scarf;
+  ctx.fill();
+  stroke(ctx, pal.line, 5);
   ctx.restore();
 
-  // Glossy highlight band following the curve of the crown.
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(x - rx * 0.76, y - ry * 0.62);
-  ctx.bezierCurveTo(x - rx * 0.52, y - ry * 0.94, x + rx * 0.5, y - ry * 0.94, x + rx * 0.76, y - ry * 0.6);
-  ctx.bezierCurveTo(x + rx * 0.48, y - ry * 0.8, x - rx * 0.5, y - ry * 0.8, x - rx * 0.76, y - ry * 0.62);
-  ctx.closePath();
-  ctx.fillStyle = pal.hairLight;
-  ctx.fill();
   ctx.restore();
 }
 
 /* ------------------------------------------------------- accessories/fx */
 
-function drawAccessory(ctx, H, pal, rig) {
-  const { cx, cy, rx, ry, shift, lift } = H;
-  const x = cx + shift * 0.88;
-  const y = cy + lift * 0.88;
+function drawAccessory(ctx, H, pal, rig, clock) {
+  const { rx, ry } = H;
   const acc = pal.style.accessory;
+  if (acc === 'none') return;
 
-  if (acc === 'headphones') {
-    ctx.beginPath();
-    ctx.moveTo(x - rx * 1.06, y - ry * 0.3);
-    ctx.bezierCurveTo(x - rx * 1.2, y - ry * 1.72, x + rx * 1.2, y - ry * 1.72, x + rx * 1.06, y - ry * 0.3);
-    stroke(ctx, pal.outfitAccent, 20);
-    stroke(ctx, withAlpha(pal.line, 0.3), 4);
+  if (acc === 'horns') {
     for (const side of [-1, 1]) {
-      const p = place(H, side * rx * 0.98, ry * 0.06, DEPTH.ear);
-      if (p.fx < 0.06) continue;
-      ctx.save();
-      ctx.globalAlpha = clamp(p.fx * 2.4, 0, 1);
+      const base = place(H, side * rx * 0.66, -ry * 0.72, 20);
+      const tip = place(H, side * rx * 1.24, -ry * 1.5, -10);
+      if (base.fx < 0.05) continue;
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y, 34 * lerp(0.4, 1, p.fx), 46, 0, 0, TAU);
-      ctx.fillStyle = pal.outfitAccent;
+      ctx.moveTo(base.x - side * rx * 0.16, base.y);
+      ctx.quadraticCurveTo(base.x + side * rx * 0.2, base.y - ry * 0.5, tip.x, tip.y);
+      ctx.quadraticCurveTo(base.x + side * rx * 0.3, base.y - ry * 0.16, base.x + side * rx * 0.14, base.y);
+      ctx.closePath();
+      ctx.fillStyle = pal.accent;
       ctx.fill();
       stroke(ctx, pal.line, 5);
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, 20 * lerp(0.4, 1, p.fx), 28, 0, 0, TAU);
-      ctx.fillStyle = shade(pal.outfitAccent, -0.32);
-      ctx.fill();
-      ctx.restore();
     }
-  } else if (acc === 'glasses') {
-    const l = eyeGeometry(H, -1);
-    const r = eyeGeometry(H, 1);
-    for (const g of [l, r]) {
-      if (g.fx < 0.12) continue;
-      ctx.save();
-      ctx.globalAlpha = clamp((g.fx - 0.1) * 4, 0, 1);
-      ctx.beginPath();
-      ctx.roundRect(g.x - 64 * g.squash, g.y - 50, 128 * g.squash, 100, 24);
-      ctx.fillStyle = 'rgba(214,238,255,0.15)';
-      ctx.fill();
-      stroke(ctx, pal.line, 6);
-      ctx.restore();
-    }
-    if (l.fx > 0.12 && r.fx > 0.12) {
-      ctx.beginPath();
-      ctx.moveTo(l.x + 64 * l.squash, l.y - 6);
-      ctx.quadraticCurveTo((l.x + r.x) / 2, l.y - 18, r.x - 64 * r.squash, r.y - 6);
-      stroke(ctx, pal.line, 6);
-    }
-  } else if (acc === 'bow') {
-    const bx = x + rx * 0.58;
-    const by = y - ry * 0.92;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(bx, by);
-      ctx.bezierCurveTo(bx + side * 72, by - 48, bx + side * 80, by + 42, bx, by + 6);
-      ctx.closePath();
-      ctx.fillStyle = pal.outfitAccent;
-      ctx.fill();
-      stroke(ctx, pal.line, 4.5);
-    }
+  } else if (acc === 'antenna') {
+    const base = place(H, rx * 0.5, -ry * 0.82, 30);
+    const sway = Math.sin(clock * 2.2) * 14 + rig.body.hairX * 40;
     ctx.beginPath();
-    ctx.arc(bx, by + 2, 14, 0, TAU);
-    ctx.fillStyle = shade(pal.outfitAccent, -0.22);
+    ctx.moveTo(base.x, base.y);
+    ctx.quadraticCurveTo(base.x + 20 + sway * 0.5, base.y - ry * 0.6, base.x + sway, base.y - ry * 1.1);
+    stroke(ctx, pal.line, 6);
+    ctx.beginPath();
+    ctx.arc(base.x + sway, base.y - ry * 1.1, 13, 0, TAU);
+    ctx.fillStyle = pal.scarf;
     ctx.fill();
     stroke(ctx, pal.line, 4);
+  } else if (acc === 'goggles') {
+    const l = place(H, -rx * 0.56, -ry * 0.74, 90);
+    const r = place(H, rx * 0.56, -ry * 0.74, 90);
+    ctx.beginPath();
+    ctx.moveTo(l.x - rx * 0.4, l.y + 6);
+    ctx.quadraticCurveTo((l.x + r.x) / 2, l.y - ry * 0.16, r.x + rx * 0.4, r.y + 6);
+    stroke(ctx, pal.accent, 22);
+    stroke(ctx, withAlpha(pal.line, 0.4), 5);
+    for (const g of [l, r]) {
+      if (g.fx < 0.12) continue;
+      ctx.beginPath();
+      ctx.ellipse(g.x, g.y, rx * 0.24 * lerp(0.35, 1, g.fx), ry * 0.2, 0, 0, TAU);
+      ctx.fillStyle = withAlpha(pal.visorLight, 0.6);
+      ctx.fill();
+      stroke(ctx, pal.line, 5);
+    }
   }
 }
 
@@ -811,7 +669,7 @@ function drawEffects(ctx, H, pal, rig, clock) {
   if (rig.expression.anger > 0.02) {
     ctx.save();
     ctx.globalAlpha = rig.expression.anger;
-    const ax = x + rx * 0.66, ay = y - ry * 0.72, s = 26;
+    const ax = x + rx * 0.62, ay = y - ry * 0.7, s = 26;
     for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
       ctx.beginPath();
       ctx.moveTo(ax, ay);
@@ -828,13 +686,13 @@ function drawEffects(ctx, H, pal, rig, clock) {
     ctx.save();
     ctx.globalAlpha = rig.expression.sweat;
     const drop = (clock * 0.6) % 1;
-    const sx = x - rx * 0.8, sy = y - ry * 0.58 + drop * 64;
+    const sx = x - rx * 0.82, sy = y - ry * 0.5 + drop * 64;
     ctx.beginPath();
     ctx.moveTo(sx, sy - 22);
     ctx.bezierCurveTo(sx + 16, sy - 2, sx + 14, sy + 18, sx, sy + 18);
     ctx.bezierCurveTo(sx - 14, sy + 18, sx - 16, sy - 2, sx, sy - 22);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(150,205,255,0.9)';
+    ctx.fillStyle = 'rgba(150,205,255,0.92)';
     ctx.fill();
     stroke(ctx, 'rgba(90,150,210,0.9)', 3);
     ctx.restore();
@@ -845,25 +703,28 @@ function drawEffects(ctx, H, pal, rig, clock) {
     ctx.globalAlpha = rig.expression.shock * 0.85;
     for (let i = 0; i < 5; i++) {
       const a = -Math.PI / 2 + (i - 2) * 0.36;
-      const r0 = ry * 1.3, r1 = r0 + 40 + Math.sin(clock * 9 + i) * 8;
+      const r0 = ry * 1.24, r1 = r0 + 40 + Math.sin(clock * 9 + i) * 8;
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0 * 0.9);
       ctx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1 * 0.9);
-      stroke(ctx, pal.outfitAccent, 7);
+      stroke(ctx, pal.scarf, 7);
     }
     ctx.restore();
   }
-}
 
-function drawStar(ctx, x, y, r, color) {
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * TAU - Math.PI / 2;
-    const rad = i % 2 === 0 ? r : r * 0.36;
-    const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  if (rig.expression.blush > 0.02) {
+    // No skin to blush, so it lands as a warm flush on the faceplate.
+    ctx.save();
+    ctx.globalAlpha = rig.expression.blush * 0.5;
+    for (const side of [-1, 1]) {
+      const p = place(H, side * rx * 0.6, ry * 0.16, DEPTH.visor);
+      if (p.fx < 0.15) continue;
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, rx * 0.26);
+      g.addColorStop(0, 'rgba(255,120,130,0.95)');
+      g.addColorStop(1, 'rgba(255,120,130,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(p.x - rx * 0.3, p.y - ry * 0.2, rx * 0.6, ry * 0.4);
+    }
+    ctx.restore();
   }
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
 }

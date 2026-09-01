@@ -3,7 +3,7 @@
  * draws every part from code, so it works the moment the page loads and is
  * recoloured live from the character settings.
  */
-import { drawCharacter } from './character.js';
+import { Character } from './character.js';
 import { readPalette } from './palette.js';
 import * as store from '../../core/store.js';
 
@@ -18,6 +18,7 @@ export class Procedural2D {
     this.canvas.className = 'avatar-canvas';
     this.ctx = this.canvas.getContext('2d');
     this.clock = 0;
+    this.character = new Character();
     this.palette = readPalette();
     this.unsubscribe = store.subscribe((key) => {
       if (key.startsWith('char.')) this.palette = readPalette();
@@ -54,7 +55,7 @@ export class Procedural2D {
 
     ctx.setTransform(scale, 0, 0, scale, ox, oy);
     ctx.imageSmoothingEnabled = true;
-    drawCharacter(ctx, rig, this.palette, this.clock);
+    this.character.draw(ctx, rig, this.palette, dt, this.clock);
   }
 
   dispose() {

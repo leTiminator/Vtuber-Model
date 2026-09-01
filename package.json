@@ -12,9 +12,7 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.22",
-    "@pixiv/three-vrm": "^3.4.4",
-    "three": "^0.180.0"
+    "@mediapipe/tasks-vision": "^0.10.22"
   },
   "devDependencies": {
     "playwright": "^1.56.1",

@@ -1,6 +1,6 @@
 // Dev-only: renders the built-in character at a grid of fixed poses so the
 // drawing code can be eyeballed without a webcam. Not part of the app bundle.
-import { drawCharacter } from '../../src/avatars/procedural2d/character.js';
+import { Character } from '../../src/avatars/procedural2d/character.js';
 import { readPalette } from '../../src/avatars/procedural2d/palette.js';
 import { emptyRig } from '../../src/tracking/rig.js';
 import * as store from '../../src/core/store.js';
@@ -49,7 +49,13 @@ for (const [name, over] of poses) {
   const rig = merge(emptyRig(), over);
   rig.body.breath = 0.5;
   ctx.setTransform(0.6, 0, 0, 0.6, 0, 0);
-  drawCharacter(ctx, rig, pal, 1.2);
+  // Let the scarf physics settle, then draw the final frame.
+  const character = new Character();
+  for (let i = 0; i < 150; i++) character.draw(ctx, rig, pal, 1 / 60, i / 60);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(0.6, 0, 0, 0.6, 0, 0);
+  character.draw(ctx, rig, pal, 1 / 60, 2.5);
   const cap = document.createElement('figcaption');
   cap.textContent = name;
   fig.append(canvas, cap);
