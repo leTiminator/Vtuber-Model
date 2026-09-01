@@ -103,7 +103,8 @@ export function buildPanel(root, ctx) {
       title: 'Your own artwork',
       controls: [
         { type: 'select', key: 'stage.avatar', label: 'Model', options: [
-          ['warp2d', 'My artwork (rigged)'],
+          ['parts2d', 'My artwork (cut into parts)'],
+          ['warp2d', 'My artwork (whole-image warp)'],
           ['layered2d', 'My PNG layers'],
         ] },
         { type: 'artwork' },

@@ -9,6 +9,7 @@ import { MicLevel } from './tracking/audio.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Layered2D } from './avatars/layered2d/index.js';
 import { Warp2D } from './avatars/warp2d/index.js';
+import { Parts2D } from './avatars/parts/index.js';
 import { RigEditor } from './avatars/warp2d/editor.js';
 import * as artwork from './avatars/warp2d/artwork.js';
 import { buildPanel } from './ui/panel.js';
@@ -39,6 +40,7 @@ const rig = new Rig();
 const avatars = {
   layered2d: new Layered2D(),
   warp2d: new Warp2D(),
+  parts2d: new Parts2D(),
 };
 let current = null;
 const rigEditor = new RigEditor();
@@ -253,15 +255,17 @@ artwork.recall().then(async (saved) => {
   if (saved) {
     // Restoring a save: keep whatever markers the user already adjusted.
     avatars.warp2d.setImage(saved.image, false);
+    avatars.parts2d.setImage(saved.image, false);
   } else {
     try {
       const image = await artwork.loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
       avatars.warp2d.setImage(image, true);
+      avatars.parts2d.setImage(image, false);
     } catch (err) {
       console.warn('bundled artwork could not be loaded', err);
     }
   }
-  if (store.get('stage.avatar') === 'warp2d') mountAvatar('warp2d');
+  mountAvatar(store.get('stage.avatar'));
 });
 
 // Dev-only handle, so the test suite can render a chosen pose and read the
