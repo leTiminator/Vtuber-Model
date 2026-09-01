@@ -401,7 +401,35 @@ export class Parts2D {
     );
     const neck = compose(hips, rotateAbout(roll, m.pivotX, m.pivotY, this.aspect));
 
-    return { root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck };
+    /* Arms hang off the hips rather than the neck: lifting a hand should not
+     * inherit the head's tilt, and a shoulder that followed the head would
+     * shear the sleeve every time you looked sideways.
+     *
+     * Sides cross over, and they have to. After mirroring, `rig.arms.left` is
+     * the character's own left arm — and a character facing you wears its left
+     * on your right. Wiring left to left puts the wrong hand in the air.
+     */
+    const armAt = (name, side) => {
+      const part = this.parts.find((p) => p.name === name);
+      if (!part?.pivot) return hips;
+      const a = rig.arms[side];
+      // A hand going from keyboard to shoulder height is most of a right
+      // angle. Passing that straight through would swing the drawn arm out of
+      // the composition, so it is scaled to a readable fraction of itself.
+      const swing = clamp(a.upper * 0.45 + a.raise * 0.10, -1.2, 1.2);
+      const lift = clamp(a.raise, -0.8, 1.6) * 0.035;
+      return compose(
+        hips,
+        translate(IDENTITY, 0, -lift),
+        rotateAbout(swing, part.pivot[0], part.pivot[1], this.aspect),
+      );
+    };
+
+    return {
+      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck,
+      shoulderLeft: armAt('armLeft', 'right'),
+      shoulderRight: armAt('armRight', 'left'),
+    };
   }
 
   /**

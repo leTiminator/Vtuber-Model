@@ -6,6 +6,9 @@ dist/
 public/mediapipe/
 public/models/
 
+# Rendered by the dev scripts in scripts/visual/ for eyeballing a change.
+# Regenerate with `npm run parts`, `npm run puppet`, `npm run arms`, etc.
+/*.png
 
 *.log
 .DS_Store
