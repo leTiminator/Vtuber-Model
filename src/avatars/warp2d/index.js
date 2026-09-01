@@ -14,6 +14,7 @@
  */
 import { clamp, damp, lerp, makeSpring, spring } from '../../core/math.js';
 import * as store from '../../core/store.js';
+import { computeFrame } from '../../core/framing.js';
 import { CHAIN_SAMPLES, FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
 import { ChainField, HeadInertia } from './cloth.js';
 import { buildMasks, detectMarkers, readPixels, sampleLidColours } from './segment.js';
@@ -302,17 +303,10 @@ export class Warp2D {
     const head = rig.head;
 
     // --- framing ---------------------------------------------------------
-    const zoom = store.get('stage.zoom');
-    const canvasAspect = this.canvas.width / this.canvas.height;
-    let sx = zoom;
-    let sy = zoom;
-    if (this.aspect > canvasAspect) sy = (zoom * canvasAspect) / this.aspect;
-    else sx = (zoom * this.aspect) / canvasAspect;
-    const ox = (1 - sx) / 2 + (store.get('stage.offsetX') * this.dpr) / this.canvas.width;
-    const oy = (1 - sy) / 2 + (store.get('stage.offsetY') * this.dpr) / this.canvas.height;
-
-    gl.uniform2f(L.u_viewScale, sx, sy);
-    gl.uniform2f(L.u_viewOffset, ox, oy);
+    const frame = computeFrame(this.aspect, this.canvas.width, this.canvas.height,
+      store.get('stage.zoom'), store.get('stage.offsetX'), store.get('stage.offsetY'));
+    gl.uniform2f(L.u_viewScale, frame.sx, frame.sy);
+    gl.uniform2f(L.u_viewOffset, frame.ox, frame.oy);
     gl.uniform1f(L.u_aspect, this.aspect);
     gl.uniform2f(L.u_headCenter, m.headX, m.headY);
     gl.uniform2f(L.u_pivot, m.pivotX, m.pivotY);

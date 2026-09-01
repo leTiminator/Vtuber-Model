@@ -448,3 +448,16 @@ input[type="color"] {
   white-space: nowrap;
   cursor: pointer;
 }
+
+/* The stage is directly draggable, so say so. */
+#stage { cursor: grab; touch-action: none; }
+#stage.stage--grabbing { cursor: grabbing; }
+body.framing-locked #stage { cursor: default; }
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn-row .btn { flex: 1 1 auto; }

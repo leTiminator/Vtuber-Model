@@ -93,9 +93,13 @@ export function buildPanel(root, ctx) {
         ] },
         { type: 'color', key: 'stage.chroma', label: 'Chroma colour' },
         { type: 'color', key: 'stage.color', label: 'Solid colour' },
-        { type: 'slider', key: 'stage.zoom', label: 'Zoom', min: 0.4, max: 2.5, step: 0.01, format: x },
-        { type: 'slider', key: 'stage.offsetX', label: 'Nudge across', min: -400, max: 400, step: 1, format: (v) => `${v | 0} px` },
-        { type: 'slider', key: 'stage.offsetY', label: 'Nudge up/down', min: -400, max: 400, step: 1, format: (v) => `${v | 0} px` },
+        { type: 'framingHelp' },
+        { type: 'fit' },
+        { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
+        { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
+          hint: 'Stops a stray scroll or drag moving the shot mid-stream.' },
         { type: 'obsHelp' },
       ],
     },
@@ -113,6 +117,9 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'warp.turn', label: 'Turn left/right', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.nod', label: 'Nod up/down', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.parallax', label: 'Face depth', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.mirrorTurn', label: 'Mirror turn', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'Flips the head to face the other way as you turn past the threshold.' },
+        { type: 'slider', key: 'parts.mirrorStart', label: 'Mirror threshold', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },
@@ -358,6 +365,34 @@ const BUILDERS = {
     const node = el('h4', 'group__heading');
     node.textContent = spec.label;
     return node;
+  },
+
+  framingHelp() {
+    const note = el('p', 'note');
+    note.innerHTML =
+      '<strong>Drag the character</strong> to move it and <strong>scroll</strong> to resize, ' +
+      'right on the stage. Zoom follows your pointer, so you magnify what you are aiming at. ' +
+      'The sliders below do the same thing if you want exact numbers.';
+    return note;
+  },
+
+  fit(_spec, ctx) {
+    const field = el('div', 'field');
+    const row = el('div', 'btn-row');
+    for (const [mode, label] of [['whole', 'Fit whole'], ['head', 'Head & shoulders'], ['reset', 'Reset']]) {
+      const button = el('button', 'btn', label);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        if (mode === 'reset') {
+          store.patch({ 'stage.zoom': 0.86, 'stage.offsetX': 0, 'stage.offsetY': 0 });
+        } else {
+          ctx.fitFraming?.(mode);
+        }
+      });
+      row.append(button);
+    }
+    field.append(row);
+    return field;
   },
 
   obsHelp() {

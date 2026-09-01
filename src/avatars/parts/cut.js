@@ -179,6 +179,41 @@ function labelPixels(src, m, w, h) {
     out[i] = LABEL.body;
   }
 
+  // --- between passes: drop specks --------------------------------------
+  // A few stray pixels can land on the wrong label — a highlight the colour of
+  // the scarf, say — and once dilated they read as debris floating beside the
+  // character. Unlabelling anything too small to be a real piece lets pass 2
+  // hand it to whichever neighbour actually surrounds it.
+  {
+    // Deliberately tiny. A speck is a handful of pixels; anything larger is
+    // real art, and unlabelling it shifts which part owns those pixels — which
+    // changes which dilated margins cover them and quietly corrupts the rest
+    // pose. Measured: a threshold of 139px took reassembly from 0.03% to 6.3%.
+    const MIN_AREA = 48;
+    const seen = new Uint8Array(n);
+    const stack = [];
+    const region = [];
+    for (let start = 0; start < n; start++) {
+      if (seen[start] || out[start] === LABEL.none) continue;
+      const id = out[start];
+      region.length = 0;
+      seen[start] = 1;
+      stack.push(start);
+      while (stack.length) {
+        const i = stack.pop();
+        region.push(i);
+        const x = i % w;
+        const y = (i - x) / w;
+        const visit = (j) => { if (!seen[j] && out[j] === id) { seen[j] = 1; stack.push(j); } };
+        if (x > 0) visit(i - 1);
+        if (x < w - 1) visit(i + 1);
+        if (y > 0) visit(i - w);
+        if (y < h - 1) visit(i + w);
+      }
+      if (region.length < MIN_AREA) for (const i of region) out[i] = LABEL.none;
+    }
+  }
+
   // --- pass 2: grow each part into the line art bounding it -------------
   // Multi-source flood: every labelled pixel seeds at distance zero, and the
   // nearest label claims each unlabelled stroke. An outline therefore goes to

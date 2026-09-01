@@ -5,7 +5,10 @@
  * setting by name alone. Everything the user can tune lives here, which also
  * makes export/import a one-liner.
  */
-const KEY = 'vtuber-model/settings/v1';
+// Bumped when a setting's UNIT changes, not just its value: stage offsets went
+// from pixels to a fraction of the canvas, and silently reinterpreting an old
+// number as the new unit would fling the character off screen.
+const KEY = 'vtuber-model/settings/v2';
 
 export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
@@ -53,8 +56,11 @@ export const DEFAULTS = {
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
   'stage.zoom': 0.86,
+  // Fractions of the canvas's shorter side, so framing survives a resize and
+  // matches between this window and OBS at any resolution.
   'stage.offsetX': 0,
   'stage.offsetY': 0,
+  'stage.lockFraming': false,
   'stage.showPreview': true,
 
   // --- rigged artwork (warp2d) -----------------------------------------
@@ -70,6 +76,10 @@ export const DEFAULTS = {
   'warp.eyeR': '[0.52,0.27,0.59,0.32]',
   'warp.eyeAngle': 0, // radians; drawings rarely have level eyes
   'warp.eyesEnabled': true,
+  // Turning a 3/4 character by mirroring its head is closer to the truth than
+  // warping toward a view the drawing does not contain.
+  'parts.mirrorTurn': 1.0,
+  'parts.mirrorStart': 0.14, // radians of yaw before the mirror starts blending
 
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,

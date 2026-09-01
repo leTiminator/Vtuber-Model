@@ -13,6 +13,7 @@
  */
 import { clamp, damp, lerp, makeSpring, spring } from '../../core/math.js';
 import * as store from '../../core/store.js';
+import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
 import { cutParts } from './cut.js';
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
@@ -25,7 +26,7 @@ const UNIFORMS = [
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle', 'u_lidL', 'u_lidR',
   'u_blink', 'u_squint', 'u_glow', 'u_glowPulse',
-  'u_spineMode', 'u_spine',
+  'u_spineMode', 'u_spine', 'u_flipU',
 ];
 
 const SPINE_NODES = 16;
@@ -88,7 +89,7 @@ export class Parts2D {
     this.attr = {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
-      sd: gl.getAttribLocation(program, 'a_sd'),
+      bind: gl.getAttribLocation(program, 'a_bind'),
     };
 
     gl.enable(gl.BLEND);
@@ -180,7 +181,7 @@ export class Parts2D {
     const n = part.name === 'head' ? HEAD_GRID : skinned ? CLOTH_GRID : 1;
     const pos = [];
     const uv = [];
-    const sd = [];
+    const bindData = [];
     const idx = [];
     for (let row = 0; row <= n; row++) {
       for (let col = 0; col <= n; col++) {
@@ -191,8 +192,8 @@ export class Parts2D {
         const py = (part.y + t * part.h) / height;
         pos.push(px, py);
         uv.push(s, t);
-        // Bind to the centreline: how far along it, and how far off it.
-        sd.push(...(skinned ? projectToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0]));
+        // Bind into the centreline's local frame at the nearest point.
+        bindData.push(...(skinned ? bindToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0, 0]));
       }
     }
     for (let row = 0; row < n; row++) {
@@ -206,11 +207,22 @@ export class Parts2D {
     gl.bindVertexArray(vao);
     bind(gl, this.attr.pos, new Float32Array(pos), 2);
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
-    bind(gl, this.attr.sd, new Float32Array(sd), 2);
+    bind(gl, this.attr.bind, new Float32Array(bindData), 3);
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
+
+    // The cylinder clamps anything beyond its radius, which silently distorts
+    // a part that reaches further out than the head does. Size the radius to
+    // whatever this part actually spans, never smaller than the head's own.
+    let reachX = 0;
+    let reachY = 0;
+    for (let k = 0; k < pos.length; k += 2) {
+      reachX = Math.max(reachX, Math.abs((pos[k] - m.headX) * this.aspect));
+      reachY = Math.max(reachY, Math.abs(pos[k + 1] - m.headY));
+    }
+    const cylR = Math.max(m.headR * 1.85, reachX / 0.98, reachY / 0.803);
 
     // Eye sockets, converted from image UV into this part's texture space.
     const socket = (rect) => [
@@ -222,7 +234,7 @@ export class Parts2D {
 
     return {
       ...part,
-      texture, vao, indexCount: idx.length, skinned,
+      texture, vao, indexCount: idx.length, skinned, cylR,
       eyeL: socket(m.eyeL),
       eyeR: socket(m.eyeR),
     };
@@ -254,16 +266,10 @@ export class Parts2D {
     gl.useProgram(this.program);
 
     // --- framing ---------------------------------------------------------
-    const zoom = store.get('stage.zoom');
-    const canvasAspect = this.canvas.width / this.canvas.height;
-    let sx = zoom;
-    let sy = zoom;
-    if (this.aspect > canvasAspect) sy = (zoom * canvasAspect) / this.aspect;
-    else sx = (zoom * this.aspect) / canvasAspect;
-    gl.uniform2f(L.u_viewScale, sx, sy);
-    gl.uniform2f(L.u_viewOffset,
-      (1 - sx) / 2 + (store.get('stage.offsetX') * this.dpr) / this.canvas.width,
-      (1 - sy) / 2 + (store.get('stage.offsetY') * this.dpr) / this.canvas.height);
+    const frame = computeFrame(this.aspect, this.canvas.width, this.canvas.height,
+      store.get('stage.zoom'), store.get('stage.offsetX'), store.get('stage.offsetY'));
+    gl.uniform2f(L.u_viewScale, frame.sx, frame.sy);
+    gl.uniform2f(L.u_viewOffset, frame.ox, frame.oy);
     gl.uniform1f(L.u_aspect, this.aspect);
 
     // --- head angles, with overshoot -------------------------------------
@@ -307,6 +313,14 @@ export class Parts2D {
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
     this.glowPulse = damp(this.glowPulse, 0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare, 9, dt);
 
+    // How far into the mirrored view this yaw has taken us. Nothing happens
+    // until the turn is committed enough that a flip reads as rotation rather
+    // than as the face suddenly changing.
+    const start = store.get('parts.mirrorStart');
+    const mirror = clamp((Math.abs(yaw) - start) / 0.30, 0, 1)
+      * store.get('parts.mirrorTurn')
+      * (yaw < 0 ? 1 : 0); // the art already faces one way; only flip the other
+
     // --- draw, back to front ---------------------------------------------
     for (const part of this.parts) {
       gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
@@ -314,11 +328,14 @@ export class Parts2D {
       gl.uniform1f(L.u_spineMode, part.skinned ? 1 : 0);
       if (part.skinned) gl.uniform2fv(L.u_spine, this.bones);
 
+      // Tufts and the neck wrap are attached to the shell, so they have to
+      // take the same bend as it; only the head itself ever mirrors.
       const isHead = part.name === 'head';
-      gl.uniform1f(L.u_warp, isHead ? 1 : 0);
-      if (isHead) {
+      const bends = isHead || part.name === 'tufts' || part.name === 'wrap';
+      gl.uniform1f(L.u_warp, bends ? 1 : 0);
+      if (bends) {
         gl.uniform2f(L.u_headCenter, m.headX, m.headY);
-        gl.uniform1f(L.u_cylR, m.headR * 1.85);
+        gl.uniform1f(L.u_cylR, part.cylR);
         gl.uniform1f(L.u_yaw, yaw);
         gl.uniform1f(L.u_pitch, pitch);
       }
@@ -339,13 +356,28 @@ export class Parts2D {
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
 
-      gl.uniform1f(L.u_opacity, 1);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, part.texture);
       gl.uniform1i(L.u_tex, 0);
-
       gl.bindVertexArray(part.vao);
-      gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      // Turning past a threshold cross-fades the head into its mirror image.
+      // For a character drawn at three-quarters, the mirror IS the opposite
+      // three-quarter view — far closer to the truth than warping toward a view
+      // the drawing does not contain. Both copies are drawn during the blend,
+      // because a straight swap pops.
+      if (isHead && mirror > 0.001) {
+        gl.uniform1f(L.u_flipU, 0);
+        gl.uniform1f(L.u_opacity, 1 - mirror);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.uniform1f(L.u_flipU, 1);
+        gl.uniform1f(L.u_opacity, mirror);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+      } else {
+        gl.uniform1f(L.u_flipU, 0);
+        gl.uniform1f(L.u_opacity, 1);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
     }
     gl.bindVertexArray(null);
   }
@@ -370,6 +402,24 @@ export class Parts2D {
     const neck = compose(hips, rotateAbout(roll, m.pivotX, m.pivotY, this.aspect));
 
     return { root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck };
+  }
+
+  /**
+   * The artwork's own extent in UV, ignoring the dilated margins — those are
+   * padding, and framing to them would leave a border of nothing.
+   */
+  contentBox() {
+    if (!this.parts.length || !this.imageSize) return { x0: 0, y0: 0, x1: 1, y1: 1 };
+    const { width, height } = this.imageSize;
+    let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+    for (const part of this.parts) {
+      const inset = part.inset ?? 0;
+      x0 = Math.min(x0, (part.x + inset) / width);
+      y0 = Math.min(y0, (part.y + inset) / height);
+      x1 = Math.max(x1, (part.x + part.w - inset) / width);
+      y1 = Math.max(y1, (part.y + part.h - inset) / height);
+    }
+    return { x0: clamp(x0, 0, 1), y0: clamp(y0, 0, 1), x1: clamp(x1, 0, 1), y1: clamp(y1, 0, 1) };
   }
 
   dispose() {
@@ -489,35 +539,54 @@ function findSpine(part, image, width, height, m) {
 }
 
 /**
- * Where a point sits relative to the centreline: how far along it, and how far
- * off to one side. Storing this once lets the shader rebuild the point from
- * wherever the bones have moved to.
+ * The frame of the centreline at a given distance along it: a point, and the
+ * tangent and normal there. Must match the shader's `fromSpine` exactly — the
+ * bind is only reversible if both sides agree on the frame.
  */
-function projectToSpine(px, py, nodes, aspect) {
-  const a = aspect || 1;
-  let bestDist = Infinity;
-  let bestSeg = 0;
-  let bestT = 0;
+function spineFrame(nodes, s, aspect) {
+  const skew = aspect || 1;
+  const f = clamp(s, 0, 1) * (nodes.length - 1);
+  const i = Math.min(Math.floor(f), nodes.length - 1);
+  const j = Math.min(i + 1, nodes.length - 1);
+  const t = f - i;
 
+  const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  const here = lerp2(nodes[i], nodes[j], t);
+  const prev = lerp2(nodes[Math.max(i - 1, 0)], nodes[i], t);
+  const next = lerp2(nodes[j], nodes[Math.min(j + 1, nodes.length - 1)], t);
+
+  let tx = (next[0] - prev[0]) * skew + 1e-6;
+  let ty = next[1] - prev[1];
+  const len = Math.hypot(tx, ty) || 1e-9;
+  tx /= len; ty /= len;
+  return { hx: here[0], hy: here[1], tx, ty, nx: -ty, ny: tx };
+}
+
+/**
+ * Bind a point into the spine's local frame: how far along, and its offset
+ * split into the normal and tangent directions there.
+ *
+ * Keeping both components is what makes the bind exact. Storing only the
+ * perpendicular distance discards everything along the spine, so the point
+ * cannot be put back where it came from.
+ */
+function bindToSpine(px, py, nodes, aspect) {
+  const skew = aspect || 1;
+  // Nearest point on the polyline, in aspect-corrected space.
+  let bestDist = Infinity;
+  let bestS = 0;
   for (let i = 0; i < nodes.length - 1; i++) {
-    const ax = nodes[i][0] * a, ay = nodes[i][1];
-    const bx = nodes[i + 1][0] * a, by = nodes[i + 1][1];
+    const ax = nodes[i][0] * skew, ay = nodes[i][1];
+    const bx = nodes[i + 1][0] * skew, by = nodes[i + 1][1];
     const dx = bx - ax, dy = by - ay;
     const len2 = dx * dx + dy * dy || 1e-9;
-    const t = clamp(((px * a - ax) * dx + (py - ay) * dy) / len2, 0, 1);
-    const cx = ax + dx * t, cy = ay + dy * t;
-    const d = (px * a - cx) ** 2 + (py - cy) ** 2;
-    if (d < bestDist) { bestDist = d; bestSeg = i; bestT = t; }
+    const t = clamp(((px * skew - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+    const d = (px * skew - (ax + dx * t)) ** 2 + (py - (ay + dy * t)) ** 2;
+    if (d < bestDist) { bestDist = d; bestS = (i + t) / (nodes.length - 1); }
   }
 
-  const ax = nodes[bestSeg][0] * a, ay = nodes[bestSeg][1];
-  const bx = nodes[bestSeg + 1][0] * a, by = nodes[bestSeg + 1][1];
-  let dx = bx - ax, dy = by - ay;
-  const len = Math.hypot(dx, dy) || 1e-9;
-  dx /= len; dy /= len;
-  const cx = ax + dx * len * bestT, cy = ay + dy * len * bestT;
-  // Signed: which side of the line the point is on, via the 2D cross product.
-  const offset = (px * a - cx) * -dy + (py - cy) * dx;
-
-  return [(bestSeg + bestT) / (nodes.length - 1), offset];
+  const frame = spineFrame(nodes, bestS, skew);
+  const ox = px * skew - frame.hx * skew;
+  const oy = py - frame.hy;
+  return [bestS, ox * frame.nx + oy * frame.ny, ox * frame.tx + oy * frame.ty];
 }

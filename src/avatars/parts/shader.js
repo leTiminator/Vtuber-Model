@@ -15,7 +15,7 @@ precision highp float;
 
 in vec2 a_pos;   // image space, 0..1 across the whole artwork
 in vec2 a_uv;    // into this part's own texture
-in vec2 a_sd;    // cloth only: distance along the spine, and offset from it
+in vec3 a_bind;  // cloth only: where along the spine, and where in its local frame
 
 uniform mat3 u_model;      // this part's joint transform, in image space
 uniform float u_aspect;    // image width / height
@@ -38,28 +38,34 @@ uniform vec2 u_viewOffset;
 out vec2 v_uv;
 
 /**
- * Rebuild a point from its position along the spine and its offset from it.
- * Walking the deformed spine and stepping sideways along the local normal is
- * what turns a moving chain of bones back into a sheet of cloth.
+ * Rebuild a point from where it was bound to the spine.
+ *
+ * Both components of the local frame are kept, not just the sideways one.
+ * Storing only the perpendicular offset throws the along-the-spine component
+ * away, so a point does not land back where it started and the cloth sits
+ * subtly wrong even at rest. With both, the bind is exact and the frame simply
+ * rotates as the bones move.
+ *
+ * The JS side computes this frame with identical maths at build time; if the
+ * two ever drift apart, the rest pose stops reassembling.
  */
-vec2 fromSpine(vec2 sd, float aspect) {
-  float f = clamp(sd.x, 0.0, 1.0) * 15.0;
+vec2 fromSpine(vec3 bind, float aspect) {
+  vec2 skew = vec2(aspect, 1.0);
+  float f = clamp(bind.x, 0.0, 1.0) * 15.0;
   int i = int(floor(f));
   int j = min(i + 1, 15);
   float t = fract(f);
 
-  vec2 a = u_spine[i];
-  vec2 b = u_spine[j];
-  vec2 here = mix(a, b, t);
+  vec2 here = mix(u_spine[i], u_spine[j], t);
 
-  // Tangent from the neighbouring bones, so the normal turns smoothly along
-  // the ribbon rather than kinking at every joint.
-  vec2 prev = u_spine[max(i - 1, 0)];
-  vec2 next = u_spine[min(j + 1, 15)];
-  vec2 tangent = normalize((mix(b, next, t) - mix(prev, a, t)) * vec2(aspect, 1.0) + 1e-6);
+  // Tangent from the neighbouring bones, so the frame turns smoothly along the
+  // ribbon rather than kinking at every joint.
+  vec2 prev = mix(u_spine[max(i - 1, 0)], u_spine[i], t);
+  vec2 next = mix(u_spine[j], u_spine[min(j + 1, 15)], t);
+  vec2 tangent = normalize((next - prev) * skew + vec2(1e-6, 0.0));
   vec2 normal = vec2(-tangent.y, tangent.x);
 
-  return here + normal * sd.y / vec2(aspect, 1.0);
+  return here + (normal * bind.y + tangent * bind.z) / skew;
 }
 
 /**
@@ -72,7 +78,7 @@ float cylinder(float x, float R, float angle) {
 }
 
 void main() {
-  vec2 p = u_spineMode > 0.5 ? fromSpine(a_sd, u_aspect) : a_pos;
+  vec2 p = u_spineMode > 0.5 ? fromSpine(a_bind, u_aspect) : a_pos;
 
   if (u_warp > 0.5) {
     vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);
@@ -97,6 +103,7 @@ out vec4 fragColor;
 
 uniform sampler2D u_tex;
 uniform float u_opacity;
+uniform float u_flipU;   // mirror the head to face the other way
 
 // Eye lids, applied only to the part that carries the eyes.
 uniform float u_eyesEnabled;
@@ -134,7 +141,8 @@ vec4 lidded(vec2 uv, vec4 e, vec3 lid, float blink, float squint, vec4 base) {
 }
 
 void main() {
-  vec4 c = texture(u_tex, v_uv);
+  vec2 uv = u_flipU > 0.5 ? vec2(1.0 - v_uv.x, v_uv.y) : v_uv;
+  vec4 c = texture(u_tex, uv);
 
   if (u_eyesEnabled > 0.5) {
     c = lidded(v_uv, u_eyeL, u_lidL, u_blink.x, u_squint.x, c);

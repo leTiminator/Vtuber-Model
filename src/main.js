@@ -4,6 +4,7 @@
  */
 import './styles.css';
 import * as store from './core/store.js';
+import { ZOOM_MAX, ZOOM_MIN, fitTo, zoomAbout } from './core/framing.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { Rig, emptyRig } from './tracking/rig.js';
@@ -155,6 +156,7 @@ buildPanel(dom.panelBody, {
     if (tracker.running) await startCamera();
   },
   loadLayers: (files) => avatars.layered2d.loadFiles(files),
+  fitFraming,
   loadArtwork: async (file) => {
     const { image, dataURL } = await artwork.readFile(file);
     mountAvatar('warp2d');
@@ -241,6 +243,90 @@ store.subscribe((key) => {
   if (key === 'stage.showPreview' || key === 'camera.mirror') applyPreview();
   if (key === 'mouth.source') applyMicSource();
 });
+
+/* ---------------------------------------------------------------- framing */
+
+/**
+ * Drag the character around and scroll to zoom, right on the stage.
+ *
+ * Sliders alone are not control — composing a shot means pushing the model
+ * where you want it and watching it land. Zoom anchors on the pointer, so you
+ * magnify what you are aiming at rather than chasing it away from the centre.
+ */
+function installFraming() {
+  const stage = dom.stage;
+  const artAspect = () => current?.aspect ?? 1;
+  const size = () => [current?.canvas?.width ?? 1, current?.canvas?.height ?? 1];
+  const locked = () => store.get('stage.lockFraming');
+
+  let dragging = null;
+
+  stage.addEventListener('pointerdown', (event) => {
+    if (locked() || event.button !== 0) return;
+    dragging = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    stage.setPointerCapture(event.pointerId);
+    stage.classList.add('stage--grabbing');
+  });
+
+  stage.addEventListener('pointermove', (event) => {
+    if (!dragging || event.pointerId !== dragging.id) return;
+    const box = stage.getBoundingClientRect();
+    // Offsets are a fraction of the shorter side, so convert the drag the same
+    // way rather than assuming square pixels.
+    const minSide = Math.min(box.width, box.height) || 1;
+    store.set('stage.offsetX', store.get('stage.offsetX') + (event.clientX - dragging.x) / minSide);
+    store.set('stage.offsetY', store.get('stage.offsetY') + (event.clientY - dragging.y) / minSide);
+    dragging.x = event.clientX;
+    dragging.y = event.clientY;
+  });
+
+  const endDrag = (event) => {
+    if (!dragging || event.pointerId !== dragging.id) return;
+    stage.releasePointerCapture(dragging.id);
+    dragging = null;
+    stage.classList.remove('stage--grabbing');
+  };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+
+  stage.addEventListener('wheel', (event) => {
+    if (locked()) return;
+    event.preventDefault();
+    const box = stage.getBoundingClientRect();
+    const [w, h] = size();
+    const next = zoomAbout(
+      artAspect(), w, h,
+      { zoom: store.get('stage.zoom'), offX: store.get('stage.offsetX'), offY: store.get('stage.offsetY') },
+      store.get('stage.zoom') * Math.exp(-event.deltaY * 0.0015),
+      (event.clientX - box.left) / (box.width || 1),
+      (event.clientY - box.top) / (box.height || 1),
+    );
+    store.patch({ 'stage.zoom': next.zoom, 'stage.offsetX': next.offX, 'stage.offsetY': next.offY });
+  }, { passive: false });
+}
+installFraming();
+
+/**
+ * Frame on a region of the artwork. `whole` uses everything the artist drew;
+ * otherwise it frames the head from the marker already placed on it.
+ */
+function fitFraming(mode) {
+  const [w, h] = [current?.canvas?.width ?? 1, current?.canvas?.height ?? 1];
+  const aspect = current?.aspect ?? 1;
+
+  let box = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  if (mode === 'head') {
+    const cx = store.get('warp.headX');
+    const cy = store.get('warp.headY');
+    const r = store.get('warp.headR') * 1.9;
+    box = { x0: cx - r / aspect, y0: cy - r, x1: cx + r / aspect, y1: cy + r * 1.5 };
+  } else if (current?.contentBox) {
+    box = current.contentBox();
+  }
+
+  const next = fitTo(aspect, w, h, box, mode === 'head' ? 0.94 : 0.9);
+  store.patch({ 'stage.zoom': next.zoom, 'stage.offsetX': next.offX, 'stage.offsetY': next.offY });
+}
 
 window.addEventListener('resize', resize);
 
