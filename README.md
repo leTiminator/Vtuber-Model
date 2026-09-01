@@ -14,30 +14,55 @@ leaves the browser. There is no server and no account.
 
 ## Setup
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+### 1. Install Node.js
+
+Get the **LTS** installer from [nodejs.org](https://nodejs.org) and run it.
+Accept the defaults. This is the only thing you have to install.
+
+### 2. Get the code
+
+On the repository page, click the green **Code** button → **Download ZIP**, then
+unzip it somewhere you can find again. (Or `git clone` it if you already use git.)
+
+### 3. Start it
+
+- **Windows** — double-click **`start.bat`**
+- **macOS / Linux** — run **`./start.sh`** in a terminal
+
+The first run installs dependencies and downloads the tracking model, about
+30 MB. That takes a few minutes and happens once. After that it starts in
+seconds and your browser opens at `http://127.0.0.1:5173`.
+
+**Leave that terminal window open while you stream.** Closing it stops the model.
+
+<details>
+<summary>Doing it by hand instead</summary>
 
 ```bash
 npm install     # also fetches the tracking model, about 26 MB, once
-npm run dev     # then open the address it prints, usually http://localhost:5173
+npm run dev     # then open the address it prints
 ```
 
-Click **Start camera** and allow camera access when the browser asks.
-
-If the download is blocked or interrupted, re-run it on its own with
+If the model download is blocked or interrupted, re-run it on its own with
 `npm run assets`.
+</details>
 
 ---
 
 ## First run
 
-1. **Start camera.** The first start takes a few seconds while the tracking
-   model loads.
-2. **Sit how you normally stream** — straight on, head level — and press
-   **Set neutral pose** (or `C`). Everything is measured relative to that
-   pose, so this is what stops the model from sitting at a permanent angle.
-3. Open **Head** and turn the gains up until the movement feels right. Most
-   people want more than reality: `1.5×`–`2×` reads much better on stream than
-   `1×`, which looks stiff.
+1. **Start camera**, and allow access when the browser asks. The first start
+   takes a few seconds while the tracking model loads.
+2. **Load your character.** Open **Your own artwork → Load my artwork…** and pick
+   your PNG. It places the markers for you; check them, then hit **Done**. See
+   [Rigging one flat image](#rigging-one-flat-image) for what each marker does.
+   Skip this if you are happy with the built-in ninja.
+3. **Sit how you normally stream** — straight on, head level — and press
+   **Set neutral pose** (or `C`). Everything is measured relative to that pose,
+   so this is what stops the model sitting at a permanent angle.
+4. Open **Head** and turn the gains up until it feels right. Most people want
+   more than reality: `1.5x`–`2x` reads far better on stream than `1x`, which
+   looks stiff.
 
 Redo the neutral pose whenever you move your chair or camera.
 
@@ -45,18 +70,48 @@ Redo the neutral pose whenever you move your chair or camera.
 
 ## Putting it in OBS
 
-1. Leave **Background** on `Transparent` (Output & OBS section).
-2. In OBS, add a **Browser** source.
-3. Set the URL to the address `npm run dev` printed.
-4. Set the size to 1920×1080, then scale the source in your scene.
-5. Press `H` in the browser window to hide the interface.
+There are two ways in. **Read this bit** — the obvious one has a catch.
 
-The page composites over whatever is beneath it, with real transparency — no
-chroma keying needed. If your setup cannot do transparent browser sources,
-switch **Background** to `Chroma key colour` and key out the green in OBS.
+### The reliable way: window capture + chroma key
 
-For a permanent install, `npm run build` writes a static site to `dist/` that
-you can serve from anywhere.
+OBS's built-in browser cannot always get at a webcam, and when it fails it does
+so silently. Capturing a real browser window sidesteps that entirely.
+
+1. In the app, set **Background** to `Chroma key colour` (Output & OBS section).
+2. Put the browser window on your second monitor and press `F11` for fullscreen,
+   then `H` to hide the interface.
+3. In OBS add a **Window Capture** source and pick the browser window.
+4. Right-click the source → **Filters** → add a **Chroma Key** filter, key type
+   Green.
+
+### The clean way: browser source
+
+Real transparency, no keying, but only if OBS's browser will open your camera.
+
+1. Leave **Background** on `Transparent`.
+2. Add a **Browser** source with the URL `http://127.0.0.1:5173`.
+3. Set the size to 1920x1080, then scale the source in your scene.
+4. Untick **Shutdown source when not visible**.
+
+If the model appears but never tracks — no face detected, no fps counter — OBS
+did not get camera permission. Use the window-capture method instead; it is not
+worth fighting.
+
+Either way, keep the terminal window from step 3 of Setup running.
+
+For a permanent install, `npm run build` writes a static site to `dist/` you can
+serve from anywhere.
+
+---
+
+## Hotkeys
+
+| Key | Does |
+| --- | --- |
+| `C` | Set neutral pose — press this after sitting down |
+| `H` | Hide or show the interface |
+| `M` | Mirror the camera |
+| `1`-`5` | Hold for blush / angry / sparkle / nervous / shocked (built-in character) |
 
 ---
 
@@ -77,15 +132,6 @@ settings** writes a JSON file worth keeping once you have it dialled in.
 | It moves the wrong way | Toggle **Mirror me** (`M`) |
 | Speech is unreliable in low light | Set **Speech → Driven by** to `Microphone` |
 | Background noise triggers the mouth | Raise **Mic noise gate** |
-
-### Hotkeys
-
-| Key | Action |
-| --- | --- |
-| `1`–`5` | Hold for blush / angry / sparkle / nervous / shocked |
-| `C` | Set neutral pose |
-| `H` | Hide the interface (use before capturing in OBS) |
-| `M` | Flip mirroring |
 
 ---
 
