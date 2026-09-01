@@ -105,6 +105,54 @@ function overlaps(got, want) {
 
 const fmt = (r) => `[${r.map((n) => n.toFixed(2)).join(', ')}]`;
 
+/**
+ * A layout in the awkward shape of real character art: the head sits low and
+ * off to one side, and flowing cloth above it is wider than the figure. A
+ * detector that measures total opaque width per row picks the cloth; this is
+ * the case that must not regress.
+ */
+const NINJA = {
+  head: [0.68, 0.5, 0.16],
+  eyeL: [0.625, 0.515, 0.675, 0.56],
+  eyeR: [0.7, 0.515, 0.75, 0.56],
+};
+
+function buildNinjaFixture() {
+  const px = Buffer.alloc(W * H * 4);
+  const set = (x, y, r, g, b) => {
+    const i = (y * W + x) * 4;
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+  };
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = x / W;
+      const v = y / H;
+
+      // Ribbons: thin diagonal bands sweeping across the top-left, spanning
+      // far wider than the character underneath them.
+      for (const offset of [0.02, 0.16, 0.3]) {
+        const band = v - (0.06 + offset + u * 0.22);
+        if (u < 0.72 && v < 0.5 && Math.abs(band) < 0.028) set(x, y, 200, 40, 40);
+      }
+
+      // Body below and to the left of the head.
+      if (v > 0.62 && Math.hypot((u - 0.54) / 0.2, (v - 0.82) / 0.2) < 1) set(x, y, 45, 48, 56);
+
+      // Head.
+      const [hx, hy, hr] = NINJA.head;
+      if (Math.hypot((u - hx) * (W / H), v - hy) < hr) set(x, y, 58, 62, 70);
+      // Visor on the lower front of the head.
+      if (Math.hypot((u - hx + 0.03) / 0.11, (v - hy - 0.03) / 0.09) < 1) set(x, y, 130, 142, 165);
+      // Eyes.
+      for (const r of [NINJA.eyeL, NINJA.eyeR]) {
+        if (u > r[0] && u < r[2] && v > r[1] && v < r[3]) set(x, y, 255, 255, 255);
+      }
+    }
+  }
+  return encodePNG(W, H, px);
+}
+
 /* ------------------------------------------------------------------ test */
 
 const server = await createServer({ server: { port: 5191 }, logLevel: 'error' });
@@ -249,6 +297,44 @@ try {
   check('the white key removes an opaque background',
     cutOut.opaque < withBackground.opaque * 0.8,
     `${withBackground.opaque} -> ${cutOut.opaque} opaque px, key was ${keyed}`);
+
+  // --- the awkward-composition case ------------------------------------
+  // The white-key check above left the key switched on, which would cut the
+  // white eyes out of the next fixture.
+  await page.evaluate(() => window.__vtuber.store.set('warp.keyWhite', 0));
+  await page.setInputFiles('input[accept="image/png,image/jpeg,image/webp"]', {
+    name: 'ninja.png',
+    mimeType: 'image/png',
+    buffer: buildNinjaFixture(),
+  });
+  await page.locator('#rig-editor [data-role="done"]').click();
+
+  const ninja = await page.evaluate(() => {
+    const s = window.__vtuber.store;
+    return {
+      headX: s.get('warp.headX'),
+      headY: s.get('warp.headY'),
+      headR: s.get('warp.headR'),
+      eyeL: JSON.parse(s.get('warp.eyeL')),
+      eyeR: JSON.parse(s.get('warp.eyeR')),
+    };
+  });
+
+  check('cloth wider than the figure does not steal the head',
+    ninja.headY > 0.38, `headY ${ninja.headY} (ribbons occupy the top 50%)`);
+  check('the head is found off-centre',
+    Math.abs(ninja.headX - 0.68) < 0.1, `headX ${ninja.headX} want ~0.68`);
+  check('the eyes are found on the visor',
+    overlaps(ninja.eyeL, NINJA.eyeL) && overlaps(ninja.eyeR, NINJA.eyeR),
+    `${fmt(ninja.eyeL)} ${fmt(ninja.eyeR)}`);
+  check('the head is sized from the eye spacing',
+    ninja.headR > 0.06 && ninja.headR < 0.3, `headR ${ninja.headR}`);
+
+  const ninjaNeutral = await shoot({});
+  const ninjaBlink = await shoot({ eyes: { blinkL: 1, blinkR: 1 } });
+  check('blink works on the awkward layout',
+    ninjaBlink.white < ninjaNeutral.white * 0.4,
+    `${ninjaNeutral.white} -> ${ninjaBlink.white} white px`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
