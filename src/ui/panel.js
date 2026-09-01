@@ -358,11 +358,16 @@ const BUILDERS = {
       const file = input.files?.[0];
       if (!file) return;
       try {
-        const saved = await ctx.loadArtwork(file);
+        const { saved, found } = await ctx.loadArtwork(file);
         status.className = 'note';
+        const placed = !found.head
+          ? 'Drag the head, neck and eye markers onto your art.'
+          : found.eyes
+            ? 'Found the head and both eyes — check the markers and adjust anything that looks off.'
+            : 'Found the head; the eye boxes are a guess, so drag them over the real eyes.';
         status.textContent = saved
-          ? 'Loaded. Drag the markers onto your art, then hit Done.'
-          : 'Loaded, but it was too large to remember — you will need to re-pick it next time.';
+          ? placed
+          : `${placed} (Too large to remember, so you will need to re-pick it next time.)`;
       } catch (err) {
         status.className = 'note note--error';
         status.textContent = err.message;

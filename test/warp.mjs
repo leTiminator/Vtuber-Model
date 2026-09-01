@@ -96,6 +96,15 @@ function buildFixture({ opaqueBackground = false } = {}) {
   return encodePNG(W, H, px);
 }
 
+/** Does the detected box cover the middle of the real one? */
+function overlaps(got, want) {
+  const cx = (want[0] + want[2]) / 2;
+  const cy = (want[1] + want[3]) / 2;
+  return got[0] <= cx && got[2] >= cx && got[1] <= cy && got[3] >= cy;
+}
+
+const fmt = (r) => `[${r.map((n) => n.toFixed(2)).join(', ')}]`;
+
 /* ------------------------------------------------------------------ test */
 
 const server = await createServer({ server: { port: 5191 }, logLevel: 'error' });
@@ -165,14 +174,33 @@ try {
     await page.locator('#rig-editor .rig-handle').count() === 4,
     `${await page.locator('#rig-editor .rig-handle').count()} handles`);
 
-  // Point the markers at the fixture's actual eyes before testing the blink.
-  await page.evaluate((eye) => {
+  // The markers should have been placed automatically from the image itself.
+  const guessed = await page.evaluate(() => {
     const s = window.__vtuber.store;
-    s.set('warp.headX', 0.5); s.set('warp.headY', 0.3); s.set('warp.headR', 0.2);
-    s.set('warp.pivotX', 0.5); s.set('warp.pivotY', 0.52);
-    s.set('warp.eyeL', JSON.stringify(eye.l));
-    s.set('warp.eyeR', JSON.stringify(eye.r));
-  }, EYE);
+    return {
+      headX: s.get('warp.headX'),
+      headY: s.get('warp.headY'),
+      headR: s.get('warp.headR'),
+      pivotY: s.get('warp.pivotY'),
+      eyeL: JSON.parse(s.get('warp.eyeL')),
+      eyeR: JSON.parse(s.get('warp.eyeR')),
+    };
+  });
+
+  check('auto markup centres the head horizontally',
+    Math.abs(guessed.headX - 0.5) < 0.06, `headX ${guessed.headX}`);
+  check('auto markup puts the head in the upper half',
+    guessed.headY > 0.15 && guessed.headY < 0.45, `headY ${guessed.headY}`);
+  check('auto markup sizes the head sensibly',
+    guessed.headR > 0.1 && guessed.headR < 0.35, `headR ${guessed.headR}`);
+  check('auto markup finds the neck between head and body',
+    guessed.pivotY > 0.4 && guessed.pivotY < 0.65, `pivotY ${guessed.pivotY}`);
+  check('auto markup finds the left eye',
+    overlaps(guessed.eyeL, EYE.l), `got ${fmt(guessed.eyeL)} want ~${fmt(EYE.l)}`);
+  check('auto markup finds the right eye',
+    overlaps(guessed.eyeR, EYE.r), `got ${fmt(guessed.eyeR)} want ~${fmt(EYE.r)}`);
+  check('auto markup keeps the eyes in the right order',
+    guessed.eyeL[0] < guessed.eyeR[0], 'left box is left of right box');
 
   await page.locator('#rig-editor [data-role="done"]').click();
   check('the editor closes on Done', !(await page.locator('#rig-editor').isVisible()));

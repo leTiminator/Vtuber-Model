@@ -12,6 +12,7 @@ import { Layered2D } from './avatars/layered2d/index.js';
 import { Warp2D } from './avatars/warp2d/index.js';
 import { RigEditor } from './avatars/warp2d/editor.js';
 import * as artwork from './avatars/warp2d/artwork.js';
+import { autoMarkup } from './avatars/warp2d/autoMarkup.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
 
@@ -141,6 +142,34 @@ async function applyMicSource() {
   }
 }
 
+/* --------------------------------------------------------- artwork markup */
+
+/**
+ * Guess the head, neck and eye markers from the artwork itself, so a fresh
+ * image lands somewhere close rather than on four unplaced handles. Returns
+ * what it was confident about; every value stays editable afterwards.
+ */
+function applyAutoMarkup(image) {
+  let guess = null;
+  try {
+    guess = autoMarkup(image);
+  } catch (err) {
+    console.warn('auto markup failed, keeping current markers', err);
+  }
+  if (!guess) return { head: false, eyes: false };
+
+  store.patch({
+    'warp.headX': guess.headX,
+    'warp.headY': guess.headY,
+    'warp.headR': guess.headR,
+    'warp.pivotX': guess.pivotX,
+    'warp.pivotY': guess.pivotY,
+    'warp.eyeL': JSON.stringify(guess.eyeL),
+    'warp.eyeR': JSON.stringify(guess.eyeR),
+  });
+  return { head: true, eyes: guess.confidentEyes };
+}
+
 /* ------------------------------------------------------------------ boot */
 
 const cameraListeners = new Set();
@@ -159,8 +188,9 @@ buildPanel(dom.panelBody, {
     avatars.warp2d.setImage(image);
     store.set('stage.avatar', 'warp2d');
     const saved = artwork.remember(dataURL);
+    const found = applyAutoMarkup(image);
     rigEditor.open(image);
-    return saved;
+    return { saved, found };
   },
   openRigEditor: () => {
     const image = avatars.warp2d.image;
