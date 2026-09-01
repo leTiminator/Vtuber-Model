@@ -6,6 +6,7 @@ import './styles.css';
 import * as store from './core/store.js';
 import { ZOOM_MAX, ZOOM_MIN, fitTo, zoomAbout } from './core/framing.js';
 import { FaceTracker } from './tracking/faceTracker.js';
+import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Layered2D } from './avatars/layered2d/index.js';
@@ -35,6 +36,7 @@ const dom = {
 };
 
 const tracker = new FaceTracker();
+const pose = new PoseTracker();
 const mic = new MicLevel();
 const rig = new Rig();
 
@@ -71,6 +73,8 @@ function frame(now) {
 
   if (mic.active) rig.setMicLevel(mic.sample());
   rig.update(tracker.frame, tracker.hasFace, dt);
+  if (pose.enabled && tracker.running) pose.detect(tracker.video, now);
+  rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   current?.render(rig.state, dt);
 
   if (tracker.running) {
@@ -125,6 +129,24 @@ function applyPreview() {
   }
   if (show) {
     tracker.video.style.transform = store.get('camera.mirror') ? 'scaleX(-1)' : 'none';
+  }
+}
+
+/* ----------------------------------------------------------------- arms */
+
+/**
+ * The pose model is a second 6 MB download and roughly a third of a frame, so
+ * it only loads once the camera is live and arm tracking is actually wanted.
+ */
+async function applyPoseSource() {
+  const wants = store.get('arms.track') && tracker.running;
+  if (wants === pose.enabled) return;
+  try {
+    await pose.setEnabled(wants);
+  } catch (err) {
+    pose.enabled = false;
+    setStatus('Arm tracking could not start — face tracking still works', 'error');
+    console.warn('pose model failed to load', err);
   }
 }
 
@@ -185,6 +207,7 @@ async function startCamera() {
     for (const fn of cameraListeners) fn();
     applyPreview();
     await applyMicSource();
+    await applyPoseSource();
     // A fresh start deserves a fresh neutral pose.
     rig.calibrate();
   } catch {
@@ -242,6 +265,7 @@ store.subscribe((key) => {
   if (key.startsWith('stage.background') || key === 'stage.chroma' || key === 'stage.color') applyBackground();
   if (key === 'stage.showPreview' || key === 'camera.mirror') applyPreview();
   if (key === 'mouth.source') applyMicSource();
+  if (key === 'arms.track') applyPoseSource();
 });
 
 /* ---------------------------------------------------------------- framing */
@@ -357,7 +381,7 @@ artwork.recall().then(async (saved) => {
 // Dev-only handle, so the test suite can render a chosen pose and read the
 // pixels back without going through the camera.
 if (import.meta.env.DEV) {
-  window.__vtuber = { rig, avatars, tracker, store, emptyRig, get current() { return current; } };
+  window.__vtuber = { rig, avatars, tracker, pose, store, emptyRig, get current() { return current; } };
 }
 
 requestAnimationFrame(frame);

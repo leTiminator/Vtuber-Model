@@ -64,8 +64,14 @@ try {
   check('page loads with a stage and a panel',
     await page.locator('#stage').isVisible() && await page.locator('#panel').isVisible());
 
-  const groups = await page.locator('#panel-body .group').count();
-  check('control panel builds every group', groups === 8, `${groups} groups`);
+  // Naming the groups beats counting them: a control that silently dropped out
+  // because its setting was renamed shows up as a missing section, not a number.
+  const wanted = ['Camera & tracking', 'Head', 'Eyes', 'Speech', 'Arms',
+    'Body & scarf', 'Output & OBS', 'Your own artwork', 'Hotkeys'];
+  const groups = await page.locator('#panel-body .group > summary').allTextContents();
+  check('control panel builds every group',
+    wanted.every((title) => groups.includes(title)) && groups.length === wanted.length,
+    groups.join(', '));
 
   check('avatar canvas is mounted', await page.locator('#avatar-host canvas').count() === 1);
 

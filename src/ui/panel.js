@@ -74,6 +74,17 @@ export function buildPanel(root, ctx) {
       ],
     },
     {
+      title: 'Arms',
+      controls: [
+        { type: 'note', text: 'Uses a second tracking model, so it only loads while the camera is on. Turn it off if the frame rate suffers.' },
+        { type: 'toggle', key: 'arms.track', label: 'Track my arms',
+          hint: 'Picks up raising your hands off the keyboard.' },
+        { type: 'slider', key: 'arms.gain', label: 'Arm travel', min: 0, max: 3, step: 0.05, format: x },
+        { type: 'slider', key: 'arms.smooth', label: 'Arm steadiness', min: 0.2, max: 4, step: 0.05, format: x,
+          hint: 'Higher is calmer. Arms move slowly, so they can take more smoothing than the face.' },
+      ],
+    },
+    {
       title: 'Body & scarf',
       controls: [
         { type: 'slider', key: 'body.followGain', label: 'Body follows head', min: 0, max: 2, step: 0.05, format: x },

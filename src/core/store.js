@@ -43,6 +43,11 @@ export const DEFAULTS = {
   'mouth.micGain': 1.8,
   'mouth.micGate': 0.012, // RMS below this counts as silence
 
+  // --- arms -------------------------------------------------------------
+  'arms.track': true, // a second model; costs roughly a third of a frame
+  'arms.gain': 1.0,
+  'arms.smooth': 1.0,
+
   // --- body / idle -----------------------------------------------------
   'body.followGain': 0.55, // how much the torso trails the head
   'body.breathAmount': 1.0,

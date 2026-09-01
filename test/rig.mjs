@@ -144,5 +144,131 @@ const run = (rig, n, f, tracked = true) => {
     `leanX ${state.body.leanX.toFixed(3)}`);
 }
 
+/* --- arm tracking ---------------------------------------------------------
+ * Pose frames are synthetic here: a figure facing the camera, shoulders level,
+ * hips below. Coordinates are MediaPipe's normalised image space, so +y is
+ * *down* the picture.
+ */
+const posed = ({ lw, le, rw, re } = {}) => ({
+  joints: {
+    shoulderL: { x: 0.40, y: 0.40 }, shoulderR: { x: 0.60, y: 0.40 },
+    elbowL: le ?? { x: 0.36, y: 0.58 }, elbowR: re ?? { x: 0.64, y: 0.58 },
+    wristL: lw ?? { x: 0.38, y: 0.74 }, wristR: rw ?? { x: 0.62, y: 0.74 },
+    hipL: { x: 0.44, y: 0.78 }, hipR: { x: 0.56, y: 0.78 },
+  },
+  time: 0,
+});
+
+const runPose = (rig, n, f, has = true) => {
+  for (let i = 0; i < n; i++) rig.updatePose(f, has, DT);
+  return rig.state;
+};
+
+{
+  settings.reset();
+  const rig = new Rig();
+  // Hands on the keyboard is the rest pose, so it must read as no movement.
+  const rest = runPose(rig, 120, posed());
+  check('resting arms sit at zero', Math.abs(rest.arms.left.upper) < 0.02 &&
+    Math.abs(rest.arms.left.raise) < 0.02,
+    `upper ${rest.arms.left.upper.toFixed(3)} raise ${rest.arms.left.raise.toFixed(3)}`);
+
+  // Both hands up beside the head: wrists above the shoulders.
+  const up = runPose(rig, 240, posed({
+    le: { x: 0.30, y: 0.36 }, re: { x: 0.70, y: 0.36 },
+    lw: { x: 0.34, y: 0.18 }, rw: { x: 0.66, y: 0.18 },
+  }));
+  check('raising both hands drives raise positive',
+    up.arms.left.raise > 0.4 && up.arms.right.raise > 0.4,
+    `L ${up.arms.left.raise.toFixed(2)} R ${up.arms.right.raise.toFixed(2)}`);
+  check('raising an arm swings the upper arm away from the torso',
+    Math.abs(up.arms.left.upper) > 0.5 && Math.abs(up.arms.right.upper) > 0.5,
+    `L ${up.arms.left.upper.toFixed(2)} R ${up.arms.right.upper.toFixed(2)}`);
+  check('left and right swing in opposite directions',
+    up.arms.left.upper * up.arms.right.upper < 0,
+    `L ${up.arms.left.upper.toFixed(2)} R ${up.arms.right.upper.toFixed(2)}`);
+}
+
+/* --- leaning is not raising ----------------------------------------------
+ * Angles are measured against the torso axis for exactly this reason: tip the
+ * whole body sideways and the arms have not moved relative to it.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  runPose(rig, 120, posed());
+  const lean = (dx) => ({
+    joints: {
+      shoulderL: { x: 0.40 + dx, y: 0.40 }, shoulderR: { x: 0.60 + dx, y: 0.40 },
+      elbowL: { x: 0.36 + dx * 0.6, y: 0.58 }, elbowR: { x: 0.64 + dx * 0.6, y: 0.58 },
+      wristL: { x: 0.38 + dx * 0.2, y: 0.74 }, wristR: { x: 0.62 + dx * 0.2, y: 0.74 },
+      hipL: { x: 0.44, y: 0.78 }, hipR: { x: 0.56, y: 0.78 },
+    },
+    time: 0,
+  });
+  const tilted = runPose(rig, 240, lean(0.12));
+  check('leaning the torso barely moves the arms',
+    Math.abs(tilted.arms.left.upper) < 0.12 && Math.abs(tilted.arms.right.upper) < 0.12,
+    `L ${tilted.arms.left.upper.toFixed(3)} R ${tilted.arms.right.upper.toFixed(3)}`);
+}
+
+/* --- losing the pose must return the arms to rest, not freeze them ------- */
+{
+  settings.reset();
+  const rig = new Rig();
+  runPose(rig, 120, posed());
+  const up = runPose(rig, 240, posed({
+    le: { x: 0.30, y: 0.36 }, re: { x: 0.70, y: 0.36 },
+    lw: { x: 0.34, y: 0.18 }, rw: { x: 0.66, y: 0.18 },
+  }));
+  check('the arms are actually raised before the pose is dropped', up.arms.left.raise > 0.4,
+    `raise ${up.arms.left.raise.toFixed(3)}`);
+  const gone = runPose(rig, 240, null, false);
+  const settled = Object.values(gone.arms.left).every((v) => Math.abs(v) < 0.02);
+  check('arms relax when the pose is lost', settled,
+    `raise ${gone.arms.left.raise.toFixed(3)} seen ${gone.arms.left.seen.toFixed(3)}`);
+}
+
+/* --- gain scales the result, and zero gain pins it ------------------------ */
+{
+  settings.reset();
+  const raised = posed({
+    le: { x: 0.30, y: 0.36 }, re: { x: 0.70, y: 0.36 },
+    lw: { x: 0.34, y: 0.18 }, rw: { x: 0.66, y: 0.18 },
+  });
+  const at = (gain) => {
+    settings.set('arms.gain', gain);
+    const rig = new Rig();
+    runPose(rig, 120, posed());
+    return runPose(rig, 240, raised).arms.left.raise;
+  };
+  const one = at(1);
+  const half = at(0.5);
+  check('arm gain scales travel',
+    one > 0.4 && Math.abs(half - one / 2) < 0.02 && Math.abs(at(0)) < 1e-9,
+    `1x ${one.toFixed(3)} 0.5x ${half.toFixed(3)}`);
+  settings.reset();
+}
+
+/* --- every channel stays finite through junk input ----------------------- */
+{
+  settings.reset();
+  const rig = new Rig();
+  const degenerate = {
+    joints: {
+      shoulderL: { x: 0.5, y: 0.5 }, shoulderR: { x: 0.5, y: 0.5 },
+      elbowL: { x: 0.5, y: 0.5 }, elbowR: null,
+      wristL: null, wristR: { x: 0.5, y: 0.5 },
+      hipL: { x: 0.5, y: 0.5 }, hipR: { x: 0.5, y: 0.5 },
+    },
+    time: 0,
+  };
+  const state = runPose(rig, 120, degenerate);
+  const finite = ['left', 'right'].every((side) =>
+    Object.values(state.arms[side]).every(Number.isFinite));
+  check('coincident landmarks keep the arm channels finite', finite,
+    `L upper ${state.arms.left.upper}`);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);

@@ -29,6 +29,13 @@ const MODELS = [
     file: 'face_landmarker.task',
     url: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
   },
+  {
+    // Shoulders, elbows and wrists — the face model has none of those, and
+    // raising your hands off the keyboard needs them. "lite" because this runs
+    // alongside face tracking and arms do not need the heavy model's precision.
+    file: 'pose_landmarker.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  },
 ];
 
 const sizeOf = async (p) => stat(p).then((s) => s.size, () => -1);

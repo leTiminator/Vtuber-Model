@@ -33,6 +33,12 @@ export function emptyRig() {
     mouth: { open: 0, smile: 0, frown: 0, pucker: 0, funnel: 0, wide: 0, press: 0, tongue: 0, shift: 0 },
     cheeks: { puff: 0, squintL: 0, squintR: 0 },
     body: { leanX: 0, leanY: 0, twist: 0, breath: 0, bounce: 0, hairX: 0, hairY: 0 },
+    // Arm angles are relative to the torso, not the screen, so leaning does not
+    // read as raising. `raise` is how far the wrist is above the shoulder.
+    arms: {
+      left: { upper: 0, fore: 0, raise: 0, seen: 0 },
+      right: { upper: 0, fore: 0, raise: 0, seen: 0 },
+    },
     expression: { blush: 0, anger: 0, sparkle: 0, sweat: 0, shock: 0 },
     viseme: 'rest',
   };
@@ -43,9 +49,13 @@ export class Rig {
     this.state = emptyRig();
     this.pose = new FilterBank({ minCutoff: 1.2, beta: 0.06, dCutoff: 1.0 });
     this.face = new FilterBank({ minCutoff: 2.4, beta: 0.25, dCutoff: 1.0 });
+    // Arms get their own bank: pose runs on a stride, so it needs a slower
+    // cutoff than the face, and its steadiness is a separate knob.
+    this.arms = new FilterBank({ minCutoff: 0.9, beta: 0.04, dCutoff: 1.0 });
 
     this.neutral = null; // calibrated baseline, set by calibrate()
     this.pendingCalibration = null;
+    this.armNeutral = null; // resting arm angles, captured on the same signal
 
     this.springs = {
       leanX: makeSpring(), leanY: makeSpring(), twist: makeSpring(),
@@ -59,7 +69,7 @@ export class Rig {
     this.lastFrame = null;
 
     store.subscribe((key) => {
-      if (key.startsWith('smooth.')) this.applySmoothing();
+      if (key.startsWith('smooth.') || key === 'arms.smooth') this.applySmoothing();
     });
     this.applySmoothing();
   }
@@ -73,16 +83,21 @@ export class Rig {
       minCutoff: store.get('smooth.expression'),
       beta: store.get('smooth.beta') * 3,
     });
+    // Higher "smooth" means calmer arms, so it divides the cutoff.
+    const armSmooth = Math.max(store.get('arms.smooth'), 0.05);
+    this.arms.configure({ minCutoff: 0.9 / armSmooth, beta: 0.04 / armSmooth });
   }
 
   /** Capture the next tracked frame as the neutral rest pose. */
   calibrate() {
     this.pendingCalibration = { samples: [], needed: 12 };
+    this.armNeutral = null; // re-read on the next pose frame
   }
 
   clearCalibration() {
     this.neutral = null;
     this.pendingCalibration = null;
+    this.armNeutral = null;
   }
 
   setOverride(name, weight) {
@@ -92,6 +107,121 @@ export class Rig {
 
   setMicLevel(rms) {
     this.micLevel = rms;
+  }
+
+  /**
+   * Fold in upper-body landmarks. Kept separate from the face update because
+   * pose runs on a stride and can be switched off entirely.
+   *
+   * Angles are measured against the torso's own axis — shoulders to hips — so
+   * they mean the same thing whether you are sitting straight or leaning.
+   * Measuring against the screen would turn a lean into a raised arm.
+   */
+  updatePose(frame, hasPose, dt) {
+    const arms = this.state.arms;
+    if (!hasPose || !frame) {
+      for (const side of ['left', 'right']) {
+        const a = arms[side];
+        a.seen = damp(a.seen, 0, 4, dt);
+        a.upper = damp(a.upper, 0, 3, dt);
+        a.fore = damp(a.fore, 0, 3, dt);
+        a.raise = damp(a.raise, 0, 3, dt);
+      }
+      return;
+    }
+
+    const j = frame.joints;
+    const mirror = store.get('camera.mirror');
+    const shoulderL = mirror ? j.shoulderR : j.shoulderL;
+    const shoulderR = mirror ? j.shoulderL : j.shoulderR;
+    const elbowL = mirror ? j.elbowR : j.elbowL;
+    const elbowR = mirror ? j.elbowL : j.elbowR;
+    const wristL = mirror ? j.wristR : j.wristL;
+    const wristR = mirror ? j.wristL : j.wristR;
+    const hipL = mirror ? j.hipR : j.hipL;
+    const hipR = mirror ? j.hipL : j.hipR;
+
+    const flip = mirror ? -1 : 1;
+    const mid = (a, b) => (a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a || b);
+    const shoulders = mid(shoulderL, shoulderR);
+    const hips = mid(hipL, hipR);
+    if (!shoulders) return;
+
+    // Torso axis, pointing down the body. Without hips (cropped out of frame,
+    // which is normal at a desk) fall back to screen-down.
+    let axisX = 0;
+    let axisY = 1;
+    if (hips) {
+      axisX = hips.x - shoulders.x;
+      axisY = hips.y - shoulders.y;
+      const len = Math.hypot(axisX, axisY) || 1;
+      axisX /= len;
+      axisY /= len;
+    }
+    const torso = hips ? Math.hypot(hips.x - shoulders.x, hips.y - shoulders.y) : 0.25;
+    const span = Math.max(torso, 0.08);
+
+    const signedAngle = (ax, ay, bx, by) => {
+      const dot = ax * bx + ay * by;
+      const cross = ax * by - ay * bx;
+      return Math.atan2(cross, dot);
+    };
+
+    const gain = store.get('arms.gain');
+    const measured = {};
+
+    const solve = (shoulder, elbow, wrist, key) => {
+      const a = arms[key];
+      if (!shoulder || !elbow) {
+        a.seen = damp(a.seen, 0, 4, dt);
+        return;
+      }
+      a.seen = damp(a.seen, 1, 8, dt);
+
+      let ux = elbow.x - shoulder.x;
+      let uy = elbow.y - shoulder.y;
+      const ulen = Math.hypot(ux, uy) || 1;
+      ux /= ulen; uy /= ulen;
+      const upper = this.arms.filter(
+        `${key}Upper`, clamp(signedAngle(axisX, axisY, ux, uy) * flip, -Math.PI, Math.PI), dt);
+
+      let fore = 0;
+      let raise = 0;
+      if (wrist) {
+        let fx = wrist.x - elbow.x;
+        let fy = wrist.y - elbow.y;
+        const flen = Math.hypot(fx, fy) || 1;
+        fx /= flen; fy /= flen;
+        fore = this.arms.filter(
+          `${key}Fore`, clamp(signedAngle(ux, uy, fx, fy) * flip, -Math.PI, Math.PI), dt);
+        // Positive when the wrist is above the shoulder — hands off the keyboard.
+        raise = this.arms.filter(`${key}Raise`, clamp((shoulder.y - wrist.y) / span, -1.5, 2), dt);
+      }
+
+      measured[key] = { upper, fore, raise };
+
+      // Everything downstream wants a *change* from how you normally sit, not
+      // an absolute angle: the artwork already has arms drawn somewhere, and
+      // the rig rotates them away from there. Without this, resting hands on
+      // the keyboard would hold the drawn arms permanently bent.
+      const rest = this.armNeutral?.[key];
+      a.upper = (upper - (rest?.upper ?? 0)) * gain;
+      a.fore = (fore - (rest?.fore ?? 0)) * gain;
+      a.raise = (raise - (rest?.raise ?? 0)) * gain;
+    };
+
+    solve(shoulderL, elbowL, wristL, 'left');
+    solve(shoulderR, elbowR, wristR, 'right');
+
+    // First good look at both arms after a calibrate becomes the rest pose.
+    if (!this.armNeutral && measured.left && measured.right) {
+      this.armNeutral = measured;
+      for (const side of ['left', 'right']) {
+        arms[side].upper = 0;
+        arms[side].fore = 0;
+        arms[side].raise = 0;
+      }
+    }
   }
 
   /**
