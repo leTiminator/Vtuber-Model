@@ -270,5 +270,57 @@ const runPose = (rig, n, f, has = true) => {
     `L upper ${state.arms.left.upper}`);
 }
 
+/* --- which physical hand drives which side of the screen ------------------
+ * This is the one thing a headless run cannot check by pointing a camera at a
+ * person, and it is the easiest thing in the whole rig to get backwards. It is
+ * decidable in code, though, because every step is known:
+ *
+ *   - A camera faces you, so your physical RIGHT hand lands on the LEFT of the
+ *     raw image: a small x. MediaPipe labels that same hand `wristR` (16).
+ *   - "Mirror me" means the avatar behaves like a reflection, and a reflection
+ *     raises the hand on the same side of the image as the hand you raised.
+ *     Raise your right hand at a mirror and the hand that goes up is on your
+ *     right as you look at it.
+ *   - So a raised wrist at small x must end up on the RIGHT of the screen.
+ *
+ * The renderer drives the screen-right arm (`armRight`, at x 0.87 in the
+ * artwork) from `rig.arms.left`, because after mirroring `left` means the
+ * character's own left — and a character facing you wears its left on your
+ * right. So the assertion is: small x raised => arms.left.raise goes positive.
+ */
+{
+  const raisedOnRawLeft = {
+    joints: {
+      // Physically: the right hand is up, the left hand rests on the keyboard.
+      shoulderL: { x: 0.40, y: 0.40 }, shoulderR: { x: 0.60, y: 0.40 },
+      elbowR: { x: 0.30, y: 0.36 }, wristR: { x: 0.34, y: 0.18 }, // small x, raised
+      elbowL: { x: 0.64, y: 0.58 }, wristL: { x: 0.62, y: 0.74 }, // resting
+      hipL: { x: 0.44, y: 0.78 }, hipR: { x: 0.56, y: 0.78 },
+    },
+    time: 0,
+  };
+
+  settings.reset();
+  settings.set('camera.mirror', true);
+  const mirrored = new Rig();
+  runPose(mirrored, 120, posed());
+  const m = runPose(mirrored, 240, raisedOnRawLeft);
+  check('mirrored, the hand on the raw image\'s left drives the screen-right arm',
+    m.arms.left.raise > 0.4 && m.arms.right.raise < 0.15,
+    `arms.left ${m.arms.left.raise.toFixed(2)} (drives armRight), arms.right ${m.arms.right.raise.toFixed(2)}`);
+
+  // Unmirrored, the avatar copies you rather than reflecting you, so the same
+  // raised hand has to come out on the other side.
+  settings.reset();
+  settings.set('camera.mirror', false);
+  const direct = new Rig();
+  runPose(direct, 120, posed());
+  const d = runPose(direct, 240, raisedOnRawLeft);
+  check('unmirrored, the same hand drives the screen-left arm instead',
+    d.arms.right.raise > 0.4 && d.arms.left.raise < 0.15,
+    `arms.right ${d.arms.right.raise.toFixed(2)} (drives armLeft), arms.left ${d.arms.left.raise.toFixed(2)}`);
+  settings.reset();
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);
