@@ -239,9 +239,14 @@ try {
     buffer: buildFixture(),
   });
 
-  await page.waitForFunction(() => window.__vtuber.avatars.warp2d.ready, null, { timeout: 10000 });
-  check('loading an image switches to the warp model',
-    await page.evaluate(() => window.__vtuber.store.get('stage.avatar')) === 'warp2d');
+  check('loading an image switches to the parts model',
+    await page.evaluate(() => window.__vtuber.store.get('stage.avatar')) === 'parts2d');
+
+  // The rest of this file is about the whole-image warp, which is still on
+  // offer for artwork the parts rules do not suit — so select it explicitly
+  // rather than relying on it being the default, which it no longer is.
+  await page.evaluate(() => window.__vtuber.store.set('stage.avatar', 'warp2d'));
+  await page.waitForFunction(() => window.__vtuber.avatars.warp2d.ready, null, { timeout: 15000 });
 
   check('the rig editor opens on load', await page.locator('#rig-editor').isVisible());
   const handles = await page.locator('#rig-editor .rig-handle').count();

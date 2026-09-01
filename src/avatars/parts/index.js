@@ -24,7 +24,7 @@ import { extractSpine } from './spine.js';
 const UNIFORMS = [
   'u_model', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
-  'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle', 'u_lidL', 'u_lidR',
+  'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_glow', 'u_glowPulse',
   'u_spineMode', 'u_spine', 'u_flipU',
 ];
@@ -346,9 +346,8 @@ export class Parts2D {
         gl.uniform4fv(L.u_eyeL, part.eyeL);
         gl.uniform4fv(L.u_eyeR, part.eyeR);
         gl.uniform1f(L.u_eyeAngle, m.eyeAngle);
-        const lids = this.lids ?? { left: [0.35, 0.38, 0.45], right: [0.35, 0.38, 0.45] };
-        gl.uniform3fv(L.u_lidL, lids.left);
-        gl.uniform3fv(L.u_lidR, lids.right);
+        // No lid colour: the lid erases this layer and the visor behind shows
+        // through, so there is nothing to match a sampled tone against.
         gl.uniform2f(L.u_blink, rig.eyes.blinkL, rig.eyes.blinkR);
         const sq = store.get('warp.squint');
         gl.uniform2f(L.u_squint, clamp(rig.eyes.squintL * sq, 0, 1), clamp(rig.eyes.squintR * sq, 0, 1));

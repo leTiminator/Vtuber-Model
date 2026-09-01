@@ -189,18 +189,106 @@ function labelPixels(src, m, w, h) {
     dropSmall(tuftMask, w, h, 200);
   }
 
-  /* --- eyes: the bright shards on the visor ------------------------------ */
+  /* --- eyes: the bright shards on the visor ------------------------------
+   * Taking every bright pixel inside the marker rectangle clips the shard
+   * wherever it reaches past the box, and leaves the rest of it in the head
+   * layer. That residue is why a shut eye kept a pale ghost: the head was
+   * still carrying a piece of the shard behind the lid.
+   *
+   * So the rectangle only says roughly where to look. The shard itself is
+   * whatever is connected to the brightest pixel in there and still reads as
+   * bright — its own shape decides its extent.
+   */
   const eyeMask = new Uint8Array(n);
   for (const key of ['eyeL', 'eyeR']) {
     const r = m[key];
-    for (let y = Math.floor(r[1] * h); y <= Math.ceil(r[3] * h); y++) {
-      for (let x = Math.floor(r[0] * w); x <= Math.ceil(r[2] * w); x++) {
-        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    const x0 = Math.max(0, Math.floor(r[0] * w));
+    const y0 = Math.max(0, Math.floor(r[1] * h));
+    const x1 = Math.min(w - 1, Math.ceil(r[2] * w));
+    const y1 = Math.min(h - 1, Math.ceil(r[3] * h));
+
+    let seed = -1;
+    let best = -1;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
         const i = y * w + x;
-        if (opaque(i) && hsl(i).lum > 0.72) eyeMask[i] = 1;
+        if (!opaque(i)) continue;
+        const { lum } = hsl(i);
+        if (lum > best) { best = lum; seed = i; }
       }
     }
+    if (seed < 0 || best < 0.6) continue;
+
+    // Stay near the marker: a shard is a small feature, and an unbounded
+    // flood through anything bright could walk off across a highlight.
+    const reach = Math.max(x1 - x0, y1 - y0) * 1.6;
+    const BRIGHT = 0.58;
+    let head = 0, tail = 0;
+    eyeMask[seed] = 1;
+    scratch[tail++] = seed;
+    while (head < tail) {
+      const i = scratch[head++];
+      const x = i % w;
+      const y = (i - x) / w;
+      const go = (j) => {
+        if (eyeMask[j] || !opaque(j)) return;
+        const jx = j % w;
+        const jy = (j - jx) / w;
+        if (Math.abs(jx - (x0 + x1) / 2) > reach || Math.abs(jy - (y0 + y1) / 2) > reach) return;
+        if (hsl(j).lum < BRIGHT) return;
+        eyeMask[j] = 1;
+        scratch[tail++] = j;
+      };
+      if (x > 0) go(i - 1);
+      if (x < w - 1) go(i + 1);
+      if (y > 0) go(i - w);
+      if (y < h - 1) go(i + w);
+    }
   }
+
+  // Hand the shard's ink outline to the eye as well, not just the shard.
+  //
+  // Left to the general rule, that ring gets split down the middle: the inner
+  // half joins the eye, the outer half stays with the head. Two things go
+  // wrong. A shut eye keeps the outer half as a dark rim, and the hole left in
+  // the head is bounded by black — so the fill relaxes toward black and the
+  // socket reads as a dark hollow instead of a visor.
+  //
+  // The outline is part of the slit, so it goes with the slit. Growing only
+  // through ink stops at the first visor pixel on its own.
+  {
+    const OUTLINE_LUM = 0.25;
+    const RING = Math.max(3, Math.round(Math.max(w, h) * 0.012));
+    let head = 0, tail = 0;
+    const step = new Int16Array(n).fill(-1);
+    for (let i = 0; i < n; i++) if (eyeMask[i]) { step[i] = 0; scratch[tail++] = i; }
+    while (head < tail) {
+      const i = scratch[head++];
+      if (step[i] >= RING) continue;
+      const x = i % w;
+      const y = (i - x) / w;
+      const go = (j) => {
+        if (step[j] >= 0 || !opaque(j) || eyeMask[j]) return;
+        if (hsl(j).lum >= OUTLINE_LUM) return; // reached the visor: stop
+        step[j] = step[i] + 1;
+        eyeMask[j] = 1;
+        scratch[tail++] = j;
+      };
+      if (x > 0) go(i - 1);
+      if (x < w - 1) go(i + 1);
+      if (y > 0) go(i - w);
+      if (y < h - 1) go(i + w);
+    }
+  }
+
+  // Close any gaps the brightness test punched through the shard.
+  //
+  // The shard is not uniformly bright — it carries grey shading — so a flood
+  // through bright pixels leaves those darker patches behind as islands of
+  // head art marooned inside the eye. They scallop the cut edge, and they drag
+  // the fill behind the eye toward their own colour. Anything enclosed by the
+  // shard is the shard, whatever shade it happens to be.
+  fillEnclosed(eyeMask, w, h);
 
   /* --- everything below the neck, as connected pieces --------------------
    * Cloth and non-cloth are kept apart so a glove resting against a sleeve
@@ -501,6 +589,36 @@ function nearestPiece(from, candidates, reach) {
   return best;
 }
 
+/**
+ * Fill anything the mask fully encloses.
+ *
+ * Found by flooding the *outside*: start from the border, and any gap the
+ * flood cannot reach is surrounded, so it belongs to the mask.
+ */
+function fillEnclosed(mask, w, h) {
+  const n = w * h;
+  const outside = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  let head = 0, tail = 0;
+  const seed = (i) => {
+    if (mask[i] || outside[i]) return;
+    outside[i] = 1;
+    queue[tail++] = i;
+  };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (head < tail) {
+    const i = queue[head++];
+    const x = i % w;
+    const y = (i - x) / w;
+    if (x > 0) seed(i - 1);
+    if (x < w - 1) seed(i + 1);
+    if (y > 0) seed(i - w);
+    if (y < h - 1) seed(i + w);
+  }
+  for (let i = 0; i < n; i++) if (!outside[i]) mask[i] = 1;
+}
+
 /** Clear connected runs of a binary mask smaller than `min` pixels. */
 function dropSmall(mask, w, h, min) {
   const n = w * h;
@@ -658,8 +776,36 @@ function extract(src, labels, name, w, h, zByLabel) {
       const sl = labels[(jy + y0) * w + (jx + x0)];
       if (sl === LABEL.none || zByLabel[sl] <= z) return;
       dist[j] = step;
-      const a = j * 4, b = i * 4;
-      od[a] = od[b]; od[a + 1] = od[b + 1]; od[a + 2] = od[b + 2];
+
+      // Average every neighbour already filled, rather than copying the one
+      // pixel we happened to arrive from. Copying draws streaks: a hole
+      // surrounded by alternating ink and surface pulls both inward in
+      // stripes, which is exactly what the eye socket looked like behind the
+      // eye layer. Averaging diffuses the surrounding colour into the hole
+      // instead, and only ever touches invented pixels — real art is at
+      // distance 0 and never revisited.
+      let sr = 0, sg = 0, sb = 0, n = 0;
+      const tally = (k) => {
+        if (dist[k] < 0 || dist[k] >= step) return;
+        sr += od[k * 4]; sg += od[k * 4 + 1]; sb += od[k * 4 + 2]; n++;
+      };
+      const left = jx > 0, right = jx < pw - 1, up = jy > 0, down = jy < ph - 1;
+      if (left) tally(j - 1);
+      if (right) tally(j + 1);
+      if (up) tally(j - pw);
+      if (down) tally(j + pw);
+      if (up && left) tally(j - pw - 1);
+      if (up && right) tally(j - pw + 1);
+      if (down && left) tally(j + pw - 1);
+      if (down && right) tally(j + pw + 1);
+
+      const a = j * 4;
+      if (n > 0) {
+        od[a] = sr / n; od[a + 1] = sg / n; od[a + 2] = sb / n;
+      } else {
+        const b = i * 4;
+        od[a] = od[b]; od[a + 1] = od[b + 1]; od[a + 2] = od[b + 2];
+      }
       // Fully opaque: this margin exists to be hidden under other parts, and a
       // soft edge here would show as a halo when one slides away.
       od[a + 3] = 255;
@@ -670,6 +816,26 @@ function extract(src, labels, name, w, h, zByLabel) {
     if (y > 0) spread(i - pw);
     if (y < ph - 1) spread(i + pw);
   }
+
+  /* Repaint holes the part fully encloses.
+   *
+   * The eye is cut out of the head, so the head is left with a hole where the
+   * slit used to be. Whatever fills it is what shows when the eye closes, and
+   * getting it wrong is what made a shut eye look like a smudge: the flood's
+   * nearest-pixel copy drew streaks out of the ink around the socket, and
+   * diffusing instead only converges after roughly width-squared sweeps, which
+   * is slow and still left the hole a shade off.
+   *
+   * But the surface being reconstructed is a visor: a smooth ramp of one
+   * colour, not arbitrary texture. Fitting that ramp is both exact and cheap.
+   * A least-squares plane through the real pixels ringing the hole extends the
+   * gradient across it seamlessly, with no mottling and no edge to see.
+   *
+   * Only enclosed holes get this. The outer margins exist to sit under other
+   * parts and are never looked at directly, so the flood's colours are fine
+   * there — and a plane fitted to a part's whole silhouette would be wrong.
+   */
+  fillEnclosedHoles(od, dist, pw, ph);
 
   const canvas = document.createElement('canvas');
   canvas.width = pw;
@@ -683,4 +849,178 @@ function extract(src, labels, name, w, h, zByLabel) {
     inset: DILATE,
     pixels: count,
   };
+}
+
+/**
+ * Repaint each hole a part encloses with a plane fitted to its surroundings.
+ *
+ * `dist` marks real art as 0 and invented margin as > 0. A hole is invented
+ * pixels that cannot reach the edge of the part's box without crossing real
+ * art — which is exactly the case that gets revealed when the part in front
+ * moves away.
+ */
+function fillEnclosedHoles(od, dist, pw, ph) {
+  const n = pw * ph;
+  const outer = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  let head = 0, tail = 0;
+
+  // Flood the invented region inward from the border; whatever it misses is
+  // enclosed.
+  const seed = (i) => {
+    if (outer[i] || dist[i] === 0) return; // real art blocks the flood
+    outer[i] = 1;
+    queue[tail++] = i;
+  };
+  for (let x = 0; x < pw; x++) { seed(x); seed((ph - 1) * pw + x); }
+  for (let y = 0; y < ph; y++) { seed(y * pw); seed(y * pw + pw - 1); }
+  while (head < tail) {
+    const i = queue[head++];
+    const x = i % pw;
+    const y = (i - x) / pw;
+    if (x > 0) seed(i - 1);
+    if (x < pw - 1) seed(i + 1);
+    if (y > 0) seed(i - pw);
+    if (y < ph - 1) seed(i + pw);
+  }
+
+  const seen = new Uint8Array(n);
+  const group = [];
+  for (let start = 0; start < n; start++) {
+    if (seen[start] || outer[start] || dist[start] <= 0) continue;
+
+    // One enclosed hole, plus the real pixels ringing it.
+    group.length = 0;
+    const ring = [];
+    seen[start] = 1;
+    head = tail = 0;
+    queue[tail++] = start;
+    while (head < tail) {
+      const i = queue[head++];
+      group.push(i);
+      const x = i % pw;
+      const y = (i - x) / pw;
+      const visit = (j) => {
+        if (dist[j] === 0) { ring.push(j); return; } // boundary sample
+        if (seen[j] || outer[j] || dist[j] < 0) return;
+        seen[j] = 1;
+        queue[tail++] = j;
+      };
+      if (x > 0) visit(i - 1);
+      if (x < pw - 1) visit(i + 1);
+      if (y > 0) visit(i - pw);
+      if (y < ph - 1) visit(i + pw);
+    }
+    if (group.length < 12 || ring.length < 8) continue;
+
+    // Fit, then throw out the samples the fit disagrees with most and fit
+    // again. The ring around a cut-out slit is not purely surface: a few
+    // pixels of its ink outline, or a sliver of the slit itself, survive on
+    // this side of the cut. Left in, they drag the plane light or dark and
+    // leave a visible rim. One robust pass is enough to shake them off.
+    const inliers = robustRing(ring, od, pw);
+    for (let ch = 0; ch < 3; ch++) {
+      const plane = fitPlane(inliers, od, pw, ch);
+      for (const i of group) {
+        const x = i % pw;
+        const y = (i - x) / pw;
+        od[i * 4 + ch] = clamp(plane.a + plane.b * x + plane.c * y, 0, 255);
+      }
+    }
+    for (const i of group) od[i * 4 + 3] = 255;
+  }
+}
+
+/**
+ * Least-squares plane v = a + b*x + c*y through one channel of the sampled
+ * pixels. Falls back to their mean when the samples are collinear, which no
+ * plane can be fitted through.
+ */
+function fitPlane(samples, od, pw, channel) {
+  let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, sv = 0, sxv = 0, syv = 0;
+  for (const i of samples) {
+    const x = i % pw;
+    const y = (i - x) / pw;
+    const v = od[i * 4 + channel];
+    n++; sx += x; sy += y;
+    sxx += x * x; sxy += x * y; syy += y * y;
+    sv += v; sxv += x * v; syv += y * v;
+  }
+  const m = [n, sx, sy, sx, sxx, sxy, sy, sxy, syy];
+  const det =
+    m[0] * (m[4] * m[8] - m[5] * m[7]) -
+    m[1] * (m[3] * m[8] - m[5] * m[6]) +
+    m[2] * (m[3] * m[7] - m[4] * m[6]);
+  if (Math.abs(det) < 1e-6) return { a: sv / Math.max(n, 1), b: 0, c: 0 };
+
+  const solve = (r0, r1, r2) => {
+    const k = [...m];
+    k[0] = r0; k[3] = r1; k[6] = r2;
+    return k[0] * (k[4] * k[8] - k[5] * k[7]) -
+           k[1] * (k[3] * k[8] - k[5] * k[6]) +
+           k[2] * (k[3] * k[7] - k[4] * k[6]);
+  };
+  const solveCol = (col) => {
+    const k = [...m];
+    k[col] = sv; k[col + 3] = sxv; k[col + 6] = syv;
+    return (k[0] * (k[4] * k[8] - k[5] * k[7]) -
+            k[1] * (k[3] * k[8] - k[5] * k[6]) +
+            k[2] * (k[3] * k[7] - k[4] * k[6])) / det;
+  };
+  void solve;
+  return { a: solveCol(0), b: solveCol(1), c: solveCol(2) };
+}
+
+/**
+ * Drop the boundary samples that sit furthest from a first pass through them,
+ * measured on luminance. Keeps at least half, so a genuinely varied edge is
+ * still fitted rather than whittled down to a single tone.
+ */
+function robustRing(ring, od, pw) {
+  if (ring.length < 16) return ring;
+  const lum = (i) =>
+    0.2126 * od[i * 4] + 0.7152 * od[i * 4 + 1] + 0.0722 * od[i * 4 + 2];
+
+  const plane = fitPlaneOf(ring, pw, lum);
+  const scored = ring.map((i) => {
+    const x = i % pw;
+    const y = (i - x) / pw;
+    return { i, err: Math.abs(lum(i) - (plane.a + plane.b * x + plane.c * y)) };
+  });
+  scored.sort((p, q) => p.err - q.err);
+
+  // Median absolute residual sets the scale; anything several times that is an
+  // outline pixel or a leftover of the part that was cut away.
+  const median = scored[scored.length >> 1].err;
+  const limit = Math.max(6, median * 2.5);
+  const kept = scored.filter((p) => p.err <= limit).map((p) => p.i);
+  return kept.length >= ring.length / 2 ? kept
+    : scored.slice(0, Math.max(8, ring.length >> 1)).map((p) => p.i);
+}
+
+/** fitPlane over an arbitrary value function, for the robust pass. */
+function fitPlaneOf(samples, pw, value) {
+  let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, sv = 0, sxv = 0, syv = 0;
+  for (const i of samples) {
+    const x = i % pw;
+    const y = (i - x) / pw;
+    const v = value(i);
+    n++; sx += x; sy += y;
+    sxx += x * x; sxy += x * y; syy += y * y;
+    sv += v; sxv += x * v; syv += y * v;
+  }
+  const m = [n, sx, sy, sx, sxx, sxy, sy, sxy, syy];
+  const det =
+    m[0] * (m[4] * m[8] - m[5] * m[7]) -
+    m[1] * (m[3] * m[8] - m[5] * m[6]) +
+    m[2] * (m[3] * m[7] - m[4] * m[6]);
+  if (Math.abs(det) < 1e-6) return { a: sv / Math.max(n, 1), b: 0, c: 0 };
+  const col = (c) => {
+    const k = [...m];
+    k[c] = sv; k[c + 3] = sxv; k[c + 6] = syv;
+    return (k[0] * (k[4] * k[8] - k[5] * k[7]) -
+            k[1] * (k[3] * k[8] - k[5] * k[6]) +
+            k[2] * (k[3] * k[7] - k[4] * k[6])) / det;
+  };
+  return { a: col(0), b: col(1), c: col(2) };
 }

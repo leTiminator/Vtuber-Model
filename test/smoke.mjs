@@ -128,8 +128,10 @@ try {
 
   // A pose the rigged artwork honours: closing the eyes must move pixels.
   const blinkDelta = await page.evaluate(async () => {
-    const { avatars, emptyRig } = window.__vtuber;
-    const avatar = avatars.warp2d;
+    const { emptyRig } = window.__vtuber;
+    // Whatever the app actually mounted, rather than a backend that may not
+    // even have a GL context because it was never shown.
+    const avatar = window.__vtuber.current;
     const shot = (blink) => {
       const rig = emptyRig();
       rig.eyes.blinkL = blink;

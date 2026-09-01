@@ -56,7 +56,10 @@ export const DEFAULTS = {
   'body.hairPhysics': 1.0,
 
   // --- stage -----------------------------------------------------------
-  'stage.avatar': 'warp2d', // warp2d | layered2d
+  'stage.avatar': 'parts2d', // parts2d | warp2d | layered2d
+  // Set once the user picks a model themselves, so the one-time migration off
+  // the old default never overrides a deliberate choice.
+  'stage.avatarChosen': false,
   'stage.background': 'transparent', // transparent | chroma | color
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
@@ -117,6 +120,15 @@ function load() {
     // settings that no longer exist.
     for (const k of Object.keys(DEFAULTS)) {
       if (k in saved) state[k] = saved[k];
+    }
+    // The cut-into-parts model was added after warp2d and was never made the
+    // default, so every existing save still pins the old whole-image warp —
+    // which distorts the face when you turn, cannot flip the head, and paints
+    // a flat lid over the eyes. Those are exactly the complaints the parts
+    // model exists to answer, so an old save must not keep serving them.
+    // A deliberate choice of warp2d is easy to make again from the panel.
+    if (state['stage.avatar'] === 'warp2d' && !saved['stage.avatarChosen']) {
+      state['stage.avatar'] = 'parts2d';
     }
   } catch {
     /* corrupt or unavailable storage — fall back to defaults */

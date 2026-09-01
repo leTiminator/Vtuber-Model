@@ -17,14 +17,14 @@ const context = await browser.newContext({ permissions: ['camera'], viewport: { 
 const page = await context.newPage();
 page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
 await page.goto('http://127.0.0.1:5201/', { waitUntil: 'load' });
-await page.waitForFunction(() => window.__vtuber?.avatars?.warp2d?.ready === true, null, { timeout: 20000 });
+await page.waitForFunction(() => window.__vtuber?.avatars?.parts2d?.ready === true, null, { timeout: 20000 });
 
 const report = await page.evaluate(async () => {
   const { avatars } = window.__vtuber;
   const { cutParts } = await import('/src/avatars/parts/cut.js');
-  const image = avatars.warp2d.image;
+  const image = avatars.parts2d.image;
 
-  const m = avatars.warp2d.markers();
+  const m = avatars.parts2d.markers();
   const { parts, width, height } = cutParts(image, m);
 
   const cols = 5;

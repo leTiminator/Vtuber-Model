@@ -110,8 +110,6 @@ uniform float u_eyesEnabled;
 uniform vec4 u_eyeL;      // centre.xy, half-size.xy, in this part's texture space
 uniform vec4 u_eyeR;
 uniform float u_eyeAngle;
-uniform vec3 u_lidL;
-uniform vec3 u_lidR;
 uniform vec2 u_blink;
 uniform vec2 u_squint;
 uniform float u_glow;
@@ -126,18 +124,37 @@ vec2 toEye(vec2 uv, vec4 e) {
 }
 
 /**
- * A lid sweeping across the socket, painted in a flat colour taken from the
- * face around it. Both lids bow — further at the middle than the corners, the
- * way an eyelid actually closes — and overshoot so a shut eye leaves no sliver.
+ * A lid sweeping across the socket.
+ *
+ * It erases the eye layer rather than painting over it. Painting needs a
+ * colour, and one flat colour cannot match a visor that is a gradient — it
+ * shows as a patch with visible edges, and it leaves the shard's own ink
+ * outline sitting there like a ghost, because the outline belongs to this
+ * layer too and a rectangle laid over the socket never quite covers it.
+ *
+ * Erasing has neither problem. The head layer underneath carries the visor,
+ * relaxed into the hole where the eye was cut out, so what shows through is
+ * the real surface with its real gradient, and the outline goes when the
+ * layer holding it goes.
+ *
+ * Both lids bow — further at the middle than the corners, the way an eyelid
+ * actually closes — and overshoot so a shut eye leaves no sliver. The edge is
+ * softened over a pixel or so, because a hard cut across a shape this small
+ * crawls as the head moves.
  */
-vec4 lidded(vec2 uv, vec4 e, vec3 lid, float blink, float squint, vec4 base) {
+vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   vec2 p = toEye(uv, e);
-  if (abs(p.x) > 1.0 || abs(p.y) > 1.0) return base;
-  float bow = 1.0 - p.x * p.x;
+  if (abs(p.x) > 1.2 || abs(p.y) > 1.2) return base;
+  float bow = 1.0 - clamp(p.x * p.x, 0.0, 1.0);
   float upper = -1.0 + blink * 2.0 * (1.0 + 0.28 * bow);
   float lower = 1.0 - squint * 1.1 * (1.0 + 0.28 * bow);
-  if (p.y <= upper || p.y >= lower) return vec4(lid, base.a);
-  return base;
+
+  // 1 where the lid covers, 0 where the eye is still open.
+  float soft = 0.045;
+  float covered = max(
+    1.0 - smoothstep(upper - soft, upper + soft, p.y),
+    smoothstep(lower - soft, lower + soft, p.y));
+  return vec4(base.rgb, base.a * (1.0 - covered));
 }
 
 void main() {
@@ -145,8 +162,8 @@ void main() {
   vec4 c = texture(u_tex, uv);
 
   if (u_eyesEnabled > 0.5) {
-    c = lidded(v_uv, u_eyeL, u_lidL, u_blink.x, u_squint.x, c);
-    c = lidded(v_uv, u_eyeR, u_lidR, u_blink.y, u_squint.y, c);
+    c = lidded(v_uv, u_eyeL, u_blink.x, u_squint.x, c);
+    c = lidded(v_uv, u_eyeR, u_blink.y, u_squint.y, c);
     if (u_glow > 0.0) {
       float lum = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb += vec3(0.55, 0.78, 1.0) * smoothstep(0.62, 0.95, lum) * c.a * u_glow * u_glowPulse;

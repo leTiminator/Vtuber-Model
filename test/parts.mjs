@@ -37,12 +37,12 @@ page.on('pageerror', (e) => errors.push(String(e)));
 
 try {
   await page.goto('http://127.0.0.1:5189/', { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__vtuber?.avatars?.warp2d?.ready === true,
+  await page.waitForFunction(() => window.__vtuber?.avatars?.parts2d?.ready === true,
     null, { timeout: 30000 });
 
   const result = await page.evaluate(async () => {
     const { cutParts } = await import('/src/avatars/parts/cut.js');
-    const art = window.__vtuber.avatars.warp2d;
+    const art = window.__vtuber.avatars.parts2d;
     const image = art.image;
     const { parts, width, height } = cutParts(image, art.markers());
 

@@ -183,7 +183,12 @@ buildPanel(dom.panelBody, {
     const { image, dataURL } = await artwork.readFile(file);
     mountAvatar('warp2d');
     avatars.warp2d.setImage(image, true); // fresh art: re-place the markers
-    store.set('stage.avatar', 'warp2d');
+    avatars.parts2d.setImage(image, true);
+    // The parts model is the one this project is built around, so new art gets
+    // it too. Its rules are tuned to the bundled ninja and degrade to one big
+    // part on artwork they do not fit; the whole-image warp stays in the panel
+    // for exactly that case.
+    store.set('stage.avatar', 'parts2d');
     const saved = artwork.remember(dataURL);
     rigEditor.open(image);
     return { saved, found: { head: true, eyes: avatars.warp2d.markerConfidence === true } };

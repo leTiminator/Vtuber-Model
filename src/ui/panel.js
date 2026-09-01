@@ -237,7 +237,12 @@ const BUILDERS = {
       select.append(option);
     }
     const sync = () => { select.value = store.get(spec.key); };
-    select.addEventListener('change', () => store.set(spec.key, select.value));
+    select.addEventListener('change', () => {
+      store.set(spec.key, select.value);
+      // Picking a model by hand outranks the migration that moved old saves
+      // off the retired default.
+      if (spec.key === 'stage.avatar') store.set('stage.avatarChosen', true);
+    });
     store.subscribe((key) => key === spec.key && sync());
     sync();
     field.append(labelledRow(spec.label), select);
