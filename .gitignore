@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+# Fetched or copied by `npm run assets` (see scripts/fetch-assets.mjs).
+# ~26 MB of wasm and model weights — reproducible, so not worth committing.
+public/mediapipe/
+public/models/
+
+# Your own avatar art stays local unless you choose to commit it.
+public/avatars/
+
+*.log
+.DS_Store
