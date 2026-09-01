@@ -137,6 +137,40 @@ body.panel-hidden #hud { opacity: 0; pointer-events: none; }
 body.panel-hidden #camera-preview { display: none !important; }
 body.panel-hidden #first-run { display: none; }
 
+/* On a phone a 330px side drawer is the whole screen, and the model you are
+ * trying to judge ends up behind it. Below this width the panel becomes a
+ * bottom sheet instead, so the character stays visible above it while you
+ * adjust. Targets grow too: a 30px button is a desktop target, not a thumb. */
+@media (max-width: 620px) {
+  #panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 62vh;
+    height: 62svh; /* keeps its size when the address bar slides away */
+    border-left: none;
+    border-top: 1px solid var(--edge);
+  }
+  body.panel-hidden #panel { transform: translateY(100%); }
+
+  /* Hiding the HUD along with the panel is right on a desktop, where H brings
+   * it all back for a clean OBS capture. A phone has no H, so the only way out
+   * of the hidden state would be reloading the page. The menu button stays. */
+  body.panel-hidden #hud { opacity: 1; pointer-events: auto; }
+  body.panel-hidden #status,
+  body.panel-hidden #fps { opacity: 0; pointer-events: none; }
+
+  #toggle-panel {
+    width: 42px;
+    height: 42px;
+    font-size: 18px;
+  }
+  .panel__actions button,
+  .panel__foot button { min-height: 40px; }
+}
+
 .panel__head {
   display: flex;
   align-items: center;

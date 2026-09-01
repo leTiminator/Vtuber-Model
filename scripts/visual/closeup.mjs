@@ -27,9 +27,23 @@ await page.evaluate(async (src) => {
   store.set('stage.avatar', 'warp2d');
   avatars.warp2d.setImage(image, true);
   store.set('warp.wind', 0);
-  store.set('stage.zoom', 2.3);
-  store.set('stage.offsetX', -150);
-  store.set('stage.offsetY', -110);
+
+  // Frame on the head, via the same helper the Head & shoulders button uses.
+  // This script used to hardcode offsets in pixels; when offsets became a
+  // fraction of the canvas it kept working silently and rendered eight empty
+  // cells, because -150 now means a hundred and fifty screens off to the left.
+  const { fitTo } = await import('/src/core/framing.js');
+  const a = avatars.warp2d;
+  const aspect = a.aspect ?? 1;
+  const cx = store.get('warp.headX');
+  const cy = store.get('warp.headY');
+  const r = store.get('warp.headR') * 2.2;
+  const fit = fitTo(
+    aspect, a.canvas?.width ?? 1, a.canvas?.height ?? 1,
+    { x0: cx - r / aspect, y0: cy - r, x1: cx + r / aspect, y1: cy + r },
+    0.92,
+  );
+  store.patch({ 'stage.zoom': fit.zoom, 'stage.offsetX': fit.offX, 'stage.offsetY': fit.offY });
 
   const poses = [
     ['rest', {}],
@@ -50,7 +64,6 @@ await page.evaluate(async (src) => {
   c.fillStyle = '#f4f1ec';
   c.fillRect(0, 0, strip.width, strip.height);
 
-  const a = avatars.warp2d;
   a.resize(cw, ch, 2);
   poses.forEach(([name, mut], i) => {
     const rig = emptyRig();

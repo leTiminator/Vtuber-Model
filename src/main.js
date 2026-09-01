@@ -285,8 +285,15 @@ function installFraming() {
 
   let dragging = null;
 
+  // The HUD and the overlays live inside the stage, so a press on the menu
+  // button starts here too. Capturing the pointer for a drag then swallows the
+  // click that button was waiting for — on a phone that leaves no way to close
+  // the panel at all. Chrome is not the canvas; let those presses through.
+  const onChrome = (event) => Boolean(event.target?.closest?.(
+    '#hud, #camera-preview, #first-run, button, input, select, a, label'));
+
   stage.addEventListener('pointerdown', (event) => {
-    if (locked() || event.button !== 0) return;
+    if (locked() || event.button !== 0 || onChrome(event)) return;
     dragging = { id: event.pointerId, x: event.clientX, y: event.clientY };
     stage.setPointerCapture(event.pointerId);
     stage.classList.add('stage--grabbing');
@@ -314,7 +321,7 @@ function installFraming() {
   stage.addEventListener('pointercancel', endDrag);
 
   stage.addEventListener('wheel', (event) => {
-    if (locked()) return;
+    if (locked() || onChrome(event)) return;
     event.preventDefault();
     const box = stage.getBoundingClientRect();
     const [w, h] = size();

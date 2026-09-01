@@ -68,6 +68,49 @@ Redo the neutral pose whenever you move your chair or camera.
 
 ---
 
+## Trying it on your phone
+
+Handy for testing the tracking away from the desk, and for checking how the
+model reads at arm's length.
+
+```
+npm run phone
+```
+
+That prints one or more addresses. On the phone — **same Wi-Fi as the
+computer** — open the one that looks like your home network:
+
+```
+https://192.168.1.42:5173
+```
+
+**The phone will warn that the certificate is not trusted. That is expected.**
+Browsers only hand out the camera on a secure origin, and `localhost` stops
+counting as one the moment the address is an IP — so the server makes itself a
+certificate. It is your own machine, and nothing leaves it.
+
+- **Chrome:** *Advanced* → *Proceed to 192.168… (unsafe)*
+- **Safari:** *Show Details* → *visit this website*
+
+Then **Start camera** and allow it. The front camera is used by default.
+
+On a phone the controls sit in a sheet at the bottom instead of a side panel;
+tap **☰** to get it out of the way and back again. Drag the model to move it,
+pinch or scroll to resize.
+
+If the address does not load at all, the computer's firewall is usually the
+reason — it has to allow incoming connections on port 5173. Guest Wi-Fi and
+some routers also isolate devices from each other, in which case nothing on the
+phone will reach the computer.
+
+**Prefer no certificate warning?** Plug the phone in over USB with developer
+mode on, open `chrome://inspect/#devices` on the computer, and add a port
+forward from `5173` to `localhost:5173`. Then `npm run dev` as usual and open
+`http://localhost:5173` on the phone — a real localhost, so the camera works
+with nothing to accept.
+
+---
+
 ## Putting it in OBS
 
 There are two ways in. **Read this bit** — the obvious one has a catch.
@@ -270,17 +313,34 @@ install time, so the app has no CDN dependency and works offline.
 ## Tests
 
 ```bash
-npm test           # all three suites
-npm run test:rig   # rig maths, headless, no camera needed
-npm run test:warp  # mesh warp: head motion, blink, background key
-npm run poses      # renders the built-in character across 16 poses
+npm test             # every suite
+npm run test:rig     # rig maths, headless, no camera needed
+npm run test:parts   # the cut: reassembly, and each part being the right part
+npm run test:mobile  # phone layout, on a phone-shaped viewport over HTTPS
+npm run test:warp    # mesh warp: head motion, blink, background key
+```
+
+And to look at a change rather than assert it:
+
+```bash
+npm run parts      # each cut part laid out separately, margins visible
+npm run puppet     # the model across a row of head poses
+npm run arms       # the arm channels swept, to check the shoulder pivots
+npm run scarf      # the scarf settling, frame by frame
 npm run warp-demo  # drives real artwork through the rig, with a control cell
 ```
 
 `test/rig.mjs` feeds synthetic frames straight into the rig and checks
-mirroring, calibration, clamping, blink behaviour and recovery from a stalled
-frame. `test/smoke.mjs` boots the real app in Chromium against a fake webcam
-and checks the whole pipeline comes up.
+mirroring, calibration, clamping, blink behaviour, arm angles and recovery from
+a stalled frame. `test/smoke.mjs` boots the real app in Chromium against a fake
+webcam and checks the whole pipeline comes up.
+
+`test/parts.mjs` is the one that guards the cut. Every part keeps image-space
+coordinates, so stacking them back at their stored positions has to reproduce
+the artwork pixel for pixel — that catches a part growing into its neighbour or
+a margin leaking into open space. It also asserts each part *is* what it claims,
+because a cut can reassemble perfectly and still have the helmet in the hair
+layer. That is not hypothetical; it is what the cut used to do.
 
 The fake camera shows a test pattern rather than a face, so the smoke test
 proves the pipeline runs — it cannot prove tracking accuracy. That part needs
@@ -292,6 +352,13 @@ a real face in front of a real camera.
 
 - Tracking needs reasonable light on your face. Backlighting is the usual
   culprit when it feels unreliable.
+- The **cut into parts** is written for the bundled ninja, as asked. It leans on
+  facts about that drawing — a scarf whose colour separates the head from the
+  body, gloves that are the scarf's colour but not joined to it. Other artwork
+  will not crash it, but it may hand you one big part instead of eight; use the
+  **whole-image warp** model for that art, which makes no such assumptions.
+- Arm tracking needs your shoulders in frame. Hips are not required — it falls
+  back to measuring against the screen when you are sitting at a desk.
 - Winks need good light; they are linked by default because half-detected
   winks look worse than no winks.
 - The head pitch and yaw directions are what I believe correct for MediaPipe's

@@ -8,11 +8,13 @@
     "postinstall": "node scripts/fetch-assets.mjs",
     "assets": "node scripts/fetch-assets.mjs",
     "dev": "vite",
+    "phone": "node scripts/phone.mjs",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "test": "node test/rig.mjs && node test/parts.mjs && node test/smoke.mjs && node test/warp.mjs",
+    "test": "node test/rig.mjs && node test/parts.mjs && node test/smoke.mjs && node test/mobile.mjs && node test/warp.mjs",
     "test:rig": "node test/rig.mjs",
     "test:parts": "node test/parts.mjs",
+    "test:mobile": "node test/mobile.mjs",
     "test:smoke": "node test/smoke.mjs",
     "test:warp": "node test/warp.mjs",
     "warp-demo": "node scripts/visual/warp-demo.mjs warp-demo.png",
@@ -26,6 +28,7 @@
     "@mediapipe/tasks-vision": "^0.10.22"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "playwright": "^1.56.1",
     "vite": "^7.1.14"
   }

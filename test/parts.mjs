@@ -118,6 +118,52 @@ try {
     `left ${armLeft?.cx.toFixed(2)} right ${armRight?.cx.toFixed(2)}`);
   check('the body is below the head', body && body.cy > head.cy, `body cy ${body?.cy.toFixed(2)}`);
 
+  /* --- artwork the rules were never written for ----------------------------
+   * The cut is tuned to one drawing on purpose. But "tuned for" must not mean
+   * "throws on anything else": every rule here can come up empty — no scarf
+   * colour, so no head boundary; no loose cloth, so no gloves and no arms — and
+   * the degenerate path has to fall out as a plain figure, not an exception.
+   */
+  const odd = await page.evaluate(async () => {
+    const { cutParts } = await import('/src/avatars/parts/cut.js');
+    const make = (draw) => {
+      const c = document.createElement('canvas');
+      c.width = 240;
+      c.height = 240;
+      draw(c.getContext('2d'));
+      return Object.assign(c, { naturalWidth: c.width, naturalHeight: c.height });
+    };
+    const markers = {
+      headX: 0.5, headY: 0.3, headR: 0.2, pivotX: 0.5, pivotY: 0.52, waistY: 0.78,
+      eyeL: [0.41, 0.27, 0.48, 0.32], eyeR: [0.52, 0.27, 0.59, 0.32], eyeAngle: 0,
+    };
+    const cases = {
+      // One flat grey figure: no saturated colour anywhere, so no scarf.
+      colourless: (g) => { g.fillStyle = '#6a6a70'; g.fillRect(60, 30, 120, 190); },
+      // Entirely one saturated colour: everything looks like cloth.
+      allCloth: (g) => { g.fillStyle = '#d12029'; g.fillRect(40, 20, 160, 200); },
+      // Nothing but transparency.
+      empty: () => {},
+      // Scattered specks, all below every minimum.
+      specks: (g) => { g.fillStyle = '#333'; for (let i = 0; i < 40; i++) g.fillRect(i * 5, i * 5, 2, 2); },
+    };
+    const out = {};
+    for (const [name, draw] of Object.entries(cases)) {
+      try {
+        const { parts } = cutParts(make(draw), markers);
+        out[name] = `${parts.length} parts: ${parts.map((p) => p.name).join('/') || 'none'}`;
+      } catch (err) {
+        out[name] = `THREW ${err.message}`;
+      }
+    }
+    return out;
+  });
+
+  for (const [name, result] of Object.entries(odd)) {
+    check(`unfamiliar artwork (${name}) cuts without throwing`,
+      !result.startsWith('THREW'), result);
+  }
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

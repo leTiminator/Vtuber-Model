@@ -84,7 +84,13 @@ export class FaceTracker {
    * stays `exact` throughout, so we never silently open the wrong camera.
    */
   async openStream(deviceId) {
-    const base = deviceId ? { deviceId: { exact: deviceId } } : {};
+    // Without a chosen device, prefer the front camera: a phone would
+    // otherwise open the rear one and track whatever the desk is facing.
+    // `ideal` keeps it a preference, so a webcam that reports no facing mode
+    // is still opened rather than rejected.
+    const base = deviceId
+      ? { deviceId: { exact: deviceId } }
+      : { facingMode: { ideal: 'user' } };
     const attempts = [
       { ...base, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
       { ...base, width: { ideal: 640 }, height: { ideal: 480 } },

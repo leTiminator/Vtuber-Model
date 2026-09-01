@@ -75,6 +75,17 @@ try {
 
   check('avatar canvas is mounted', await page.locator('#avatar-host canvas').count() === 1);
 
+  // The HUD lives inside the stage, so its buttons compete with the drag-to-pan
+  // handler. Capturing the pointer there once swallowed the click outright.
+  await page.click('#toggle-panel');
+  const hidden = await page.evaluate(() => document.body.classList.contains('panel-hidden'));
+  // On a desktop the HUD goes with the panel, for a clean capture; H brings
+  // both back. (A phone keeps the button instead — checked in test/mobile.mjs.)
+  await page.keyboard.press('h');
+  const shown = await page.evaluate(() => !document.body.classList.contains('panel-hidden'));
+  check('the panel button is not swallowed by drag-to-pan', hidden && shown,
+    `hid ${hidden}, restored ${shown}`);
+
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
   const idlePixels = await page.evaluate(() => {
     const c = document.querySelector('#avatar-host canvas');
