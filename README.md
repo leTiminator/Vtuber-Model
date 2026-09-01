@@ -71,7 +71,10 @@ Redo the neutral pose whenever you move your chair or camera.
 ## Trying it on your phone
 
 Handy for testing the tracking away from the desk, and for checking how the
-model reads at arm's length.
+model reads at arm's length. **It still runs on the computer** — the phone is
+just the screen, so the computer has to stay on with this running.
+
+Double-click **start-phone.bat** (Windows) or run `./start-phone.sh`, or:
 
 ```
 npm run phone
