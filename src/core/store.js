@@ -48,7 +48,7 @@ export const DEFAULTS = {
   'body.hairPhysics': 1.0,
 
   // --- stage -----------------------------------------------------------
-  'stage.avatar': 'procedural2d', // procedural2d | layered2d
+  'stage.avatar': 'procedural2d', // procedural2d | layered2d | warp2d
   'stage.background': 'transparent', // transparent | chroma | color
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
@@ -56,6 +56,23 @@ export const DEFAULTS = {
   'stage.offsetX': 0,
   'stage.offsetY': 0,
   'stage.showPreview': true,
+
+  // --- warped artwork (warp2d) -----------------------------------------
+  // Geometry is in UV space, 0..1 across the loaded image, so it survives
+  // swapping the artwork for a different resolution.
+  'warp.headX': 0.5,
+  'warp.headY': 0.3,
+  'warp.headR': 0.2,
+  'warp.pivotX': 0.5,
+  'warp.pivotY': 0.52,
+  'warp.eyeL': '[0.41,0.27,0.48,0.32]',
+  'warp.eyeR': '[0.52,0.27,0.59,0.32]',
+  'warp.eyesEnabled': true,
+  'warp.turn': 1.0, // how far the head slides when you turn
+  'warp.nod': 1.0,
+  'warp.wave': 1.0, // ripple on loose cloth
+  'warp.keyWhite': 0, // 0 = off, otherwise the luminance threshold
+  'warp.mesh': 28, // grid resolution; higher bends more smoothly
 
   // --- character (procedural2d) ----------------------------------------
   // A masked ninja: charcoal helmet, glowing visor eyes, long red scarf.

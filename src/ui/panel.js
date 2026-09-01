@@ -133,8 +133,17 @@ export function buildPanel(root, ctx) {
       controls: [
         { type: 'select', key: 'stage.avatar', label: 'Model', options: [
           ['procedural2d', 'Built-in ninja'],
+          ['warp2d', 'My artwork (rigged)'],
           ['layered2d', 'My PNG layers'],
         ] },
+        { type: 'artwork' },
+        { type: 'slider', key: 'warp.turn', label: 'Head turn', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.nod', label: 'Head nod', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.wave', label: 'Cloth ripple', min: 0, max: 3, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.mesh', label: 'Mesh detail', min: 8, max: 56, step: 1, format: (v) => `${v | 0}` },
+        { type: 'toggle', key: 'warp.eyesEnabled', label: 'Blink the marked eyes' },
+        { type: 'slider', key: 'warp.keyWhite', label: 'Cut white background', min: 0, max: 1, step: 0.01, format: (v) => (v > 0 ? v.toFixed(2) : 'off') },
+        { type: 'layersHeading' },
         { type: 'layers' },
       ],
     },
@@ -318,6 +327,57 @@ const BUILDERS = {
 
     field.append(button, input, status);
     return field;
+  },
+
+  artwork(_spec, ctx) {
+    const field = el('div', 'field');
+
+    const input = el('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.style.display = 'none';
+
+    const load = el('button', 'btn btn--primary', 'Load my artwork…');
+    load.type = 'button';
+    load.addEventListener('click', () => input.click());
+
+    const markup = el('button', 'btn', 'Mark up the rig');
+    markup.type = 'button';
+    markup.addEventListener('click', () => {
+      if (!ctx.openRigEditor()) {
+        status.className = 'note note--error';
+        status.textContent = 'Load an image first.';
+      }
+    });
+
+    const status = el('p', 'note',
+      'One flat PNG is enough — no layers needed. Load it, then drag the head, ' +
+      'neck and eye markers onto your art. It turns, nods, tilts, breathes and blinks from there.');
+
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const saved = await ctx.loadArtwork(file);
+        status.className = 'note';
+        status.textContent = saved
+          ? 'Loaded. Drag the markers onto your art, then hit Done.'
+          : 'Loaded, but it was too large to remember — you will need to re-pick it next time.';
+      } catch (err) {
+        status.className = 'note note--error';
+        status.textContent = err.message;
+      }
+      input.value = '';
+    });
+
+    field.append(load, markup, input, status);
+    return field;
+  },
+
+  layersHeading() {
+    const note = el('p', 'note note--divider');
+    note.textContent = 'Already have your art cut into separate layers? Load them instead:';
+    return note;
   },
 
   obsHelp() {

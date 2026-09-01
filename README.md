@@ -100,10 +100,45 @@ by the visor eyes: they narrow, slant with your brows, flare when you are
 surprised and burn red when angry. Your speech drives the glowing vent along
 the bottom of the visor instead.
 
-### Using your own artwork
+### Rigging one flat image
 
-If you commission art, you can drive it with the same tracking. Cut it into
-layers, name the files as below, put them in one folder, and use
+The quickest way to use your own character: **one PNG, no layers, no
+redrawing.** Open **Your own artwork → Load my artwork…**, pick the file, and
+mark up four things by dragging them onto the picture:
+
+| Marker | Put it |
+| --- | --- |
+| **head** (blue circle) | Around the whole head. Drag the corner dot to resize |
+| **neck** (pink dot) | Where the head should pivot when you tilt |
+| **left / right eye** (yellow boxes) | Over each eye, with a little of the face around it |
+
+Hit **Done** and it turns, nods, tilts, leans, breathes and blinks.
+
+It works by laying a deformation mesh over your image and bending it —
+the same idea Live2D is built on. Blinking re-samples the colour from just
+above each eye box and paints it down over the eye, so it adapts to whatever
+your art looks like without needing a separate closed-eye drawing. That is why
+the eye box wants a little margin around the eye.
+
+Tuning, all in the same panel:
+
+- **Head turn / Head nod** — how far the head slides and squashes. Turn these
+  up for a stylised look, down if the art starts to smear
+- **Cloth ripple** — travelling wave on loose parts like scarves and hair
+- **Mesh detail** — grid resolution; raise it if bending looks faceted
+- **Cut white background** — for art saved without transparency
+- **Blink the marked eyes** — switch off if your art has no visible eyes
+
+Your image is remembered in the browser between sessions. Very large files may
+not fit, in which case the panel says so and you re-pick it next time.
+
+This is a warp, not real 3D, so extreme head turns will smear. It is at its
+best in the ±30° range most people actually move in.
+
+### Using layered artwork
+
+If your art is already cut into layers, you get sharper results. Name the
+files as below, put them in one folder, and use
 **Your own artwork → Choose a folder of PNGs**.
 
 | File | What it does |
@@ -146,7 +181,13 @@ camera ─> FaceTracker ─> Rig ─> avatar backend ─> canvas ─> OBS
   way a real face does rather than just sliding sideways.
 - **`src/avatars/procedural2d/ribbon.js`** — the scarf. A Verlet chain with
   hard length constraints, which stays stable however fast you whip your head.
-- **`src/avatars/layered2d/`** — drives your own PNG artwork from the same rig.
+- **`src/avatars/warp2d/`** — rigs a single flat image. A deformation mesh is
+  laid over the artwork and bent in a vertex shader; each vertex carries a
+  head weight (so it turns with the head) and a looseness weight (so cloth
+  ripples). Blinking happens in the fragment shader by re-sampling the colour
+  above each eye box and painting it down, which needs no closed-eye art.
+- **`src/avatars/layered2d/`** — drives your own PNG artwork from the same rig,
+  when it is already cut into layers.
 
 Libraries are vendored from npm and the tracking model is downloaded once at
 install time, so the app has no CDN dependency and works offline.
@@ -156,9 +197,10 @@ install time, so the app has no CDN dependency and works offline.
 ## Tests
 
 ```bash
-npm test          # both suites
-npm run test:rig  # rig maths, headless, no camera needed
-npm run poses     # renders the character across 16 poses to preview.png
+npm test           # all three suites
+npm run test:rig   # rig maths, headless, no camera needed
+npm run test:warp  # mesh warp: head motion, blink, background key
+npm run poses      # renders the character across 16 poses to preview.png
 ```
 
 `test/rig.mjs` feeds synthetic frames straight into the rig and checks

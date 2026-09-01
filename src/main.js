@@ -6,9 +6,12 @@ import './styles.css';
 import * as store from './core/store.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { MicLevel } from './tracking/audio.js';
-import { Rig } from './tracking/rig.js';
+import { Rig, emptyRig } from './tracking/rig.js';
 import { Procedural2D } from './avatars/procedural2d/index.js';
 import { Layered2D } from './avatars/layered2d/index.js';
+import { Warp2D } from './avatars/warp2d/index.js';
+import { RigEditor } from './avatars/warp2d/editor.js';
+import * as artwork from './avatars/warp2d/artwork.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
 
@@ -37,8 +40,10 @@ const rig = new Rig();
 const avatars = {
   procedural2d: new Procedural2D(),
   layered2d: new Layered2D(),
+  warp2d: new Warp2D(),
 };
 let current = null;
+const rigEditor = new RigEditor();
 
 /* ------------------------------------------------------------- rendering */
 
@@ -148,6 +153,22 @@ buildPanel(dom.panelBody, {
     if (tracker.running) await startCamera();
   },
   loadLayers: (files) => avatars.layered2d.loadFiles(files),
+  loadArtwork: async (file) => {
+    const { image, dataURL } = await artwork.readFile(file);
+    mountAvatar('warp2d');
+    avatars.warp2d.setImage(image);
+    store.set('stage.avatar', 'warp2d');
+    const saved = artwork.remember(dataURL);
+    rigEditor.open(image);
+    return saved;
+  },
+  openRigEditor: () => {
+    const image = avatars.warp2d.image;
+    if (!image) return false;
+    rigEditor.open(image);
+    return true;
+  },
+  hasArtwork: () => Boolean(avatars.warp2d.image),
 });
 
 async function startCamera() {
@@ -223,4 +244,18 @@ window.addEventListener('resize', resize);
 
 mountAvatar(store.get('stage.avatar'));
 applyBackground();
+// Bring back artwork rigged in a previous session before the first frame, so
+// the model does not flash the built-in character on the way in.
+artwork.recall().then((saved) => {
+  if (!saved) return;
+  avatars.warp2d.setImage(saved.image);
+  if (store.get('stage.avatar') === 'warp2d') mountAvatar('warp2d');
+});
+
+// Dev-only handle, so the test suite can render a chosen pose and read the
+// pixels back without going through the camera.
+if (import.meta.env.DEV) {
+  window.__vtuber = { rig, avatars, tracker, store, emptyRig, get current() { return current; } };
+}
+
 requestAnimationFrame(frame);

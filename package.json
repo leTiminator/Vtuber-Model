@@ -10,10 +10,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "test": "node test/rig.mjs && node test/smoke.mjs",
+    "test": "node test/rig.mjs && node test/smoke.mjs && node test/warp.mjs",
     "test:rig": "node test/rig.mjs",
     "test:smoke": "node test/smoke.mjs",
-    "poses": "node scripts/visual/shoot.mjs preview.png"
+    "poses": "node scripts/visual/shoot.mjs preview.png",
+    "test:warp": "node test/warp.mjs",
+    "warp-demo": "node scripts/visual/warp-demo.mjs warp-demo.png"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.22"
