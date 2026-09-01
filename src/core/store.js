@@ -52,7 +52,7 @@ export const DEFAULTS = {
   'stage.background': 'transparent', // transparent | chroma | color
   'stage.chroma': '#00b140',
   'stage.color': '#101018',
-  'stage.zoom': 1.0,
+  'stage.zoom': 0.86,
   'stage.offsetX': 0,
   'stage.offsetY': 0,
   'stage.showPreview': true,

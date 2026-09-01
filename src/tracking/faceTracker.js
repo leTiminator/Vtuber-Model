@@ -74,19 +74,42 @@ export class FaceTracker {
     return devices.filter((d) => d.kind === 'videoinput');
   }
 
+  /**
+   * Open the camera, relaxing the constraints until something works.
+   *
+   * Every resolution and frame-rate hint here is `ideal`, never `min`: a hard
+   * minimum makes getUserMedia throw OverconstrainedError outright on cameras
+   * that cannot promise it, which plenty cannot in dim light. Better a lower
+   * frame rate than no camera at all. A device the user explicitly picked
+   * stays `exact` throughout, so we never silently open the wrong camera.
+   */
+  async openStream(deviceId) {
+    const base = deviceId ? { deviceId: { exact: deviceId } } : {};
+    const attempts = [
+      { ...base, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
+      { ...base, width: { ideal: 640 }, height: { ideal: 480 } },
+      deviceId ? base : true,
+    ];
+
+    let lastError;
+    for (const video of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      } catch (err) {
+        lastError = err;
+        // Permission and in-use failures will not improve on a retry.
+        if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ||
+            err?.name === 'NotReadableError') throw err;
+      }
+    }
+    throw lastError ?? new Error('No camera available.');
+  }
+
   async start(deviceId = '') {
     await this.stop();
     try {
       this.setStatus('requesting-camera');
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 60, min: 24 },
-        },
-        audio: false,
-      });
+      this.stream = await this.openStream(deviceId);
 
       this.video.srcObject = this.stream;
       await this.video.play();

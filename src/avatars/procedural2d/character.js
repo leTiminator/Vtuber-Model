@@ -569,8 +569,8 @@ function drawBody(ctx, rig, pal) {
   // Torso.
   ctx.beginPath();
   ctx.moveTo(500 - 60, 632);
-  ctx.bezierCurveTo(500 - 152, 672, 500 - halfW, 754, 500 - halfW - 22, 1010);
-  ctx.lineTo(500 + halfW + 22, 1010);
+  ctx.bezierCurveTo(500 - 152, 672, 500 - halfW, 754, 500 - halfW - 34, 1420);
+  ctx.lineTo(500 + halfW + 34, 1420);
   ctx.bezierCurveTo(500 + halfW, 754, 500 + 152, 672, 500 + 60, 632);
   ctx.closePath();
   ctx.fillStyle = pal.suit;
@@ -581,7 +581,7 @@ function drawBody(ctx, rig, pal) {
   ctx.clip();
   // Shoulder core shadow.
   ctx.beginPath();
-  ctx.ellipse(500 - halfW * 0.9, 900, halfW * 0.46, 250, 0.18, 0, TAU);
+  ctx.ellipse(500 - halfW * 0.9, 980, halfW * 0.46, 420, 0.18, 0, TAU);
   ctx.fillStyle = withAlpha(pal.suitShade, 0.75);
   ctx.fill();
 
@@ -589,7 +589,7 @@ function drawBody(ctx, rig, pal) {
   for (const side of [-1, 1]) {
     ctx.beginPath();
     ctx.moveTo(500 + side * 96, 700);
-    ctx.quadraticCurveTo(500 + side * 210, 760, 500 + side * 250, 1010);
+    ctx.quadraticCurveTo(500 + side * 210, 760, 500 + side * 264, 1420);
     stroke(ctx, pal.accent, 34);
     stroke(ctx, withAlpha(pal.accentShade, 0.5), 10);
   }
@@ -597,9 +597,9 @@ function drawBody(ctx, rig, pal) {
   // Scarf sweeping across the chest.
   ctx.beginPath();
   ctx.moveTo(500 - 150, 700);
-  ctx.bezierCurveTo(500 - 60, 800, 500 + 90, 830, 500 + 210, 1010);
-  ctx.lineTo(500 + 90, 1010);
-  ctx.bezierCurveTo(500 + 30, 850, 500 - 80, 800, 500 - 190, 742);
+  ctx.bezierCurveTo(500 - 60, 800, 500 + 120, 880, 500 + 250, 1420);
+  ctx.lineTo(500 + 96, 1420);
+  ctx.bezierCurveTo(500 + 40, 880, 500 - 80, 800, 500 - 190, 742);
   ctx.closePath();
   ctx.fillStyle = pal.scarf;
   ctx.fill();

@@ -225,7 +225,8 @@ export class Rig {
     const s = this.state;
     const rate = 2.2;
     for (const k of ['yaw', 'pitch', 'roll', 'x', 'y', 'z']) s.head[k] = damp(s.head[k], 0, rate, dt);
-    for (const k of ['squintL', 'squintR', 'wideL', 'wideR', 'gazeX', 'gazeY', 'browL', 'browR', 'browInner']) {
+    for (const k of ['blinkL', 'blinkR', 'squintL', 'squintR', 'wideL', 'wideR',
+                     'gazeX', 'gazeY', 'browL', 'browR', 'browInner']) {
       s.eyes[k] = damp(s.eyes[k], 0, rate, dt);
     }
     for (const k of Object.keys(s.mouth)) s.mouth[k] = damp(s.mouth[k], 0, rate, dt);
@@ -259,7 +260,7 @@ export class Rig {
   applyAutoBlink(dt, tracked) {
     if (!store.get('eyes.autoBlink')) {
       this.blink.value = damp(this.blink.value, 0, 12, dt);
-      this.mergeAutoBlink();
+      this.mergeAutoBlink(tracked);
       return;
     }
 
@@ -270,7 +271,7 @@ export class Rig {
       b.timer = 1.6 + Math.random() * 3.4;
       b.phase = 'idle';
       b.value = damp(b.value, 0, 14, dt);
-      this.mergeAutoBlink();
+      this.mergeAutoBlink(tracked);
       return;
     }
 
@@ -286,13 +287,24 @@ export class Rig {
       b.value -= dt * 9;
       if (b.value <= 0) { b.value = 0; b.phase = 'idle'; }
     }
-    this.mergeAutoBlink();
+    this.mergeAutoBlink(tracked);
   }
 
-  mergeAutoBlink() {
+  /**
+   * While tracking, auto-blink only fills gaps, so it takes whichever of the
+   * two is more closed. With no face it is the sole source and must assign
+   * outright — taking the max there would ratchet the eyes shut and leave
+   * them that way, since nothing else drives the channel down.
+   */
+  mergeAutoBlink(tracked) {
     const s = this.state.eyes;
-    s.blinkL = Math.max(s.blinkL, this.blink.value);
-    s.blinkR = Math.max(s.blinkR, this.blink.value);
+    if (tracked) {
+      s.blinkL = Math.max(s.blinkL, this.blink.value);
+      s.blinkR = Math.max(s.blinkR, this.blink.value);
+    } else {
+      s.blinkL = this.blink.value;
+      s.blinkR = this.blink.value;
+    }
   }
 
   applyOverrides(dt) {

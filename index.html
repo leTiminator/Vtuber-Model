@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VTuber Model</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <main id="stage" aria-label="Avatar stage">
+      <div id="avatar-host"></div>
+
+      <div id="hud">
+        <button id="toggle-panel" type="button" title="Show or hide the controls (H)">☰</button>
+        <span id="status" class="status status--idle">Camera off</span>
+        <span id="fps" class="fps" hidden></span>
+      </div>
+
+      <div id="camera-preview" hidden>
+        <span>camera</span>
+      </div>
+
+      <p id="first-run">
+        Press <strong>Start camera</strong> to bring the model to life.
+        <br />Everything runs on this machine — no video ever leaves it.
+      </p>
+    </main>
+
+    <aside id="panel" aria-label="Controls">
+      <div class="panel__head">
+        <h1>VTuber Model</h1>
+        <button id="close-panel" type="button" title="Hide the controls (H)">×</button>
+      </div>
+      <div class="panel__actions">
+        <button id="start" class="btn btn--primary" type="button">Start camera</button>
+        <button id="calibrate" class="btn" type="button" title="Sit straight, look at the camera, then press this (C)">
+          Set neutral pose
+        </button>
+      </div>
+      <div id="panel-body"></div>
+      <div class="panel__foot">
+        <button id="export" class="btn btn--ghost" type="button">Export settings</button>
+        <button id="import" class="btn btn--ghost" type="button">Import</button>
+        <button id="reset" class="btn btn--ghost" type="button">Reset all</button>
+      </div>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
