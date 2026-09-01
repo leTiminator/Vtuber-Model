@@ -57,22 +57,36 @@ export const DEFAULTS = {
   'stage.offsetY': 0,
   'stage.showPreview': true,
 
-  // --- warped artwork (warp2d) -----------------------------------------
-  // Geometry is in UV space, 0..1 across the loaded image, so it survives
+  // --- rigged artwork (warp2d) -----------------------------------------
+  // Geometry is in UV space, 0..1 across the loaded image, so markup survives
   // swapping the artwork for a different resolution.
   'warp.headX': 0.5,
   'warp.headY': 0.3,
   'warp.headR': 0.2,
   'warp.pivotX': 0.5,
   'warp.pivotY': 0.52,
+  'warp.waistY': 0.78,
   'warp.eyeL': '[0.41,0.27,0.48,0.32]',
   'warp.eyeR': '[0.52,0.27,0.59,0.32]',
+  'warp.eyeAngle': 0, // radians; drawings rarely have level eyes
   'warp.eyesEnabled': true,
-  'warp.turn': 1.0, // how far the head slides when you turn
+
+  'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
-  'warp.wave': 1.0, // ripple on loose cloth
+  'warp.parallax': 1.0, // how far the face plate slides across the skull
+  'warp.overshoot': 1.0, // head settles rather than stopping dead
+
+  'warp.clothWeight': 1.0, // scarf travel
+  'warp.clothStiffness': 1.0, // higher returns to the drawn pose faster
+  'warp.tuftWeight': 1.0,
+  'warp.tuftStiffness': 1.0,
+  'warp.wind': 1.0, // idle cloth movement when you are holding still
+
+  'warp.lowerDamping': 0.15, // waist down barely moves
+  'warp.squint': 1.0,
+  'warp.eyeGlow': 0.35,
   'warp.keyWhite': 0, // 0 = off, otherwise the luminance threshold
-  'warp.mesh': 28, // grid resolution; higher bends more smoothly
+  'warp.mesh': 48, // grid resolution; higher bends more smoothly
 
   // --- character (procedural2d) ----------------------------------------
   // A masked ninja: charcoal helmet, glowing visor eyes, long red scarf.

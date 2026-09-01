@@ -137,11 +137,28 @@ export function buildPanel(root, ctx) {
           ['layered2d', 'My PNG layers'],
         ] },
         { type: 'artwork' },
-        { type: 'slider', key: 'warp.turn', label: 'Head turn', min: 0, max: 2.5, step: 0.01, format: x },
-        { type: 'slider', key: 'warp.nod', label: 'Head nod', min: 0, max: 2.5, step: 0.01, format: x },
-        { type: 'slider', key: 'warp.wave', label: 'Cloth ripple', min: 0, max: 3, step: 0.01, format: x },
+
+        { type: 'heading', label: 'Head' },
+        { type: 'slider', key: 'warp.turn', label: 'Turn left/right', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.nod', label: 'Nod up/down', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.parallax', label: 'Face depth', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
+
+        { type: 'heading', label: 'Cloth & hair' },
+        { type: 'slider', key: 'warp.clothWeight', label: 'Scarf travel', min: 0, max: 3, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.clothStiffness', label: 'Scarf stiffness', min: 0.1, max: 4, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.tuftWeight', label: 'Tuft travel', min: 0, max: 3, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.tuftStiffness', label: 'Tuft stiffness', min: 0.1, max: 4, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.wind', label: 'Idle drift', min: 0, max: 3, step: 0.01, format: x },
+
+        { type: 'heading', label: 'Eyes' },
+        { type: 'toggle', key: 'warp.eyesEnabled', label: 'Blink and squint' },
+        { type: 'slider', key: 'warp.squint', label: 'Squint amount', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.eyeGlow', label: 'Glow', min: 0, max: 1.5, step: 0.01, format: x },
+
+        { type: 'heading', label: 'Body' },
+        { type: 'slider', key: 'warp.lowerDamping', label: 'Waist-down movement', min: 0, max: 1, step: 0.01, format: x },
         { type: 'slider', key: 'warp.mesh', label: 'Mesh detail', min: 8, max: 56, step: 1, format: (v) => `${v | 0}` },
-        { type: 'toggle', key: 'warp.eyesEnabled', label: 'Blink the marked eyes' },
         { type: 'slider', key: 'warp.keyWhite', label: 'Cut white background', min: 0, max: 1, step: 0.01, format: (v) => (v > 0 ? v.toFixed(2) : 'off') },
         { type: 'layersHeading' },
         { type: 'layers' },
@@ -162,6 +179,12 @@ function buildGroup(group, ctx) {
   details.append(el('summary', null, group.title));
   const body = el('div', 'group__body');
   for (const control of group.controls) {
+    if (control.key && store.get(control.key) === undefined) {
+      // A stale control naming a setting that no longer exists should not take
+      // the whole panel down with it.
+      console.warn(`panel: skipping control for unknown setting ${control.key}`);
+      continue;
+    }
     const node = BUILDERS[control.type]?.(control, ctx);
     if (node) body.append(node);
   }
@@ -383,6 +406,12 @@ const BUILDERS = {
     const note = el('p', 'note note--divider');
     note.textContent = 'Already have your art cut into separate layers? Load them instead:';
     return note;
+  },
+
+  heading(spec) {
+    const node = el('h4', 'group__heading');
+    node.textContent = spec.label;
+    return node;
   },
 
   obsHelp() {

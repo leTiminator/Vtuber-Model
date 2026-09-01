@@ -153,6 +153,26 @@ function buildNinjaFixture() {
   return encodePNG(W, H, px);
 }
 
+/** One bright bar where two eyes have merged: the case real artwork produces. */
+function buildMergedEyeFixture() {
+  const px = Buffer.alloc(W * H * 4);
+  const set = (x, y, r, g, b) => {
+    const i = (y * W + x) * 4;
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+  };
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = x / W;
+      const v = y / H;
+      if (v > 0.6 && Math.abs(u - 0.5) < 0.3) set(x, y, 50, 54, 62);
+      if (Math.hypot((u - 0.5) * (W / H), v - 0.32) < 0.2) set(x, y, 70, 76, 88);
+      // A single wide bright bar rather than two separate patches.
+      if (u > 0.38 && u < 0.62 && v > 0.3 && v < 0.35) set(x, y, 255, 255, 255);
+    }
+  }
+  return encodePNG(W, H, px);
+}
+
 /* ------------------------------------------------------------------ test */
 
 const server = await createServer({ server: { port: 5191 }, logLevel: 'error' });
@@ -172,16 +192,22 @@ page.on('console', (m) => {
   if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
 });
 
-/** Render one pose straight into the warp canvas and summarise the pixels. */
+/**
+ * Render a pose into the warp canvas and summarise the pixels.
+ * `frames` runs the sim on, which is how the time-dependent behaviour
+ * (cloth lag, overshoot) becomes observable.
+ */
 const shoot = (pose) => page.evaluate((p) => {
-  const { avatars, emptyRig } = window.__vtuber;
+  const { avatars, emptyRig, store } = window.__vtuber;
+  for (const [k, v] of Object.entries(p.settings ?? {})) store.set(k, v);
+
   const rig = emptyRig();
   Object.assign(rig.head, p.head ?? {});
   Object.assign(rig.eyes, p.eyes ?? {});
   Object.assign(rig.body, p.body ?? {});
 
   const avatar = avatars.warp2d;
-  avatar.render(rig, 0.016);
+  for (let f = 0; f < (p.frames ?? 1); f++) avatar.render(rig, 1 / 60);
 
   const gl = avatar.gl;
   const w = gl.drawingBufferWidth;
@@ -218,9 +244,8 @@ try {
     await page.evaluate(() => window.__vtuber.store.get('stage.avatar')) === 'warp2d');
 
   check('the rig editor opens on load', await page.locator('#rig-editor').isVisible());
-  check('it offers all four markers',
-    await page.locator('#rig-editor .rig-handle').count() === 4,
-    `${await page.locator('#rig-editor .rig-handle').count()} handles`);
+  const handles = await page.locator('#rig-editor .rig-handle').count();
+  check('it offers head, neck, waist and both eyes', handles === 5, `${handles} handles`);
 
   // The markers should have been placed automatically from the image itself.
   const guessed = await page.evaluate(() => {
@@ -282,6 +307,60 @@ try {
     winked.white > blinked.white && winked.white < neutral.white,
     `${winked.white} white px`);
 
+  const squinted = await shoot({ eyes: { squintL: 1, squintR: 1 } });
+  check('squinting narrows the eyes without closing them',
+    squinted.white < neutral.white * 0.85 && squinted.white > blinked.white,
+    `${blinked.white} < ${squinted.white} < ${neutral.white}`);
+
+  // --- motion over time -------------------------------------------------
+  // Isolate the rig from idle drift so these compare like for like.
+  const still = { 'warp.wind': 0 };
+
+  const settled = await shoot({ settings: still, frames: 240 });
+  const whipped = await shoot({ settings: still, head: { yaw: 0.5 }, frames: 2 });
+  const returned = await shoot({ settings: still, frames: 3 });
+  check('cloth keeps moving after the head stops',
+    returned.signature !== settled.signature,
+    'still swinging one frame after the pose returned to rest');
+
+  const resettled = await shoot({ settings: still, frames: 400 });
+  check('cloth comes back to rest',
+    Math.abs(resettled.opaque - settled.opaque) < settled.opaque * 0.02,
+    `${settled.opaque} -> ${resettled.opaque} opaque px`);
+
+  // Overshoot: with the spring off the head is at its target immediately, so
+  // an early frame and a late frame match. With it on, they must not. Cloth is
+  // switched off here or its own settling would answer the question instead.
+  // Cloth and the glow pulse are both time-varying by design, so both are
+  // switched off here; otherwise they answer the question instead of the head.
+  const rigid = { ...still, 'warp.clothWeight': 0, 'warp.tuftWeight': 0, 'warp.eyeGlow': 0 };
+  const springOff = { ...rigid, 'warp.overshoot': 0 };
+  await shoot({ settings: springOff, frames: 240 });
+  const offEarly = await shoot({ settings: springOff, head: { yaw: 0.4 }, frames: 1 });
+  const offLate = await shoot({ settings: springOff, head: { yaw: 0.4 }, frames: 90 });
+  check('with overshoot off the head snaps straight to its target',
+    offEarly.signature === offLate.signature);
+
+  const springOn = { ...rigid, 'warp.overshoot': 1 };
+  await shoot({ settings: springOn, frames: 240 });
+  const onEarly = await shoot({ settings: springOn, head: { yaw: 0.4 }, frames: 1 });
+  const onLate = await shoot({ settings: springOn, head: { yaw: 0.4 }, frames: 90 });
+  check('with overshoot on the head settles over time',
+    onEarly.signature !== onLate.signature);
+
+  // Waist-down damping: more of the image should move when the lower body is
+  // allowed to follow than when it is pinned.
+  const shifted = { head: { x: 1 }, frames: 30, settings: still };
+  const pinned = await shoot({ ...shifted, settings: { ...still, 'warp.lowerDamping': 0 } });
+  const free = await shoot({ ...shifted, settings: { ...still, 'warp.lowerDamping': 1 } });
+  check('waist-down damping changes how much of the body follows',
+    pinned.signature !== free.signature,
+    'pinned and free legs render differently');
+  await shoot({ settings: {
+    'warp.lowerDamping': 0.15, 'warp.wind': 1, 'warp.overshoot': 1,
+    'warp.clothWeight': 1, 'warp.tuftWeight': 1, 'warp.eyeGlow': 0.35,
+  } });
+
   // A white background should vanish when the key is switched on.
   await page.setInputFiles('input[accept="image/png,image/jpeg,image/webp"]', {
     name: 'opaque.png',
@@ -335,6 +414,23 @@ try {
   check('blink works on the awkward layout',
     ninjaBlink.white < ninjaNeutral.white * 0.4,
     `${ninjaNeutral.white} -> ${ninjaBlink.white} white px`);
+
+  // --- eyes that merge into one blob ------------------------------------
+  await page.setInputFiles('input[accept="image/png,image/jpeg,image/webp"]', {
+    name: 'merged.png',
+    mimeType: 'image/png',
+    buffer: buildMergedEyeFixture(),
+  });
+  await page.locator('#rig-editor [data-role="done"]').click();
+
+  const merged = await page.evaluate(() => {
+    const s = window.__vtuber.store;
+    return { l: JSON.parse(s.get('warp.eyeL')), r: JSON.parse(s.get('warp.eyeR')) };
+  });
+  const centre = (r) => (r[0] + r[2]) / 2;
+  check('a single merged bright blob splits into two eyes',
+    centre(merged.r) > centre(merged.l) + 0.02,
+    `centres ${centre(merged.l).toFixed(3)} and ${centre(merged.r).toFixed(3)}`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {

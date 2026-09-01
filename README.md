@@ -102,38 +102,63 @@ the bottom of the visor instead.
 
 ### Rigging one flat image
 
-The quickest way to use your own character: **one PNG, no layers, no
-redrawing.** Open **Your own artwork → Load my artwork…**, pick the file, and
-mark up four things by dragging them onto the picture:
+The quickest way to use your own character: **one PNG, no layers, no redrawing.**
+Open **Your own artwork → Load my artwork…**, pick the file, and check the five
+markers it places for you:
 
-| Marker | Put it |
+| Marker | Where it goes |
 | --- | --- |
 | **head** (blue circle) | Around the whole head. Drag the corner dot to resize |
-| **neck** (pink dot) | Where the head should pivot when you tilt |
-| **left / right eye** (yellow boxes) | Over each eye, with a little of the face around it |
+| **neck** (pink dot) | Where the head pivots when you tilt |
+| **waist** (green line) | Below this, the body barely moves — for when you crop to a bust |
+| **left / right eye** (yellow boxes) | Over each eye, with a little face around it |
 
-Hit **Done** and it turns, nods, tilts, leans, breathes and blinks.
+Tick **Show regions** to see what it worked out — cloth in red, hair in blue,
+face plate in yellow, torso in green, legs in purple. If something is in the
+wrong region, move the head circle or the waist line until it isn't.
 
-It works by laying a deformation mesh over your image and bending it —
-the same idea Live2D is built on. Blinking re-samples the colour from just
-above each eye box and paints it down over the eye, so it adapts to whatever
-your art looks like without needing a separate closed-eye drawing. That is why
-the eye box wants a little margin around the eye.
+Hit **Done**. It then turns, nods, tilts, leans, breathes, blinks and squints,
+and the cloth and hair trail behind the motion.
 
-Tuning, all in the same panel:
+**What it does, and how**
 
-- **Head turn / Head nod** — how far the head slides and squashes. Turn these
-  up for a stylised look, down if the art starts to smear
-- **Cloth ripple** — travelling wave on loose parts like scarves and hair
-- **Mesh detail** — grid resolution; raise it if bending looks faceted
-- **Cut white background** — for art saved without transparency
-- **Blink the marked eyes** — switch off if your art has no visible eyes
+- **Turn and nod** — the head is rotated on a cylinder, so the side turning away
+  compresses and the side turning toward you spreads. On top of that the face
+  plate is treated as sitting in front of the skull, so it slides across as you
+  turn. That parallax is what sells the rotation.
+- **Tilt** — a real rotation about the neck marker.
+- **Overshoot** — head angles run through a spring, so the head settles instead
+  of stopping dead.
+- **Cloth and hair** — solved as a displacement field along each piece: nodes
+  pull toward the one before them, which sends a wave outward, and back toward
+  the drawn pose, which returns them home. Driven by the head's own inertia plus
+  a little wind, so the scarf still moves when you hold still.
+- **Blink and squint** — lids sweep across each eye box in a flat colour sampled
+  from the face around the socket. They bow, travelling further at the middle
+  than the corners, and they follow the eyes' own angle — drawings rarely have
+  level eyes.
+- **Glow** — rides on whatever is bright inside each socket, pulsing slowly and
+  flaring when you move sharply.
+
+**Tuning**, all in the same panel: head turn/nod, face depth, overshoot, scarf
+travel and stiffness, tuft travel and stiffness, idle drift, squint, glow,
+waist-down movement, mesh detail, and a white-background key for art saved
+without transparency.
 
 Your image is remembered in the browser between sessions. Very large files may
 not fit, in which case the panel says so and you re-pick it next time.
 
-This is a warp, not real 3D, so extreme head turns will smear. It is at its
-best in the ±30° range most people actually move in.
+**Limits worth knowing**
+
+- Past roughly ±30° the turn starts to smear. There is no hidden far side of a
+  flat drawing. It is at its best in the range people actually move in.
+- Nothing can pass in front of anything else — it is one continuous sheet, which
+  is also why it can never tear a hole.
+- Hair sticking off a hood is usually the same colour as the hood and sits inside
+  the head's own radius, so the split between them is approximate. Tufts get
+  their own lag layered on top of the head's motion rather than being cleanly
+  separated.
+- A neutral, front-facing bust rigs better than a dynamic full-body pose.
 
 ### Using layered artwork
 
@@ -182,10 +207,12 @@ camera ─> FaceTracker ─> Rig ─> avatar backend ─> canvas ─> OBS
 - **`src/avatars/procedural2d/ribbon.js`** — the scarf. A Verlet chain with
   hard length constraints, which stays stable however fast you whip your head.
 - **`src/avatars/warp2d/`** — rigs a single flat image. A deformation mesh is
-  laid over the artwork and bent in a vertex shader; each vertex carries a
-  head weight (so it turns with the head) and a looseness weight (so cloth
-  ripples). Blinking happens in the fragment shader by re-sampling the colour
-  above each eye box and painting it down, which needs no closed-eye art.
+  laid over the artwork and bent in a vertex shader, each vertex carrying six
+  region weights so parts move independently without ever tearing a hole.
+  `segment.js` works out those regions from the picture; `cloth.js` solves the
+  scarf and hair as a displacement field rather than as geometry, so the rest
+  state is exactly the drawing; `shader.js` owns the cylindrical head turn and
+  the eyelids.
 - **`src/avatars/layered2d/`** — drives your own PNG artwork from the same rig,
   when it is already cut into layers.
 
@@ -200,7 +227,8 @@ install time, so the app has no CDN dependency and works offline.
 npm test           # all three suites
 npm run test:rig   # rig maths, headless, no camera needed
 npm run test:warp  # mesh warp: head motion, blink, background key
-npm run poses      # renders the character across 16 poses to preview.png
+npm run poses      # renders the built-in character across 16 poses
+npm run warp-demo  # drives real artwork through the rig, with a control cell
 ```
 
 `test/rig.mjs` feeds synthetic frames straight into the rig and checks

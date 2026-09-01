@@ -12,7 +12,6 @@ import { Layered2D } from './avatars/layered2d/index.js';
 import { Warp2D } from './avatars/warp2d/index.js';
 import { RigEditor } from './avatars/warp2d/editor.js';
 import * as artwork from './avatars/warp2d/artwork.js';
-import { autoMarkup } from './avatars/warp2d/autoMarkup.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
 
@@ -45,6 +44,8 @@ const avatars = {
 };
 let current = null;
 const rigEditor = new RigEditor();
+// The overlay draws whatever the backend actually segmented, not a re-guess.
+rigEditor.setMaskSource(() => avatars.warp2d.masks);
 
 /* ------------------------------------------------------------- rendering */
 
@@ -142,34 +143,6 @@ async function applyMicSource() {
   }
 }
 
-/* --------------------------------------------------------- artwork markup */
-
-/**
- * Guess the head, neck and eye markers from the artwork itself, so a fresh
- * image lands somewhere close rather than on four unplaced handles. Returns
- * what it was confident about; every value stays editable afterwards.
- */
-function applyAutoMarkup(image) {
-  let guess = null;
-  try {
-    guess = autoMarkup(image);
-  } catch (err) {
-    console.warn('auto markup failed, keeping current markers', err);
-  }
-  if (!guess) return { head: false, eyes: false };
-
-  store.patch({
-    'warp.headX': guess.headX,
-    'warp.headY': guess.headY,
-    'warp.headR': guess.headR,
-    'warp.pivotX': guess.pivotX,
-    'warp.pivotY': guess.pivotY,
-    'warp.eyeL': JSON.stringify(guess.eyeL),
-    'warp.eyeR': JSON.stringify(guess.eyeR),
-  });
-  return { head: true, eyes: guess.confidentEyes };
-}
-
 /* ------------------------------------------------------------------ boot */
 
 const cameraListeners = new Set();
@@ -185,12 +158,11 @@ buildPanel(dom.panelBody, {
   loadArtwork: async (file) => {
     const { image, dataURL } = await artwork.readFile(file);
     mountAvatar('warp2d');
-    avatars.warp2d.setImage(image);
+    avatars.warp2d.setImage(image, true); // fresh art: re-place the markers
     store.set('stage.avatar', 'warp2d');
     const saved = artwork.remember(dataURL);
-    const found = applyAutoMarkup(image);
     rigEditor.open(image);
-    return { saved, found };
+    return { saved, found: { head: true, eyes: avatars.warp2d.markerConfidence === true } };
   },
   openRigEditor: () => {
     const image = avatars.warp2d.image;
@@ -278,7 +250,8 @@ applyBackground();
 // the model does not flash the built-in character on the way in.
 artwork.recall().then((saved) => {
   if (!saved) return;
-  avatars.warp2d.setImage(saved.image);
+  // Restoring a save: keep whatever markers the user already adjusted.
+  avatars.warp2d.setImage(saved.image, false);
   if (store.get('stage.avatar') === 'warp2d') mountAvatar('warp2d');
 });
 

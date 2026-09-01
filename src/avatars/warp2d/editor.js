@@ -36,6 +36,10 @@ export class RigEditor {
           <div class="rig-handle rig-handle--pivot" data-role="pivot">
             <span class="rig-handle__tag">neck</span>
           </div>
+          <div class="rig-handle rig-handle--waist" data-role="waist">
+            <span class="rig-handle__tag">waist</span>
+          </div>
+          <canvas class="rig-editor__regions" hidden></canvas>
           <div class="rig-handle rig-handle--eye" data-role="eyeL">
             <span class="rig-handle__grip" data-role="eyeL-size"></span>
             <span class="rig-handle__tag">left eye</span>
@@ -48,9 +52,13 @@ export class RigEditor {
         <div class="rig-editor__bar">
           <p>
             Drag <strong>head</strong> over the whole head and size it with the corner dot.
-            Put <strong>neck</strong> where the head should pivot. Cover each eye with its box —
-            blinking paints over that area, so include a little of the face around each eye.
+            Put <strong>neck</strong> where it should pivot, and <strong>waist</strong> where
+            you want the body to stop moving. Cover each eye with its box — the lid closes
+            across that area, so leave a little face around each eye.
           </p>
+          <label class="rig-editor__toggle">
+            <input type="checkbox" data-role="show-regions" /> Show regions
+          </label>
           <button class="btn btn--primary" data-role="done" type="button">Done</button>
         </div>
       </div>`;
@@ -77,6 +85,14 @@ export class RigEditor {
     this.bindHandle('pivot', (uv) => {
       store.set('warp.pivotX', uv.x);
       store.set('warp.pivotY', uv.y);
+    });
+    this.bindHandle('waist', (uv) => store.set('warp.waistY', uv.y));
+
+    this.regions = root.querySelector('.rig-editor__regions');
+    const toggle = root.querySelector('[data-role="show-regions"]');
+    toggle.addEventListener('change', () => {
+      this.regions.hidden = !toggle.checked;
+      if (toggle.checked) this.paintRegions();
     });
     for (const eye of ['eyeL', 'eyeR']) {
       const key = `warp.${eye}`;
@@ -127,6 +143,48 @@ export class RigEditor {
     });
   }
 
+  /** @param {() => object|null} fn returns the mask set for the region overlay */
+  setMaskSource(fn) {
+    this.getMasks = fn;
+  }
+
+  /**
+   * Tint each detected region over the artwork, so a mis-detected scarf or a
+   * head circle in the wrong place is visible rather than guessed at.
+   */
+  paintRegions() {
+    const masks = this.getMasks?.();
+    const canvas = this.regions;
+    if (!masks || !canvas) return;
+
+    canvas.width = masks.w;
+    canvas.height = masks.h;
+    const ctx = canvas.getContext('2d');
+    const out = ctx.createImageData(masks.w, masks.h);
+
+    const tints = [
+      [masks.cloth, 235, 70, 70],
+      [masks.tufts, 120, 200, 255],
+      [masks.face, 255, 210, 90],
+      [masks.torso, 130, 255, 150],
+      [masks.lower, 190, 140, 255],
+    ];
+    for (let i = 0; i < masks.w * masks.h; i++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (const [mask, tr, tg, tb] of tints) {
+        const v = mask?.[i] ?? 0;
+        if (v <= 0.02) continue;
+        r += tr * v; g += tg * v; b += tb * v; a = Math.max(a, v);
+      }
+      const o = i * 4;
+      out.data[o] = Math.min(255, r);
+      out.data[o + 1] = Math.min(255, g);
+      out.data[o + 2] = Math.min(255, b);
+      out.data[o + 3] = Math.min(190, a * 190);
+    }
+    ctx.putImageData(out, 0, 0);
+  }
+
   open(image) {
     this.build();
     this.image = image;
@@ -139,6 +197,9 @@ export class RigEditor {
     this.frame.style.height = `${image.naturalHeight * scale}px`;
 
     this.root.hidden = false;
+    const toggle = this.root.querySelector('[data-role="show-regions"]');
+    this.regions.hidden = !toggle.checked;
+    if (toggle.checked) this.paintRegions();
     this.sync();
   }
 
@@ -170,6 +231,9 @@ export class RigEditor {
     pivot.style.left = `${store.get('warp.pivotX') * w}px`;
     pivot.style.top = `${store.get('warp.pivotY') * h}px`;
 
+    const waist = this.root.querySelector('[data-role="waist"]');
+    waist.style.top = `${store.get('warp.waistY') * h}px`;
+
     for (const eye of ['eyeL', 'eyeR']) {
       const rect = parseRect(store.get(`warp.${eye}`));
       const el = this.root.querySelector(`[data-role="${eye}"]`);
@@ -177,6 +241,8 @@ export class RigEditor {
       el.style.top = `${rect[1] * h}px`;
       el.style.width = `${(rect[2] - rect[0]) * w}px`;
       el.style.height = `${(rect[3] - rect[1]) * h}px`;
+      // Sockets are stored in the eyes' own frame, so show them tilted to match.
+      el.style.transform = `rotate(${store.get('warp.eyeAngle')}rad)`;
     }
   }
 }
