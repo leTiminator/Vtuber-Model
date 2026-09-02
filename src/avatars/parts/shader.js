@@ -16,6 +16,7 @@ precision highp float;
 in vec2 a_pos;   // image space, 0..1 across the whole artwork
 in vec2 a_uv;    // into this part's own texture
 in vec3 a_bind;  // cloth only: where along the spine, and where in its local frame
+in float a_follow; // how much of the head's turn this vertex takes, 0..1
 
 uniform mat3 u_model;      // this part's joint transform, in image space
 uniform float u_aspect;    // image width / height
@@ -80,10 +81,23 @@ float cylinder(float x, float R, float angle) {
 void main() {
   vec2 p = u_spineMode > 0.5 ? fromSpine(a_bind, u_aspect) : a_pos;
 
-  if (u_warp > 0.5) {
+  /* The head's turn, taken per vertex rather than per part.
+   *
+   * A cut cannot express a gradient. The scarf is one continuous surface that
+   * should follow the head fully where it crosses the face and barely at all
+   * where it hangs off the shoulder — but it is cut in two, and giving each
+   * piece a single follow factor makes them disagree at the seam. The bend
+   * maps a point differently for different angles, so at a 42-degree turn the
+   * same point on that seam landed tens of pixels apart in the two parts and
+   * the scarf came away from the head.
+   *
+   * Both sides of the seam compute this from the same function of where the
+   * vertex sits, so they cannot disagree there however the parts are cut.
+   */
+  if (u_warp > 0.5 && a_follow > 0.001) {
     vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);
-    local.x = cylinder(local.x, u_cylR, u_yaw);
-    local.y = cylinder(local.y, u_cylR * 0.82, u_pitch);
+    local.x = cylinder(local.x, u_cylR, u_yaw * a_follow);
+    local.y = cylinder(local.y, u_cylR * 0.82, u_pitch * a_follow);
     p = u_headCenter + local / vec2(u_aspect, 1.0);
   }
 

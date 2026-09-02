@@ -21,25 +21,18 @@ import { cutParts } from './cut.js';
  * The parts that take the head's cylindrical bend. They have to share one
  * radius — see the note where it is computed.
  */
-const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap']);
+const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap', 'tails']);
 
 /**
- * How much of the head's turn the neck wrap takes.
+ * Where the head's turn stops being the head's, as multiples of the head's own
+ * radius. Full inside the first, none beyond the second, smooth between.
  *
- * Neither end of this range is right, and the value is a compromise between
- * two visible faults. At 1 the wrap turns with the hood and climbs over the
- * visor — it is cloth on the shoulders, and it does not perform a head turn.
- * Below about 0.5 it slides off the hood instead: the bend maps a point
- * differently for different angles, so at a 42-degree turn the same point on
- * the wrap/hood seam lands tens of pixels apart in the two parts and the
- * scarf comes away from the head.
- *
- * The real answer is that a cut cannot express a gradient. The scarf is one
- * continuous surface that should follow the head fully where it crosses the
- * face and barely at all where it hangs off the shoulder, and no single
- * number for a rigid part can do both.
+ * The hood and the hair are the head and take all of it. The scarf crosses the
+ * face and then leaves for the shoulders, so it starts as head and stops being
+ * head — which is a gradient, not a property of which piece it was cut into.
  */
-const WRAP_FOLLOW = 0.45;
+const FOLLOW_FULL = 1.05;
+const FOLLOW_NONE = 2.30;
 
 /**
  * Parts that cast a contact shadow on what is behind them. The backmost part
@@ -134,6 +127,7 @@ export class Parts2D {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
       bind: gl.getAttribLocation(program, 'a_bind'),
+      follow: gl.getAttribLocation(program, 'a_follow'),
     };
 
     gl.enable(gl.BLEND);
@@ -197,6 +191,18 @@ export class Parts2D {
     const tails = parts.find((p) => p.name === 'tails');
     this.spine = tails ? findSpine(tails, this.image, width, height, m) : null;
 
+    /* The head's real extent, measured from the piece that was cut, not from
+     * the marker. The marker's radius comes from eye spacing, which on this
+     * drawing is less than half the hood — every distance judged against it
+     * would be wrong by the same factor.
+     */
+    const headPart = parts.find((p) => p.name === 'head');
+    this.headSpan = headPart ? {
+      cx: (headPart.x + headPart.inset + (headPart.w - 2 * headPart.inset) / 2) / width,
+      cy: (headPart.y + headPart.inset + (headPart.h - 2 * headPart.inset) / 2) / height,
+      r: Math.max(headPart.w - 2 * headPart.inset, headPart.h - 2 * headPart.inset) / 2 / height,
+    } : { cx: m.headX, cy: m.headY, r: m.headR };
+
     this.parts = parts
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m, sockets));
@@ -225,6 +231,23 @@ export class Parts2D {
     this.rebuild = false;
   }
 
+  /**
+   * How much of the head's turn a point takes.
+   *
+   * The shell is the head and takes all of it. Cloth starts as head where it
+   * crosses the face and stops being head as it reaches the shoulders. Because
+   * both sides of a cut ask this same question about the same point, they
+   * agree at the seam no matter where the cut fell.
+   */
+  followAt(name, px, py) {
+    if (name === 'head' || name === 'tufts') return 1;
+    if (name !== 'wrap' && name !== 'tails') return 0;
+    const h = this.headSpan;
+    const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
+    const t = clamp((d - FOLLOW_FULL) / (FOLLOW_NONE - FOLLOW_FULL), 0, 1);
+    return 1 - t * t * (3 - 2 * t); // smoothstep, so there is no crease
+  }
+
   upload(part, width, height, m, sockets) {
     const gl = this.gl;
 
@@ -242,10 +265,19 @@ export class Parts2D {
     // The head bends and the cloth bends along its whole length, so both need
     // a grid; everything else is a quad.
     const skinned = part.name === 'tails' && this.spine;
-    const n = part.name === 'head' ? HEAD_GRID : skinned ? CLOTH_GRID : 1;
+    /* Anything that bends needs rows to bend along.
+     *
+     * Only the head had them. The neck wrap and the hair took the same
+     * cylindrical bend across a single quad — four corners, linearly
+     * interpolated — which cannot follow a curve. Against the head's twelve
+     * rows the two disagreed by more the further the head turned, and that
+     * disagreement is at the seam where the scarf meets the hood.
+     */
+    const n = skinned ? CLOTH_GRID : BENDS_WITH_HEAD.has(part.name) ? HEAD_GRID : 1;
     const pos = [];
     const uv = [];
     const bindData = [];
+    const followData = [];
     const idx = [];
     for (let row = 0; row <= n; row++) {
       for (let col = 0; col <= n; col++) {
@@ -256,6 +288,7 @@ export class Parts2D {
         const py = (part.y + t * part.h) / height;
         pos.push(px, py);
         uv.push(s, t);
+        followData.push(this.followAt(part.name, px, py));
         // Bind into the centreline's local frame at the nearest point.
         bindData.push(...(skinned ? bindToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0, 0]));
       }
@@ -272,6 +305,7 @@ export class Parts2D {
     bind(gl, this.attr.pos, new Float32Array(pos), 2);
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
     bind(gl, this.attr.bind, new Float32Array(bindData), 3);
+    bind(gl, this.attr.follow, new Float32Array(followData), 1);
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
@@ -457,11 +491,10 @@ export class Parts2D {
         // swings it clear of the shoulder, which uncovers the arm's painted
         // margin as a dark smear. Cloth follows a head turn; it does not
         // perform it.
-        const follow = part.name === 'wrap' ? WRAP_FOLLOW : 1;
         gl.uniform2f(L.u_headCenter, m.headX, m.headY);
         gl.uniform1f(L.u_cylR, this.headCylR);
-        gl.uniform1f(L.u_yaw, yaw * follow);
-        gl.uniform1f(L.u_pitch, pitch * follow);
+        gl.uniform1f(L.u_yaw, yaw);
+        gl.uniform1f(L.u_pitch, pitch);
       }
 
       const carriesEyes = part.name === 'eyes';
