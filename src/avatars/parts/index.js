@@ -342,11 +342,13 @@ export class Parts2D {
     // whatever this part actually spans, never smaller than the head's own.
     let reachX = 0;
     let reachY = 0;
+    // Measured from the same centre everything turns about, or the radius
+    // describes a circle around a different point than the one being used.
     for (let k = 0; k < pos.length; k += 2) {
-      reachX = Math.max(reachX, Math.abs((pos[k] - m.headX) * this.aspect));
-      reachY = Math.max(reachY, Math.abs(pos[k + 1] - m.headY));
+      reachX = Math.max(reachX, Math.abs((pos[k] - this.headSpan.cx) * this.aspect));
+      reachY = Math.max(reachY, Math.abs(pos[k + 1] - this.headSpan.cy));
     }
-    const cylR = Math.max(m.headR * 1.85, reachX / 0.98, reachY / 0.803);
+    const cylR = Math.max(this.headSpan.r * 1.85, reachX / 0.98, reachY / 0.803);
 
     /* Eye sockets, in this part's texture space.
      *
@@ -550,7 +552,17 @@ export class Parts2D {
         // swings it clear of the shoulder, which uncovers the arm's painted
         // margin as a dark smear. Cloth follows a head turn; it does not
         // perform it.
-        gl.uniform2f(L.u_headCenter, m.headX, m.headY);
+        /* Turn about the middle of the head, not about the marker.
+         *
+         * The marker is placed from eye spacing, which on this drawing puts it
+         * near the chin and calls the head barely half its real size — the
+         * same reason headSpan exists at all, measured from the piece that was
+         * actually cut. Rotating a head about a point forty per cent of a
+         * radius below its centre does not read as a nod: the face swings
+         * through an arc it should not have, the crown barely moves, and what
+         * you see is the drawing being bent rather than the head turning.
+         */
+        gl.uniform2f(L.u_headCenter, this.headSpan.cx, this.headSpan.cy);
         gl.uniform1f(L.u_cylR, this.headCylR);
         gl.uniform1f(L.u_yaw, yaw);
         gl.uniform1f(L.u_pitch, pitch);
