@@ -5,10 +5,13 @@
  * setting by name alone. Everything the user can tune lives here, which also
  * makes export/import a one-liner.
  */
-// Bumped when a setting's UNIT changes, not just its value: stage offsets went
-// from pixels to a fraction of the canvas, and silently reinterpreting an old
-// number as the new unit would fling the character off screen.
-const KEY = 'vtuber-model/settings/v2';
+// Bumped when a saved value would actively misbehave, not merely differ.
+// v2: stage offsets went from pixels to a fraction of the canvas, and reading
+//     an old number as the new unit flung the character off screen.
+// v3: saves from before the parts model pinned the retired whole-image warp
+//     and a head flip that folds in on itself past 25 degrees. Both are
+//     settings a save can carry forward into a broken-looking model.
+const KEY = 'vtuber-model/settings/v3';
 
 export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
@@ -86,7 +89,12 @@ export const DEFAULTS = {
   'warp.eyesEnabled': true,
   // Turning a 3/4 character by mirroring its head is closer to the truth than
   // warping toward a view the drawing does not contain.
-  'parts.mirrorTurn': 1.0,
+  // Off by default. Mirroring the head does read as the opposite 3/4 view,
+  // but the mirrored copy is still bent by the same yaw as the unmirrored one,
+  // so past about 25 degrees it folds in on itself and goes black. The
+  // cylindrical bend alone turns the head convincingly; the flip stays here as
+  // a slider until it is right.
+  'parts.mirrorTurn': 0,
   'parts.mirrorStart': 0.14, // radians of yaw before the mirror starts blending
 
   'warp.turn': 1.0, // how far the head rotates on its cylinder

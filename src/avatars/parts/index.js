@@ -16,6 +16,15 @@ import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
 import { cutParts } from './cut.js';
+
+/**
+ * The parts that take the head's cylindrical bend. They have to share one
+ * radius — see the note where it is computed.
+ */
+const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap']);
+
+/** How much of the head's turn the neck wrap takes. */
+const WRAP_FOLLOW = 0.45;
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
 import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
 import { parseRect } from '../warp2d/index.js';
@@ -156,6 +165,26 @@ export class Parts2D {
     this.parts = parts
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m));
+
+    /* One cylinder radius for the whole head, not one per part.
+     *
+     * The bend maps x to R*(sin(asin(x/R) + yaw) - sin(yaw)), which depends on
+     * R. Give the hood, the hair and the neck wrap their own radius — each
+     * sized to its own reach — and they agree only at yaw 0. Past that they
+     * rotate at different rates and slide apart: the wrap climbs over the
+     * visor and the scarf tears away from the shoulders, worse the further you
+     * turn. Radius is a property of the head being turned, not of the piece
+     * being drawn.
+     *
+     * The largest keeps everything inside the cylinder, which is what the
+     * per-part sizing was for — anything reaching beyond R gets clamped and
+     * distorts.
+     */
+    let headCylR = 0;
+    for (const part of this.parts) {
+      if (BENDS_WITH_HEAD.has(part.name)) headCylR = Math.max(headCylR, part.cylR);
+    }
+    this.headCylR = headCylR || 1;
 
     this.ready = this.parts.length > 0;
     this.rebuild = false;
@@ -331,13 +360,19 @@ export class Parts2D {
       // Tufts and the neck wrap are attached to the shell, so they have to
       // take the same bend as it; only the head itself ever mirrors.
       const isHead = part.name === 'head';
-      const bends = isHead || part.name === 'tufts' || part.name === 'wrap';
+      const bends = BENDS_WITH_HEAD.has(part.name);
       gl.uniform1f(L.u_warp, bends ? 1 : 0);
       if (bends) {
+        // The neck wrap is cloth lying over the shoulders, not part of the
+        // shell. Turning it as hard as the hood drags it across the visor and
+        // swings it clear of the shoulder, which uncovers the arm's painted
+        // margin as a dark smear. Cloth follows a head turn; it does not
+        // perform it.
+        const follow = part.name === 'wrap' ? WRAP_FOLLOW : 1;
         gl.uniform2f(L.u_headCenter, m.headX, m.headY);
-        gl.uniform1f(L.u_cylR, part.cylR);
-        gl.uniform1f(L.u_yaw, yaw);
-        gl.uniform1f(L.u_pitch, pitch);
+        gl.uniform1f(L.u_cylR, this.headCylR);
+        gl.uniform1f(L.u_yaw, yaw * follow);
+        gl.uniform1f(L.u_pitch, pitch * follow);
       }
 
       const carriesEyes = part.name === 'eyes';
