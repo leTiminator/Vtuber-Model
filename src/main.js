@@ -105,8 +105,22 @@ function frame(now) {
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
   current?.render(rig.state, dt);
 
+  /* The readout is for setting up, not for streaming.
+   *
+   * It exists because a phone has no console, and it has already earned its
+   * place twice. But whatever is on this canvas is what goes out to OBS, so it
+   * hides itself the moment the camera starts and comes back when it stops —
+   * which is also when it is worth reading, since it describes a model nobody
+   * is looking at yet.
+   */
+  if (tracker.running !== selfcheckHidden) {
+    selfcheckHidden = tracker.running;
+    if (tracker.running) { if (selfcheckEl) selfcheckEl.hidden = true; }
+    else scheduleSelfCheck();
+  }
+
   // Same turn as the draw it is asking about — see scheduleSelfCheck.
-  if (selfcheckDue && now >= selfcheckDue) {
+  if (selfcheckDue && now >= selfcheckDue && !tracker.running) {
     selfcheckDue = 0;
     runSelfCheck();
   }
@@ -353,6 +367,7 @@ showStamp();
 const selfcheckEl = document.getElementById('selfcheck');
 let selfcheckDue = 0;
 let selfcheckOff = false;
+let selfcheckHidden = false;
 const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}\u00b0`;
 
 function runSelfCheck() {

@@ -119,6 +119,11 @@ try {
   });
   check('avatar animates while idle', moved > 20, `${moved} changed samples`);
 
+  // The setup readout has to be on screen before the camera, because that is
+  // the only moment anyone can read it.
+  const readoutBefore = await page.locator('#selfcheck').isVisible();
+  check('the setup readout is on screen with the camera off', readoutBefore);
+
   await page.click('#start');
 
   await page.waitForFunction(
@@ -135,6 +140,17 @@ try {
   // by the tracker reaching a live/lost status above.
   const fps = await page.locator('#fps').textContent();
   check('frame-rate counter is wired up', /^\d+ fps$/.test(fps ?? ''), fps ?? 'none');
+
+  /* Nothing of ours in the outgoing picture.
+   *
+   * Whatever is on this canvas is what OBS captures, so a debugging overlay
+   * left on screen once the camera is live is burned into the stream. It is
+   * only useful before going live anyway.
+   */
+  await page.waitForFunction(() => document.getElementById('selfcheck')?.hidden === true,
+    null, { timeout: 5000 }).catch(() => {});
+  check('and gone once the camera is live',
+    (await page.locator('#selfcheck').isVisible()) === false);
 
   // A pose the rigged artwork honours: closing the eyes must move pixels.
   const blinkDelta = await page.evaluate(async () => {
