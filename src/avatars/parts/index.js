@@ -129,6 +129,32 @@ export class Parts2D {
     gl.useProgram(program);
     this.loc = {};
     for (const name of UNIFORMS) this.loc[name] = gl.getUniformLocation(program, name);
+
+    /* Address the spine array by its first element, and check the driver
+     * agrees how long it is.
+     *
+     * "u_spine" is the convenient spelling and the one desktop accepts, but
+     * the portable name for an array is "u_spine[0]" — and a driver that
+     * hands back a location for one element instead of the whole array leaves
+     * every bone after the first sitting at the origin, which drags the middle
+     * of the ribbon off the character and leaves a clean-edged hole where it
+     * used to be. Cheap to spell correctly, and cheap to verify rather than
+     * assume: if the array does not come back the length it should, each
+     * element gets its own location.
+     */
+    this.loc.u_spine = gl.getUniformLocation(program, 'u_spine[0]') ?? this.loc.u_spine;
+    this.spineSlots = null;
+    let spineLen = 0;
+    for (let i = 0, n = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); i < n; i++) {
+      const info = gl.getActiveUniform(program, i);
+      if (info && info.name.startsWith('u_spine')) spineLen = info.size;
+    }
+    if (spineLen !== SPINE_NODES) {
+      this.spineSlots = [];
+      for (let i = 0; i < SPINE_NODES; i++) {
+        this.spineSlots.push(gl.getUniformLocation(program, `u_spine[${i}]`));
+      }
+    }
     this.attr = {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
@@ -504,7 +530,15 @@ export class Parts2D {
         joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
 
       gl.uniform1f(L.u_spineMode, part.skinned ? 1 : 0);
-      if (part.skinned) gl.uniform2fv(L.u_spine, this.bones);
+      if (part.skinned) {
+        if (this.spineSlots) {
+          for (let i = 0; i < SPINE_NODES; i++) {
+            gl.uniform2f(this.spineSlots[i], this.bones[i * 2], this.bones[i * 2 + 1]);
+          }
+        } else {
+          gl.uniform2fv(L.u_spine, this.bones);
+        }
+      }
 
       // Tufts and the neck wrap are attached to the shell, so they have to
       // take the same bend as it; only the head itself ever mirrors.
@@ -677,6 +711,80 @@ export class Parts2D {
       root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts,
       shoulderLeft: armAt('armLeft', 'right'),
       shoulderRight: armAt('armRight', 'left'),
+    };
+  }
+
+  /**
+   * What this GPU actually drew, measured here rather than on a test machine.
+   *
+   * Every check in the suite runs on a software renderer on a build server. A
+   * phone has a different driver, a different shader compiler and a different
+   * screen, and the faults that have actually reached the user were visible
+   * there and nowhere else. There is no console on a phone either, so this
+   * puts the answer on the screen: the artwork is a single connected shape, so
+   * anything other than one piece is the model coming apart, whatever the
+   * suite says.
+   *
+   * Read in bands and subsampled, so a 4-megapixel buffer costs a small mask
+   * rather than sixteen megabytes.
+   */
+  selfCheck() {
+    const gl = this.gl;
+    if (!gl || !this.ready) return null;
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    const step = Math.max(1, Math.ceil(Math.max(w, h) / 420));
+    const mw = Math.ceil(w / step);
+    const mh = Math.ceil(h / step);
+    const mask = new Uint8Array(mw * mh);
+
+    const BAND = Math.max(step, 256 - (256 % step));
+    const row = new Uint8Array(w * BAND * 4);
+    for (let y0 = 0; y0 < h; y0 += BAND) {
+      const rows = Math.min(BAND, h - y0);
+      gl.readPixels(0, y0, w, rows, gl.RGBA, gl.UNSIGNED_BYTE, row);
+      for (let y = 0; y < rows; y += step) {
+        const my = ((y0 + y) / step) | 0;
+        if (my >= mh) continue;
+        for (let x = 0; x < w; x += step) {
+          if (row[(y * w + x) * 4 + 3] > 24) mask[my * mw + ((x / step) | 0)] = 1;
+        }
+      }
+    }
+
+    const seen = new Uint8Array(mw * mh);
+    const stack = [];
+    const areas = [];
+    for (let start = 0; start < mask.length; start++) {
+      if (seen[start] || !mask[start]) continue;
+      let area = 0;
+      seen[start] = 1;
+      stack.push(start);
+      while (stack.length) {
+        const i = stack.pop();
+        area++;
+        const x = i % mw;
+        const y = (i - x) / mw;
+        const go = (j) => { if (!seen[j] && mask[j]) { seen[j] = 1; stack.push(j); } };
+        if (x > 0) go(i - 1);
+        if (x < mw - 1) go(i + 1);
+        if (y > 0) go(i - mw);
+        if (y < mh - 1) go(i + mw);
+      }
+      areas.push(area);
+    }
+    areas.sort((a, b) => b - a);
+    // A speck is rasterisation; a piece is the model. Scaled to the drawing so
+    // the threshold means the same at any screen size.
+    const floor = Math.max(6, Math.round((areas[0] ?? 0) * 0.002));
+    const pieces = areas.filter((a) => a >= floor);
+    return {
+      pieces: pieces.length,
+      strays: pieces.slice(1),
+      buffer: `${w}x${h}`,
+      dpr: (window.devicePixelRatio || 1).toFixed(2),
+      drawn: this.parts.map((p) => `${p.name} ${Math.round((p.pixels ?? 0) / 1000)}k`).join(' '),
+      spine: this.spineSlots ? 'per-element' : 'array',
     };
   }
 

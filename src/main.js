@@ -63,9 +63,34 @@ function mountAvatar(id) {
   resize();
 }
 
+/* How many pixels the model is allowed to be drawn into.
+ *
+ * A phone reports a device pixel ratio of three or more, and taking it at its
+ * word on a tall screen asks for a canvas of four and a half megapixels —
+ * redrawn every frame, through sixteen blended passes, on a tiled mobile GPU,
+ * sometimes inside an in-app browser with less memory to give than the real
+ * one. What comes back when that runs short is missing tiles: rectangular
+ * holes that sit still on the screen while the character slides past them,
+ * which is exactly how it was described.
+ *
+ * Two ratios of supersampling is already past what the screen can show at
+ * arm's length, so the cap costs nothing to look at and gives back most of
+ * the fragment work.
+ */
+const MAX_RATIO = 2;
+const MAX_PIXELS = 2.4e6;
+
+function renderScale(w, h) {
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_RATIO);
+  const area = Math.max(w * h, 1);
+  return Math.min(dpr, Math.sqrt(MAX_PIXELS / area));
+}
+
 function resize() {
   if (!current) return;
-  current.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  current.resize(w, h, renderScale(w, h));
 }
 
 let lastFrameTime = performance.now();
@@ -79,6 +104,12 @@ function frame(now) {
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
   current?.render(rig.state, dt);
+
+  // Same turn as the draw it is asking about — see scheduleSelfCheck.
+  if (selfcheckDue && now >= selfcheckDue) {
+    selfcheckDue = 0;
+    runSelfCheck();
+  }
 
   if (tracker.running) {
     dom.fps.hidden = false;
@@ -287,15 +318,21 @@ dom.resetBtn.addEventListener('click', () => {
  * from their defaults at once. A phone has no console; this line is the only
  * way that state can be read off a screenshot.
  */
+/* Settings nobody chose: the marker geometry the rig places for itself when
+ * artwork loads, and the camera it happened to pick. They differ from their
+ * defaults on every machine, and listing them buries the handful that were
+ * actually tuned — which is the only thing this line is for.
+ */
+const MACHINE_SET = /^(warp\.(head|pivot|waist|eye)|camera\.deviceId|stage\.avatarChosen)/;
+
 const stamp = document.getElementById('build-stamp');
 function showStamp() {
   if (!stamp) return;
   const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
   const now = store.snapshot();
   const changed = Object.keys(store.DEFAULTS)
-    .filter((k) => now[k] !== store.DEFAULTS[k])
-    // A device id is a page of hex and says nothing useful here.
-    .map((k) => (k === 'camera.deviceId' ? 'camera.deviceId set' : `${k} ${now[k]}`));
+    .filter((k) => now[k] !== store.DEFAULTS[k] && !MACHINE_SET.test(k))
+    .map((k) => `${k} ${now[k]}`);
   const shown = changed.slice(0, 6).join(', ');
   const rest = changed.length > 6 ? ` +${changed.length - 6} more` : '';
   stamp.textContent = changed.length
@@ -303,6 +340,58 @@ function showStamp() {
     : `build ${build} · all settings default`;
 }
 showStamp();
+
+/* The on-device readout.
+ *
+ * The suite runs on a software renderer on a build server; the phone has a
+ * different driver and a different compiler, and every fault that actually
+ * reached the user was visible on the phone and nowhere else. So the model
+ * measures itself where it is being looked at, and says so on screen: the
+ * artwork is a single connected shape, and anything other than one piece is
+ * it coming apart. Tap to dismiss.
+ */
+const selfcheckEl = document.getElementById('selfcheck');
+let selfcheckDue = 0;
+let selfcheckOff = false;
+function runSelfCheck() {
+  if (!selfcheckEl || selfcheckOff) return;
+  const r = current?.selfCheck?.();
+  // Not cut yet, or a backend with nothing to measure. Ask again shortly.
+  if (!r) { selfcheckEl.hidden = true; selfcheckDue = performance.now() + 700; return; }
+  const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+  const now = store.snapshot();
+  const changed = Object.keys(store.DEFAULTS)
+    .filter((k) => now[k] !== store.DEFAULTS[k] && !MACHINE_SET.test(k))
+    .map((k) => `${k.split('.').pop()} ${now[k]}`);
+  const torn = r.pieces !== 1;
+  selfcheckEl.classList.toggle('selfcheck--torn', torn);
+  selfcheckEl.textContent = [
+    `${build} · ${r.pieces} piece${r.pieces === 1 ? '' : 's'}` +
+      (torn ? ` (stray ${r.strays.join(', ')})` : ''),
+    `${r.buffer} buffer · dpr ${r.dpr} · spine ${r.spine}`,
+    r.drawn,
+    changed.length
+      ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`
+      : 'all settings default',
+  ].join('\n');
+  selfcheckEl.hidden = false;
+}
+/* Due at a time, read inside the frame.
+ *
+ * Reading pixels from a timer returns whatever is in the drawing buffer after
+ * compositing, which the browser is free to have cleared — so the check has to
+ * happen in the same turn as the draw that it is asking about.
+ */
+function scheduleSelfCheck() {
+  selfcheckDue = performance.now() + 700;
+}
+selfcheckEl?.addEventListener('click', () => {
+  selfcheckOff = true;
+  selfcheckEl.hidden = true;
+});
+window.addEventListener('resize', scheduleSelfCheck);
+window.addEventListener('orientationchange', scheduleSelfCheck);
+scheduleSelfCheck();
 
 installHotkeys({
   rig,
@@ -318,6 +407,7 @@ store.subscribe((key) => {
   if (key === 'mouth.source') applyMicSource();
   if (key === 'arms.track') applyPoseSource();
   showStamp();
+  scheduleSelfCheck();
 });
 
 /* ---------------------------------------------------------------- framing */

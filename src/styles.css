@@ -195,6 +195,34 @@ body.panel-hidden #first-run { display: none; }
   padding: 12px 14px;
   border-bottom: 1px solid var(--edge);
 }
+/* The on-device readout. Small, out of the way, and legible in a screenshot
+   on either background — which is the only reason it exists. */
+.selfcheck {
+  position: absolute;
+  left: 8px;
+  /* Below the HUD row, not above the panel: on a phone the panel takes the
+     bottom half of the screen and anything down there is never seen. */
+  top: 52px;
+  z-index: 5;
+  max-width: calc(100% - 16px);
+  padding: 5px 9px;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: rgba(8, 8, 14, 0.72);
+  color: #cfd2dc;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+}
+.selfcheck--torn {
+  border-color: #d8574e;
+  color: #ffd9d5;
+  background: rgba(58, 12, 10, 0.82);
+}
+
 .panel__build {
   padding: 2px 12px 8px;
   font-size: 11px;
