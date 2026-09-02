@@ -359,11 +359,25 @@ export class Rig {
 
     // --- head ----------------------------------------------------------
     const yaw = (head.yaw - (n?.yaw ?? 0)) * g('head.yawGain');
+    /* The tracker's pitch runs the opposite way to this rig's.
+     *
+     * Measured, finally, the only way that settles it: two photographs of the
+     * running app, one looking up and one looking down, with the head found by
+     * connected components rather than by a colour guess. Looking down put the
+     * head seventy-seven pixels HIGHER on screen than looking up. Every check
+     * I could run here said the sign was right, which only means none of them
+     * were testing the thing the person in front of the camera could see.
+     *
+     * Corrected here, in code, rather than by changing the default of a
+     * setting — a browser that has already saved a setting keeps its value
+     * forever, so a changed default reaches nobody who has run the app.
+     */
+    const PITCH_SIGN = -1;
     // Inverted here rather than at the renderer, so everything downstream —
     // the cloth's idea of where the head went, the hair's lag — agrees with
     // what is on screen.
-    const pitch = (head.pitch - (n?.pitch ?? 0)) * g('head.pitchGain')
-      * (g('head.invertNod') ? -1 : 1);
+    const pitch = (head.pitch - (n?.pitch ?? 0)) * PITCH_SIGN * g('head.pitchGain')
+      * (g('head.flipNod') ? -1 : 1);
     const roll = (head.roll - (n?.roll ?? 0)) * g('head.rollGain');
 
     s.head.yaw = this.pose.filter('yaw', clamp(yaw, -limit, limit), dt);

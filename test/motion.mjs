@@ -667,7 +667,7 @@ try {
       return centreY();
     };
     const run = (invert) => {
-      store.set('head.invertNod', invert);
+      store.set('head.flipNod', invert);
       rig.clearCalibration();
       const rest = feed(0);
       const down = feed(-0.5) - rest;
@@ -678,7 +678,7 @@ try {
     };
     const plain = run(false);
     const inverted = run(true);
-    store.set('head.invertNod', false);
+    store.set('head.flipNod', false);
     rig.clearCalibration();
     return { plain, inverted };
   });
@@ -698,7 +698,7 @@ try {
       && Math.sign(nod.plain.down) !== Math.sign(nod.plain.up),
     `pitch -0.5 ${nod.plain.down.toFixed(1)}px, +0.5 ${nod.plain.up.toFixed(1)}px`);
 
-  check('and "Invert nod" reverses exactly that',
+  check('and "Flip nod" reverses exactly that',
     Math.sign(nod.inverted.down) === -Math.sign(nod.plain.down)
       && Math.sign(nod.inverted.up) === -Math.sign(nod.plain.up),
     `inverted: ${nod.inverted.down.toFixed(1)}px, ${nod.inverted.up.toFixed(1)}px`);

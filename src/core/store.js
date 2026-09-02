@@ -38,21 +38,16 @@ export const DEFAULTS = {
   'head.rollGain': 1.25,
   'head.positionGain': 1.0,
   'head.limitDeg': 42,
-  /* Which way a nod goes.
+  /* Which way a nod goes, as a preference on top of a convention that is now
+   * fixed in code — see PITCH_SIGN in rig.js.
    *
-   * On by default, because the person watching the model said it was backwards
-   * twice and they are the ones who can see it. Everything I could check said
-   * otherwise — the tracker's sign against a recorded session, the renderer's
-   * against a measured one — and all that proves is that I was checking the
-   * wrong thing, or checking it against a camera that is not theirs. An
-   * argument from measurements nobody can reproduce loses to somebody looking
-   * at the screen.
-   *
-   * The panel prints what the tracker believes the head is doing, so this can
-   * still be settled properly rather than left as a guess that happens to
-   * work.
+   * Renamed from head.invertNod deliberately. That key shipped with a default
+   * of false, browsers saved it, and a later change of the default could not
+   * reach any of them: a saved value always wins over a default, so changing a
+   * default is not a fix for anyone who has already run the app. A new name
+   * has no saved value to lose to, which is the whole reason for the rename.
    */
-  'head.invertNod': true,
+  'head.flipNod': false,
 
   // --- eyes ------------------------------------------------------------
   'eyes.blinkGain': 1.35,
