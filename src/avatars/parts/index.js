@@ -428,7 +428,7 @@ export class Parts2D {
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
 
     // --- joints ----------------------------------------------------------
-    const joints = this.solveJoints(rig, roll, pitch, m);
+    const joints = this.solveJoints(rig, roll, pitch, yaw, m);
 
     // --- cloth -----------------------------------------------------------
     const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045;
@@ -544,7 +544,9 @@ export class Parts2D {
       // ghosting the hood gets away with at its own low contrast.
       const isHead = part.name === 'head';
       const snapsWithHead = part.name === 'eyes';
-      const bends = BENDS_WITH_HEAD.has(part.name);
+      // Nothing bends any more; the head turns instead. Kept behind a setting
+      // rather than deleted, so the two can still be compared.
+      const bends = BENDS_WITH_HEAD.has(part.name) && store.get('parts.bendHead') > 0;
       gl.uniform1f(L.u_warp, bends ? 1 : 0);
       if (bends) {
         // The neck wrap is cloth lying over the shoulders, not part of the
@@ -707,7 +709,7 @@ export class Parts2D {
     return nodes;
   }
 
-  solveJoints(rig, roll, pitch, m) {
+  solveJoints(rig, roll, pitch, yaw, m) {
     const lean = rig.head.x * 0.045 + rig.body.leanX * 0.02;
     const rise = -rig.head.y * 0.04 + rig.body.bounce * 0.004;
     const breath = rig.body.breath * 0.012;
@@ -717,26 +719,41 @@ export class Parts2D {
       rotateAbout(rig.body.twist * 0.16, m.pivotX, 1.25, this.aspect),
       scaleAbout(1, 1 + breath, m.pivotX, m.pivotY),
     );
-    /* A nod moves the head, not just the drawing on it.
+    /* Nodding turns the head cutout, rather than bending the drawing on it.
      *
-     * Roll has always read correctly because the whole head rotates about the
-     * neck: it is a rigid motion, and the eye reads rigid motion instantly.
-     * Pitch had nothing of the kind — only the surface warp, which at these
-     * angles is mostly a symmetric vertical squash, the same shape whether the
-     * chin goes up or down. A head that just gets shorter is not nodding, and
-     * with no direction in it the strongest thing left to read is the squash,
-     * which is why the nod was reported backwards no matter which way the
-     * maths went.
+     * Everything before this tried to synthesise a view the artwork does not
+     * contain — a cylinder, then a rounded shell — and both spent their effort
+     * on a face that cannot be shown from another angle because it was only
+     * ever drawn from one. What they produced instead was distortion, and a
+     * nod whose direction nobody could read.
      *
-     * Nodding pivots at the neck, below the head, so the head swings: down
-     * carries it down and slightly forward, up carries it up. That is the
-     * cue, and it is worth far more than the surface detail on top of it.
+     * The head is a cutout. A cutout can be turned, and turning is a motion
+     * the eye reads instantly and unambiguously — it is why roll always looked
+     * right when nothing else did. So a nod rotates it about its own centre,
+     * one way for up and the other for down, and nothing is bent at all.
+     *
+     * The cloth and the arms stay attached without the bend, because what
+     * holds them on is the joint blend — each vertex weighted between the neck
+     * and the body by where it sits — and that never had anything to do with
+     * warping.
      */
-    const nod = clamp(-pitch, -1.2, 1.2) * 0.075 * store.get('warp.nod');
+    const nod = clamp(-pitch, -1.2, 1.2) * 0.055 * store.get('warp.nod');
+    const tilt = clamp(-pitch, -1.2, 1.2) * store.get('parts.nodTurn');
+    /* Turning left and right slides the head instead of bending it.
+     *
+     * With nothing bent there is nothing left to answer a turn, and a head
+     * that ignores you turning is worse than one that answers imperfectly.
+     * Sliding it is the honest version of what the bend was faking: the
+     * drawing has one view of the face, and moving that view across the
+     * shoulders reads as a turn without pretending to show a side of it that
+     * was never drawn.
+     */
+    const shift = clamp(yaw, -1.2, 1.2) * 0.05 * store.get('warp.turn');
     const neck = compose(
       hips,
-      translate(IDENTITY, 0, nod),
+      translate(IDENTITY, shift, nod),
       rotateAbout(roll, m.pivotX, m.pivotY, this.aspect),
+      rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
     );
 
     /* Arms hang off the hips rather than the neck: lifting a hand should not

@@ -132,6 +132,17 @@ export const DEFAULTS = {
    * cylinder. See shell.js: the cylinder slides pixels inside an outline that
    * never changes, and has no coherent answer for turning and nodding at once.
    */
+  /* How far the head cutout turns as it nods, in radians per radian of pitch.
+   *
+   * The drawing shows one view of a face and cannot be made to show another,
+   * so the head is turned rather than bent. Rotation is the one rigid motion
+   * available here, and the only one that has ever read unambiguously.
+   */
+  'parts.nodTurn': 0.55,
+  // The old bending, off. Kept so the two can be compared rather than argued
+  // about; at zero the head is a rigid cutout.
+  'parts.bendHead': 0,
+
   'parts.turnShell': 1.0,
   // How deep the shell stands off the drawing, as a fraction of the head's own
   // radius. Past about 0.6 the surface folds over itself inside the rig's own

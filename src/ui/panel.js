@@ -138,12 +138,14 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'warp.parallax', label: 'Face depth', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'parts.contactShadow', label: 'Layer depth', min: 0, max: 1, step: 0.01, format: x,
           hint: 'Shades where one layer sits over another, so the parts read as stacked rather than flat.' },
-        { type: 'slider', key: 'parts.turnShell', label: 'Turn as a solid', min: 0, max: 1, step: 0.01, format: x,
-          hint: 'Turns the head as a rounded surface instead of bending the drawing flat. '
-            + 'At zero it goes back to the old bend, which squashes the head much harder at a full turn.' },
-        { type: 'slider', key: 'parts.shellDepth', label: 'Head roundness', min: 0, max: 0.9, step: 0.01, format: x,
-          hint: 'How far the head stands off the page, as a fraction of its own width. '
-            + 'Held below the point where the surface would fold over itself at your turn limit.' },
+        { type: 'slider', key: 'parts.nodTurn', label: 'Head turn on nod', min: 0, max: 1.2, step: 0.01, format: x,
+          hint: 'How far the head cutout rotates as you nod. It turns rather than bending, '
+            + 'because the drawing only ever shows the face from one angle.' },
+        { type: 'slider', key: 'parts.bendHead', label: 'Bend the head instead', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'The old behaviour: bends the drawing to fake a turn. The two sliders below only do '
+            + 'anything above zero.' },
+        { type: 'slider', key: 'parts.turnShell', label: '— as a solid', min: 0, max: 1, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.shellDepth', label: '— head roundness', min: 0, max: 0.9, step: 0.01, format: x },
         { type: 'slider', key: 'parts.mirrorTurn', label: 'Mirror turn', min: 0, max: 1, step: 0.01, format: x,
           hint: 'Flips the head to face the other way as you turn past the threshold.' },
         { type: 'slider', key: 'parts.mirrorStart', label: 'Mirror threshold', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
