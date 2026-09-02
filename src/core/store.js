@@ -111,6 +111,16 @@ export const DEFAULTS = {
   // of the face is already hidden by the turn and there is least to see.
   'parts.mirrorStart': 0.30,
 
+  /* Turning the head as a rounded surface rather than bending it on a
+   * cylinder. See shell.js: the cylinder slides pixels inside an outline that
+   * never changes, and has no coherent answer for turning and nodding at once.
+   */
+  'parts.turnShell': 1.0,
+  // How deep the shell stands off the drawing, as a fraction of the head's own
+  // radius. Past about 0.6 the surface folds over itself inside the rig's own
+  // turn limit, which reads as the head turning inside out.
+  'parts.shellDepth': 0.55,
+
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
   'warp.parallax': 1.0, // how far the face plate slides across the skull

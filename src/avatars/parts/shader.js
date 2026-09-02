@@ -17,6 +17,7 @@ in vec2 a_pos;   // image space, 0..1 across the whole artwork
 in vec2 a_uv;    // into this part's own texture
 in vec3 a_bind;  // cloth only: where along the spine, and where in its local frame
 in float a_follow; // how much of the head's turn this vertex takes, 0..1
+in float a_depth;  // how far this vertex stands off the drawing, 0..1
 
 uniform mat3 u_model;      // the joint this part's head end hangs off
 /* The joint its far end hangs off, blended in by the same follow weight.
@@ -40,6 +41,8 @@ uniform vec2 u_headCenter;
 uniform float u_cylR;
 uniform float u_yaw;
 uniform float u_pitch;
+uniform float u_shell;  // 0 bends on the old cylinder, 1 turns the shell
+uniform float u_depth;  // how deep the shell is, in the same units as x
 
 // Cloth skinning. The part is bound to a centreline; moving the line's bones
 // carries the art with it, so the ribbon genuinely bends instead of sliding.
@@ -109,9 +112,30 @@ void main() {
    */
   if (u_warp > 0.5 && a_follow > 0.001) {
     vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);
-    local.x = cylinder(local.x, u_cylR, u_yaw * a_follow);
-    local.y = cylinder(local.y, u_cylR * 0.82, u_pitch * a_follow);
-    p = u_headCenter + local / vec2(u_aspect, 1.0);
+    float yaw = u_yaw * a_follow;
+    float pitch = u_pitch * a_follow;
+
+    // The old mapping: a fixed-radius arc, kept so the two can be compared and
+    // so the turn can be dialled back to it if the shell reads badly.
+    vec2 arc = vec2(cylinder(local.x, u_cylR, yaw),
+                    cylinder(local.y, u_cylR * 0.82, pitch));
+
+    /* The shell: an actual rotation of a surface that has depth.
+     *
+     * Rotating about the vertical axis and then the horizontal one, in that
+     * order, is a head turning and then nodding — which is the order a neck
+     * does it in, and the reason yaw and pitch stop fighting each other. A
+     * vertex at the outline stands at zero depth, so it foreshortens instead
+     * of sliding, and the silhouette turns with the surface.
+     */
+    float z = a_depth * u_depth;
+    float cy = cos(yaw), sy = sin(yaw);
+    float cp = cos(pitch), sp = sin(pitch);
+    vec3 P = vec3(local, z);
+    P = vec3(P.x * cy + P.z * sy, P.y, P.z * cy - P.x * sy);
+    P = vec3(P.x, P.y * cp - P.z * sp, P.y * sp + P.z * cp);
+
+    p = u_headCenter + mix(arc, P.xy, u_shell) / vec2(u_aspect, 1.0);
   }
 
   // Blend the transformed points, not the matrices: two rotations averaged

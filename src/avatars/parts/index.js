@@ -53,6 +53,7 @@ import { ChainField, HeadInertia } from '../warp2d/cloth.js';
 import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
 import { parseRect } from '../warp2d/index.js';
 import { extractSpine } from './spine.js';
+import { depthAt, shellFrom } from './shell.js';
 
 const UNIFORMS = [
   'u_model', 'u_modelFar', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
@@ -61,6 +62,7 @@ const UNIFORMS = [
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_shadow', 'u_shadowOffset',
   'u_spineMode', 'u_spine', 'u_flipU',
+  'u_shell', 'u_depth',
 ];
 
 const SPINE_NODES = 16;
@@ -160,6 +162,7 @@ export class Parts2D {
       uv: gl.getAttribLocation(program, 'a_uv'),
       bind: gl.getAttribLocation(program, 'a_bind'),
       follow: gl.getAttribLocation(program, 'a_follow'),
+      depth: gl.getAttribLocation(program, 'a_depth'),
     };
 
     gl.enable(gl.BLEND);
@@ -242,6 +245,12 @@ export class Parts2D {
       r: Math.max(headPart.w - 2 * headPart.inset, headPart.h - 2 * headPart.inset) / 2 / height,
     } : { cx: m.headX, cy: m.headY, r: m.headR };
 
+    /* The shell, before anything is uploaded, because every part reads its
+     * depth from it. One field for the whole model, taken from the head's
+     * outline — see shell.js for why it is not one dome per piece.
+     */
+    this.shell = headPart ? shellFrom(headPart, width, height) : null;
+
     this.parts = parts
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m, sockets));
@@ -318,6 +327,7 @@ export class Parts2D {
     const uv = [];
     const bindData = [];
     const followData = [];
+    const depthData = [];
     const idx = [];
     for (let row = 0; row <= n; row++) {
       for (let col = 0; col <= n; col++) {
@@ -329,6 +339,7 @@ export class Parts2D {
         pos.push(px, py);
         uv.push(s, t);
         followData.push(this.followAt(part.name, px, py));
+        depthData.push(depthAt(this.shell, px, py));
         // Bind into the centreline's local frame at the nearest point.
         bindData.push(...(skinned ? bindToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0, 0]));
       }
@@ -346,6 +357,7 @@ export class Parts2D {
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
     bind(gl, this.attr.bind, new Float32Array(bindData), 3);
     bind(gl, this.attr.follow, new Float32Array(followData), 1);
+    bind(gl, this.attr.depth, new Float32Array(depthData), 1);
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
@@ -523,6 +535,17 @@ export class Parts2D {
 
     const shadowStrength = store.get('parts.contactShadow');
 
+    /* Depth is measured against the head's own radius, so the shell is as
+     * round as the head is wide however the artwork is scaled. Capped where
+     * the surface would start folding over itself within the turn limit —
+     * see the note on RISE in shell.js.
+     */
+    const shellAmount = clamp(store.get('parts.turnShell'), 0, 1);
+    const foldSafe = 1 / (Math.max(this.shell?.rise ?? 1.8, 0.1)
+      * Math.tan(clamp(store.get('head.limitDeg'), 5, 80) * Math.PI / 180));
+    const shellDepth = Math.min(clamp(store.get('parts.shellDepth'), 0, 1), foldSafe)
+      * this.headSpan.r;
+
     // --- draw, back to front ---------------------------------------------
     for (const part of this.parts) {
       gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
@@ -561,6 +584,8 @@ export class Parts2D {
         gl.uniform1f(L.u_cylR, this.headCylR);
         gl.uniform1f(L.u_yaw, yaw);
         gl.uniform1f(L.u_pitch, pitch);
+        gl.uniform1f(L.u_shell, this.shell ? shellAmount : 0);
+        gl.uniform1f(L.u_depth, shellDepth);
       }
 
       const carriesEyes = part.name === 'eyes';
