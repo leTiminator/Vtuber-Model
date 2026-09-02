@@ -40,6 +40,10 @@ jobs:
 
       - run: npm run build
         env:
+          # So the page can say which commit it is. Chasing a bug that was
+          # already fixed, because a stale page was serving an old build, is
+          # expensive and completely avoidable.
+          VTUBER_BUILD: ${{ github.sha }}
           # Derived from the repo rather than hardcoded, so renaming it does
           # not silently 404 every model and leave a blank stage.
           VTUBER_BASE: /${{ github.event.repository.name }}/

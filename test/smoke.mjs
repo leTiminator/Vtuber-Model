@@ -78,6 +78,10 @@ try {
   // The way a real tracker session gets into the test suite. Silently losing
   // this control would leave replay.mjs permanently skipping with nothing to
   // say why.
+  // Which build is on screen, readable from a photograph.
+  const stamp = await page.locator('#build-stamp').textContent();
+  check('the page says which build it is', /^build \S+/.test(stamp ?? ''), stamp ?? 'missing');
+
   check('the session recorder is offered',
     await page.locator('button', { hasText: 'Record 20 seconds' }).count() === 1);
 

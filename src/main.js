@@ -277,6 +277,11 @@ dom.resetBtn.addEventListener('click', () => {
   if (confirm('Reset every setting to its default?')) store.reset();
 });
 
+// Which build is on screen. Without it, "the fix is not there" and "the fix is
+// there and did not work" look identical from a photograph.
+const stamp = document.getElementById('build-stamp');
+if (stamp) stamp.textContent = `build ${typeof __BUILD__ === 'string' ? __BUILD__ : 'dev'}`;
+
 installHotkeys({
   rig,
   onCalibrate: () => rig.calibrate(),

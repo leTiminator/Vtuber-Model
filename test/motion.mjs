@@ -450,6 +450,78 @@ try {
     shade.full.inside < shade.off.inside * 0.97,
     `brightness ${Math.round(shade.full.inside / 1e6)}M vs ${Math.round(shade.off.inside / 1e6)}M`);
 
+  /* --- the scarf's two halves must stay joined ---------------------------
+   * The scarf is one piece of cloth cut into two parts, so wherever they touch
+   * at rest they have to keep touching however the head moves. Nothing else
+   * here catches them coming apart: the silhouette area barely changes, the
+   * piece count barely changes, and the centroid barely moves — but a gap
+   * opening at the neck is the single most obvious fault on screen.
+   *
+   * Measured by rendering each part alone and asking whether one still lies
+   * within a few pixels of the other.
+   */
+  const joined = await page.evaluate(async () => {
+    const { avatars, emptyRig, store } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.patch({ 'stage.zoom': 0.9, 'stage.offsetX': 0, 'stage.offsetY': 0,
+      'warp.wind': 0, 'body.breathAmount': 0, 'body.swayAmount': 0 });
+    const all = a.parts;
+
+    const maskOf = (name, mut) => {
+      a.parts = all.filter((p) => p.name === name);
+      window.__t.pose(a, emptyRig, mut, 40);
+      const { d, w, h } = window.__t.read(a);
+      const m = new Uint8Array(w * h);
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) if (d[i + 3] > 40) m[p] = 1;
+      return { m, w, h };
+    };
+    // Nearest distance from any pixel of A to the set B, in pixels, by
+    // expanding B a ring at a time until it meets A.
+    const gap = (A, B, limit) => {
+      const { w, h } = A;
+      let cur = B.m;
+      for (let r = 0; r <= limit; r++) {
+        for (let i = 0; i < w * h; i++) if (cur[i] && A.m[i]) return r;
+        const next = new Uint8Array(w * h);
+        for (let i = 0; i < w * h; i++) {
+          if (!cur[i]) continue;
+          const x = i % w;
+          const y = (i - x) / w;
+          next[i] = 1;
+          if (x > 0) next[i - 1] = 1;
+          if (x < w - 1) next[i + 1] = 1;
+          if (y > 0) next[i - w] = 1;
+          if (y < h - 1) next[i + w] = 1;
+        }
+        cur = next;
+      }
+      return limit + 1;
+    };
+
+    const LIMIT = 26;
+    const POSES = [
+      ['rest', {}],
+      ['yaw +40', { head: { yaw: 0.70 } }],
+      ['yaw -40', { head: { yaw: -0.70 } }],
+      ['pitch -35', { head: { pitch: -0.60 } }],
+      ['roll +30', { head: { roll: 0.52 } }],
+      ['everything', { head: { yaw: -0.62, pitch: -0.45, roll: 0.40, x: -0.8, y: -0.5 } }],
+    ];
+    const out = [];
+    for (const [label, mut] of POSES) {
+      const wrap = maskOf('wrap', mut);
+      const tails = maskOf('tails', mut);
+      out.push({ label, gap: gap(wrap, tails, LIMIT) });
+    }
+    a.parts = all;
+    return { out, LIMIT };
+  });
+
+  const worst = joined.out.reduce((a, b) => (b.gap > a.gap ? b : a));
+  check('the scarf stays joined to itself in every pose',
+    worst.gap <= 6,
+    joined.out.map((o) => `${o.label} ${o.gap}px`).join(', '));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

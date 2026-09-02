@@ -195,6 +195,13 @@ body.panel-hidden #first-run { display: none; }
   padding: 12px 14px;
   border-bottom: 1px solid var(--edge);
 }
+.panel__build {
+  padding: 2px 12px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .panel__foot {
   display: flex;
   gap: 6px;

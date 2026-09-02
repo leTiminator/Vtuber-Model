@@ -4,6 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VTuber Model</title>
+    <!--
+      Do not let the browser hold on to this page.
+
+      The script and stylesheet are content-hashed, so a new build gives them
+      new filenames and they can be cached forever. This file is what points at
+      them, and a stale copy of it silently serves an old build — which looks
+      exactly like a bug that was already fixed, and cost a round of chasing
+      one that had been.
+    -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="icon" href="data:," />
   </head>
   <body>
@@ -43,6 +55,7 @@
         <button id="import" class="btn btn--ghost" type="button">Import</button>
         <button id="reset" class="btn btn--ghost" type="button">Reset all</button>
       </div>
+      <div class="panel__build" id="build-stamp"></div>
     </aside>
 
     <script type="module" src="/src/main.js"></script>

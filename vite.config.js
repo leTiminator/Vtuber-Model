@@ -12,8 +12,14 @@ const phone = process.env.VTUBER_PHONE === '1';
 // so `npm run dev` and a plain `npm run build` are unaffected.
 const base = process.env.VTUBER_BASE ?? '/';
 
+// Stamped into the page so a build can be identified from the phone. "Is it
+// cached?" should be a question with an answer, not a guess.
+const BUILD = process.env.VTUBER_BUILD
+  || new Date().toISOString().replace('T', ' ').slice(0, 16);
+
 export default defineConfig({
   base,
+  define: { __BUILD__: JSON.stringify(BUILD) },
   plugins: phone ? [basicSsl()] : [],
   server: {
     host: phone ? true : '127.0.0.1',
