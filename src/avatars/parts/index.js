@@ -60,7 +60,7 @@ import { ChainField, HeadInertia } from '../warp2d/cloth.js';
 import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
 import { parseRect } from '../warp2d/index.js';
 import { extractSpine } from './spine.js';
-import { depthAt, shellFrom } from './shell.js';
+import { depthAt, flipAxisOf, shellFrom } from './shell.js';
 
 const UNIFORMS = [
   'u_model', 'u_modelFar', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
@@ -231,6 +231,9 @@ export class Parts2D {
      * outline — see shell.js for why it is not one dome per piece.
      */
     this.shell = headPart ? shellFrom(headPart, width, height) : null;
+    // The axis a mirror pivots on: the weight of everything that mirrors.
+    this.flipAxis = flipAxisOf(parts.filter((p) => FLIPS_WITH_HEAD.has(p.name)), width)
+      ?? this.headSpan.cx;
 
     this.parts = parts
       .sort((a, b) => a.z - b.z)
@@ -523,14 +526,17 @@ export class Parts2D {
      * the turn comes well back, which is also how a real turn behaves — you
      * do not un-turn by two degrees.
      */
-    this.mirrored = this.mirrored
-      ? Math.abs(yaw) > start * 0.55
-      : Math.abs(yaw) > start;
-    // A short ramp. Cross-fading hard-edged line art always ghosts, so the
-    // dissolve wants to be over quickly — long enough not to pop, short enough
-    // that the doubled image is a flicker rather than a pose you sit in.
-    // the art already faces one way; only the other way needs the mirror
-    const mirror = this.mirrored && yaw < 0 ? store.get('parts.flipTurn') : 0;
+    /* Signed, not absolute.
+     *
+     * This latched on how far the head had turned and then applied the mirror
+     * only when it had turned the wrong way, which are two different questions.
+     * Turning right past the threshold armed it, and swinging back through
+     * centre then flipped the head at eleven degrees instead of seventeen —
+     * an early flip in the middle of an ordinary look around the room. Only
+     * one direction needs the mirror, so only that direction should arm it.
+     */
+    this.mirrored = this.mirrored ? yaw < -start * 0.55 : yaw < -start;
+    const mirror = this.mirrored ? store.get('parts.flipTurn') : 0;
 
     const shadowStrength = store.get('parts.contactShadow');
 
@@ -612,7 +618,8 @@ export class Parts2D {
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
 
-      gl.uniform1f(L.u_flipAxis, this.headSpan.cx);
+      // The group's centre of mass, so a mirror turns it without moving it.
+      gl.uniform1f(L.u_flipAxis, this.flipAxis);
       gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
 
       gl.activeTexture(gl.TEXTURE0);

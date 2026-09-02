@@ -793,6 +793,64 @@ try {
     `eye sits ${drawn.offset.toFixed(0)}px from the middle of the head as drawn, `
       + `${flipped.offset.toFixed(0)}px mirrored`);
 
+  /* --- the flip turns the head without moving it -------------------------
+   *
+   * A swap changes which way the head faces. It must not also change where the
+   * head is, and reflecting about the middle of a bounding box does exactly
+   * that: a head is not symmetric inside its own box, so the reflection slides
+   * its weight sideways. Measured before this was pinned down, the head
+   * travelled forty-seven pixels in the single degree where the swap happens —
+   * a lurch, in the middle of a turn, on the part of the model people look at.
+   *
+   * Crept through one degree at a time, because that is the only way to see a
+   * jump that happens between two adjacent frames.
+   */
+  const lurch = await page.evaluate(async () => {
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
+      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.5 });
+    a.resize(320, 320, 2);
+    for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+    const all = a.parts;
+    a.parts = all.filter((p) => ['head', 'eyes', 'tufts'].includes(p.name));
+    const gl = a.gl;
+    const centre = () => {
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      let n = 0, sx = 0, sy = 0;
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        if (d[i + 3] <= 40) continue;
+        const x = p % w;
+        n++; sx += x; sy += h - 1 - ((p - x) / w);
+      }
+      return n ? { cx: sx / n, cy: sy / n } : null;
+    };
+    let prev = null, worst = 0, worstAt = 0, flipped = false, flipAt = null;
+    for (let deg = -8; deg >= -30; deg -= 1) {
+      const rig = emptyRig();
+      rig.head.yaw = (deg * Math.PI) / 180;
+      for (let f = 0; f < 30; f++) a.render(rig, 1 / 60);
+      const c = centre();
+      if (a.mirrored !== flipped) { flipped = a.mirrored; flipAt = deg; }
+      if (prev && c) {
+        const j = Math.hypot(c.cx - prev.cx, c.cy - prev.cy);
+        if (j > worst) { worst = j; worstAt = deg; }
+      }
+      prev = c;
+    }
+    a.parts = all;
+    store.reset();
+    return { worst, worstAt, flipAt };
+  });
+
+  check('the head flips without jumping across the screen',
+    lurch.flipAt !== null && lurch.worst < 10,
+    `worst ${lurch.worst.toFixed(1)}px in one degree at ${lurch.worstAt}°`
+      + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

@@ -132,7 +132,58 @@ export function shellFrom(part, width, height) {
     }
   }
 
-  return { data, width, height, radius: max, rise: RISE };
+  /* Where a mirror of this shape should pivot.
+   *
+   * The middle of the bounding box is the obvious axis and the wrong one: a
+   * head is not symmetric inside its own box — the hood reaches one way and
+   * the visor the other — so reflecting about the box centre moves the head's
+   * weight sideways, and the swap reads as the head jumping across rather than
+   * turning. Measured at forty-seven pixels in a single degree. Reflecting
+   * about the centre of mass leaves the head where it is and changes only
+   * which way it faces, which is all a mirror should do.
+   */
+  let mass = 0, sx = 0;
+  for (let y = 0; y < part.h; y++) {
+    for (let x = 0; x < part.w; x++) {
+      if (!mask[y * part.w + x]) continue;
+      mass++;
+      sx += part.x + x;
+    }
+  }
+
+  return { data, width, height, radius: max, rise: RISE,
+    axis: mass ? sx / mass / width : null };
+}
+
+/**
+ * Where a mirror of these parts should pivot: their shared centre of mass.
+ *
+ * It has to be the whole group that flips, not just the head. Reflecting the
+ * head about its own weight but the hair and the eyes about that same line
+ * still moves the group, because the group's weight is not the head's — and
+ * what a viewer sees jump is the group. Measured: the head's own axis left a
+ * thirty-four pixel lurch that the group's axis removes.
+ *
+ * @param {Array<{canvas: HTMLCanvasElement, x: number, w: number, h: number}>} parts
+ * @param {number} width  artwork width in pixels
+ */
+export function flipAxisOf(parts, width) {
+  let mass = 0;
+  let sx = 0;
+  for (const part of parts) {
+    const ctx = part?.canvas?.getContext('2d', { willReadFrequently: true });
+    if (!ctx) continue;
+    const src = ctx.getImageData(0, 0, part.w, part.h).data;
+    for (let y = 0; y < part.h; y++) {
+      for (let x = 0; x < part.w; x++) {
+        // Solid art only; the dilated margins are padding, not weight.
+        if (src[(y * part.w + x) * 4 + 3] <= 200) continue;
+        mass++;
+        sx += part.x + x;
+      }
+    }
+  }
+  return mass ? sx / mass / width : null;
 }
 
 /** Read the field at a point in image space (0..1 across the artwork). */
