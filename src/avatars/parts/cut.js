@@ -196,61 +196,53 @@ function labelPixels(src, m, w, h, sockets) {
   }
 
   /* --- eyes: the bright shards on the visor ------------------------------
-   * Taking every bright pixel inside the marker rectangle clips the shard
-   * wherever it reaches past the box, and leaves the rest of it in the head
-   * layer. That residue is why a shut eye kept a pale ghost: the head was
-   * still carrying a piece of the shard behind the lid.
+   * Found by looking over the whole head, not by flooding out from the marker
+   * rectangles. The auto-markup splits a single bright blob down its principal
+   * axis and calls the halves two eyes, so both markers can land on the same
+   * shard — and then the other eye is never looked for at all.
    *
-   * So the rectangle only says roughly where to look. The shard itself is
-   * whatever is connected to the brightest pixel in there and still reads as
-   * bright — its own shape decides its extent.
+   * That is exactly what happened here. The far eye of a 3/4 view, small and
+   * half hidden behind the hood's edge, stayed in the head layer and never
+   * blinked, and I mistook it for a highlight on the visor rim and wrote a
+   * test asserting it must not blink. Its own size is what identifies it, not
+   * a marker that was derived from the other eye in the first place.
    */
   const eyeMask = new Uint8Array(n);
-  for (const key of ['eyeL', 'eyeR']) {
-    const r = m[key];
-    const x0 = Math.max(0, Math.floor(r[0] * w));
-    const y0 = Math.max(0, Math.floor(r[1] * h));
-    const x1 = Math.min(w - 1, Math.ceil(r[2] * w));
-    const y1 = Math.min(h - 1, Math.ceil(r[3] * h));
-
-    let seed = -1;
-    let best = -1;
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const i = y * w + x;
-        if (!opaque(i)) continue;
-        const { lum } = hsl(i);
-        if (lum > best) { best = lum; seed = i; }
-      }
-    }
-    if (seed < 0 || best < 0.6) continue;
-
-    // Stay near the marker: a shard is a small feature, and an unbounded
-    // flood through anything bright could walk off across a highlight.
-    const reach = Math.max(x1 - x0, y1 - y0) * 1.6;
+  {
     const BRIGHT = 0.58;
-    let head = 0, tail = 0;
-    eyeMask[seed] = 1;
-    scratch[tail++] = seed;
-    while (head < tail) {
-      const i = scratch[head++];
-      const x = i % w;
-      const y = (i - x) / w;
-      const go = (j) => {
-        if (eyeMask[j] || !opaque(j)) return;
-        const jx = j % w;
-        const jy = (j - jx) / w;
-        if (Math.abs(jx - (x0 + x1) / 2) > reach || Math.abs(jy - (y0 + y1) / 2) > reach) return;
-        if (hsl(j).lum < BRIGHT) return;
-        eyeMask[j] = 1;
-        scratch[tail++] = j;
-      };
-      if (x > 0) go(i - 1);
-      if (x < w - 1) go(i + 1);
-      if (y > 0) go(i - w);
-      if (y < h - 1) go(i + w);
+    const bright = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (headMask[i] && opaque(i) && hsl(i).lum >= BRIGHT) bright[i] = 1;
     }
+    // A shard is a feature of the drawing, not a stray bright pixel.
+    dropSmall(bright, w, h, Math.max(MIN_AREA, Math.round(headSpan.w * headSpan.h * 0.001)));
+
+    const seen = new Uint8Array(n);
+    const stack = [];
+    const shards = [];
+    for (let start = 0; start < n; start++) {
+      if (seen[start] || !bright[start]) continue;
+      const pixels = [];
+      seen[start] = 1;
+      stack.push(start);
+      while (stack.length) {
+        const i = stack.pop();
+        pixels.push(i);
+        const x = i % w;
+        const y = (i - x) / w;
+        const visit = (j) => { if (!seen[j] && bright[j]) { seen[j] = 1; stack.push(j); } };
+        if (x > 0) visit(i - 1);
+        if (x < w - 1) visit(i + 1);
+        if (y > 0) visit(i - w);
+        if (y < h - 1) visit(i + w);
+      }
+      shards.push(pixels);
+    }
+    shards.sort((p, q) => q.length - p.length);
+    for (const pixels of shards.slice(0, 2)) for (const i of pixels) eyeMask[i] = 1;
   }
+  fillEnclosed(eyeMask, w, h);
+
 
   // Keep the shards as they are before the ring joins them.
   //
@@ -828,9 +820,24 @@ function extract(src, labels, name, w, h, zByLabel) {
         const b = i * 4;
         od[a] = od[b]; od[a + 1] = od[b + 1]; od[a + 2] = od[b + 2];
       }
-      // Fully opaque: this margin exists to be hidden under other parts, and a
-      // soft edge here would show as a halo when one slides away.
-      od[a + 3] = 255;
+      /* Solid near the art, fading out toward the far edge.
+       *
+       * The margin is invented paint whose whole job is to sit under the part
+       * in front, so that when that part moves it reveals something rather
+       * than a hole. But it stops dead at the dilation radius, and a hard
+       * boundary on opaque paint is a hard boundary you can see: move a part
+       * far enough and the margin shows as a slab with a straight edge across
+       * it, in whatever colour the flood carried out there. That is the black
+       * block on the scarf and the arm.
+       *
+       * Holding it solid for the first stretch keeps small movements covered
+       * exactly as before — the case it was built for — and lets a large one
+       * fade out instead of presenting an edge.
+       */
+      const solid = DILATE * 0.45;
+      od[a + 3] = step <= solid
+        ? 255
+        : Math.round(255 * Math.max(0, 1 - (step - solid) / (DILATE - solid)) ** 1.4);
       queue[tail++] = j;
     };
     if (x > 0) spread(i - 1);
@@ -1109,11 +1116,9 @@ function socketsFor(shardMask, m, w, h, pad) {
   if (!shards.length) return null;
   shards.sort((a, b) => b.length - a.length);
 
-  // This visor is one continuous slit, not two eyes. The marker pass reports
-  // two because it splits a single bright blob down its principal axis, and
-  // sizing the lids to those halves leaves the ends of the slit permanently
-  // open. One shard means one lid shape, used for both channels: with blinks
-  // linked, which they are by default, it shuts as one piece.
+  // Two shards means two lids. One means the drawing really does have a
+  // single slit, and both channels drive the same shape — with blinks linked,
+  // which they are by default, it shuts as one piece.
   const pair = shards.length >= 2 ? shards.slice(0, 2) : [shards[0], shards[0]];
 
   const boxes = pair.map((pixels) => {

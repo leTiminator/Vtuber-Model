@@ -121,15 +121,39 @@ export class ChainField {
     // Clamping position alone is a trap: the position pins at the boundary but
     // the velocity survives, so every step shoves it back out and the chain
     // sits railed instead of relaxing.
-    // Room for the tip to actually travel. A scarf this long reads as stiff
-    // if its end can only move eight percent of the frame; the limit is a
-    // backstop against divergence, not the intended range of motion.
+    /* Two limits, and the second matters more.
+     *
+     * How far the whole chain may travel is a backstop against divergence.
+     * How far NEIGHBOURING nodes may differ is what keeps it cloth: the art is
+     * skinned to this chain, so a gap between adjacent nodes stretches the
+     * ribbon between them. Let that grow and the scarf pulls thin like taffy
+     * and tears off the neck — which is what real tracking did to it, because
+     * real head motion is jerky where a synthetic sweep is smooth, so the
+     * driving forces spike far higher than anything it was tuned against.
+     *
+     * A chain bends. It does not stretch.
+     */
     const LIMIT = 0.17;
+    const MAX_BEND = 0.011;
     for (let i = 1; i < n; i++) {
       if (dx[i] > LIMIT) { dx[i] = LIMIT; if (vx[i] > 0) vx[i] = 0; }
       else if (dx[i] < -LIMIT) { dx[i] = -LIMIT; if (vx[i] < 0) vx[i] = 0; }
       if (dy[i] > LIMIT) { dy[i] = LIMIT; if (vy[i] > 0) vy[i] = 0; }
       else if (dy[i] < -LIMIT) { dy[i] = -LIMIT; if (vy[i] < 0) vy[i] = 0; }
+    }
+
+    // Walk outward pulling each node back toward the one before it, so the
+    // constraint propagates from the anchor rather than fighting itself. Two
+    // passes is enough at these speeds and stays cheap.
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < n; i++) {
+        const gx = dx[i] - dx[i - 1];
+        if (gx > MAX_BEND) { dx[i] = dx[i - 1] + MAX_BEND; if (vx[i] > 0) vx[i] = 0; }
+        else if (gx < -MAX_BEND) { dx[i] = dx[i - 1] - MAX_BEND; if (vx[i] < 0) vx[i] = 0; }
+        const gy = dy[i] - dy[i - 1];
+        if (gy > MAX_BEND) { dy[i] = dy[i - 1] + MAX_BEND; if (vy[i] > 0) vy[i] = 0; }
+        else if (gy < -MAX_BEND) { dy[i] = dy[i - 1] - MAX_BEND; if (vy[i] < 0) vy[i] = 0; }
+      }
     }
   }
 

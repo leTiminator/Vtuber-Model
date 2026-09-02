@@ -158,7 +158,7 @@ try {
       angle: marker.eyeAngle,
     };
   });
-  check('the eye sockets were measured, not guessed from the marker',
+  check('both eyes were found, and measured rather than guessed',
     !paths.fellBack && paths.sockets === 2, `${paths.sockets} sockets`);
   check('the scarf skeleton was extracted', boot.spine);
   check('both arms got a shoulder pivot', paths.armPivots === 2, `${paths.armPivots}`);
@@ -381,11 +381,9 @@ try {
     return {
       regionPx: region.length,
       openLit: nearWhite(open, region),
-      // Within the eye's own region. The visor carries a painted specular
-      // highlight on its rim that is not an eye and must not blink, so
-      // counting near-white across the whole frame flags the artwork.
-      shutLit: nearWhite(shut, region),
-      highlightLit: nearWhite(shut, all),
+      // Across the whole frame. Nothing on this model is near-white except
+      // the eyes, so a shut face should have none of it anywhere.
+      shutLit: nearWhite(shut, all),
       halfLit: nearWhite(half, region),
       glowChanged: glowDiff.length,
       spill,
@@ -396,13 +394,16 @@ try {
 
   check('closing the eye changes a meaningful area', looks.regionPx > 150, `${looks.regionPx}px`);
   check('the eye is lit when open', looks.openLit > 120, `${looks.openLit}px`);
-  // The lid was sized to the marker box, which left the end of the slit lit
-  // however far the blink went.
-  check('a shut eye leaves no lit sliver', looks.shutLit === 0,
+  /* Nothing lit anywhere, not just in the big slit.
+   *
+   * This assertion used to be the other way round. The far eye of a 3/4 view
+   * is small and half hidden behind the hood, and I took it for a highlight on
+   * the visor rim — then wrote a check requiring it to stay lit through a
+   * blink, which locked the bug in and would have failed the fix. It is an
+   * eye, it blinks, and the only near-white left on a shut face is none.
+   */
+  check('a shut face leaves nothing lit anywhere', looks.shutLit === 0,
     `${looks.shutLit}px still lit (open ${looks.openLit})`);
-  // And the lid must not eat the visor's painted rim highlight along with it.
-  check('shutting the eye leaves the visor highlight alone', looks.highlightLit > 40,
-    `${looks.highlightLit}px of highlight survive`);
   check('a half blink lands between open and shut',
     looks.halfLit > 0 && looks.halfLit < looks.openLit * 0.9,
     `${looks.halfLit} vs open ${looks.openLit}`);

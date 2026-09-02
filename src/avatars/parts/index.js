@@ -23,7 +23,22 @@ import { cutParts } from './cut.js';
  */
 const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap']);
 
-/** How much of the head's turn the neck wrap takes. */
+/**
+ * How much of the head's turn the neck wrap takes.
+ *
+ * Neither end of this range is right, and the value is a compromise between
+ * two visible faults. At 1 the wrap turns with the hood and climbs over the
+ * visor — it is cloth on the shoulders, and it does not perform a head turn.
+ * Below about 0.5 it slides off the hood instead: the bend maps a point
+ * differently for different angles, so at a 42-degree turn the same point on
+ * the wrap/hood seam lands tens of pixels apart in the two parts and the
+ * scarf comes away from the head.
+ *
+ * The real answer is that a cut cannot express a gradient. The scarf is one
+ * continuous surface that should follow the head fully where it crosses the
+ * face and barely at all where it hangs off the shoulder, and no single
+ * number for a rigid part can do both.
+ */
 const WRAP_FOLLOW = 0.45;
 
 /**
