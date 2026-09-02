@@ -52,7 +52,8 @@ export function cutParts(image, markers) {
   ctx.drawImage(image, 0, 0);
   const src = ctx.getImageData(0, 0, w, h);
 
-  const labels = labelPixels(src, markers, w, h);
+  const sockets = [];
+  const labels = labelPixels(src, markers, w, h, sockets);
 
   // Depth per label, so dilation knows which neighbours sit in front.
   const zByLabel = new Int32Array(16).fill(-1);
@@ -64,7 +65,7 @@ export function cutParts(image, markers) {
     if (!part) continue;
     parts.push({ ...spec, ...part, pivot: pivotFor(spec.name, labels, markers, w, h) });
   }
-  return { parts, width: w, height: h };
+  return { parts, width: w, height: h, sockets };
 }
 
 /* ----------------------------------------------------------------- labels */
@@ -99,7 +100,7 @@ const LABEL = {
  * What remains geometric is only what genuinely is: which side of the figure a
  * limb sits on, and where along the scarf the neck wrap ends.
  */
-function labelPixels(src, m, w, h) {
+function labelPixels(src, m, w, h, sockets) {
   const n = w * h;
   const out = new Uint8Array(n);
   const d = src.data;
@@ -246,6 +247,12 @@ function labelPixels(src, m, w, h) {
     }
   }
 
+  // Keep the shards as they are before the ring joins them.
+  //
+  // Growing through ink merges both eyes into one blob, and the lid needs each
+  // eye separately — measured from this copy, then padded to cover the ring.
+  const shardMask = eyeMask.slice();
+
   // Hand the shard's ink outline to the eye as well, not just the shard.
   //
   // Left to the general rule, that ring gets split down the middle: the inner
@@ -258,7 +265,7 @@ function labelPixels(src, m, w, h) {
   // through ink stops at the first visor pixel on its own.
   {
     const OUTLINE_LUM = 0.25;
-    const RING = Math.max(3, Math.round(Math.max(w, h) * 0.012));
+    const RING = ringWidth(w, h);
     let head = 0, tail = 0;
     const step = new Int16Array(n).fill(-1);
     for (let i = 0; i < n; i++) if (eyeMask[i]) { step[i] = 0; scratch[tail++] = i; }
@@ -289,6 +296,11 @@ function labelPixels(src, m, w, h) {
   // the fill behind the eye toward their own colour. Anything enclosed by the
   // shard is the shard, whatever shade it happens to be.
   fillEnclosed(eyeMask, w, h);
+
+  if (sockets) {
+    const found = socketsFor(shardMask, m, w, h, ringWidth(w, h) + 2);
+    if (found) sockets.push(...found);
+  }
 
   /* --- everything below the neck, as connected pieces --------------------
    * Cloth and non-cloth are kept apart so a glove resting against a sleeve
@@ -451,6 +463,11 @@ function labelPixels(src, m, w, h) {
   }
 
   return out;
+}
+
+/** How far the eye's ink outline is grown into, in pixels. */
+function ringWidth(w, h) {
+  return Math.max(3, Math.round(Math.max(w, h) * 0.012));
 }
 
 /** Smallest piece worth keeping, in pixels. See the note in labelPixels. */
@@ -1023,4 +1040,81 @@ function fitPlaneOf(samples, pw, value) {
             k[2] * (k[3] * k[7] - k[4] * k[6])) / det;
   };
   return { a: col(0), b: col(1), c: col(2) };
+}
+
+/**
+ * The true extent of each eye, measured from the pixels that were actually
+ * cut out rather than from the marker rectangle.
+ *
+ * The lid closes across a box, and sizing that box from the marker leaves
+ * whatever the shard reaches past it permanently uncovered — a sliver of open
+ * eye at full blink, which is exactly what a shut eye must not have. The
+ * marker is a hint about where to look; the shard's own pixels are the answer.
+ *
+ * Measured in the lid's own rotated frame, because that is the frame the
+ * shader tests in. An axis-aligned box around a slanted shard is far larger
+ * than the shard, and a lid sized to it would sweep across half the visor.
+ *
+ * @returns {Array<{cx,cy,hx,hy}>|null} left then right, in image UV
+ */
+function socketsFor(shardMask, m, w, h, pad) {
+  const angle = m.eyeAngle || 0;
+
+  // Split the eye pixels into their connected shards, biggest two win.
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  const shards = [];
+  for (let start = 0; start < w * h; start++) {
+    if (seen[start] || !shardMask[start]) continue;
+    const pixels = [];
+    seen[start] = 1;
+    stack.push(start);
+    while (stack.length) {
+      const i = stack.pop();
+      pixels.push(i);
+      const x = i % w;
+      const y = (i - x) / w;
+      const visit = (j) => { if (!seen[j] && shardMask[j]) { seen[j] = 1; stack.push(j); } };
+      if (x > 0) visit(i - 1);
+      if (x < w - 1) visit(i + 1);
+      if (y > 0) visit(i - w);
+      if (y < h - 1) visit(i + w);
+    }
+    if (pixels.length >= MIN_AREA) shards.push(pixels);
+  }
+  if (!shards.length) return null;
+  shards.sort((a, b) => b.length - a.length);
+
+  // This visor is one continuous slit, not two eyes. The marker pass reports
+  // two because it splits a single bright blob down its principal axis, and
+  // sizing the lids to those halves leaves the ends of the slit permanently
+  // open. One shard means one lid shape, used for both channels: with blinks
+  // linked, which they are by default, it shuts as one piece.
+  const pair = shards.length >= 2 ? shards.slice(0, 2) : [shards[0], shards[0]];
+
+  const boxes = pair.map((pixels) => {
+    let sx = 0, sy = 0;
+    for (const i of pixels) { const x = i % w; sx += x; sy += (i - x) / w; }
+    const cx = sx / pixels.length;
+    const cy = sy / pixels.length;
+
+    // Extent along the lid's own axes.
+    const c = Math.cos(-angle);
+    const sn = Math.sin(-angle);
+    let hx = 0, hy = 0;
+    for (const i of pixels) {
+      const x = i % w;
+      const y = (i - x) / w;
+      const dx = x - cx;
+      const dy = y - cy;
+      hx = Math.max(hx, Math.abs(dx * c - dy * sn));
+      hy = Math.max(hy, Math.abs(dx * sn + dy * c));
+    }
+    // Pad out to cover the ink ring that was handed to the eye with it, plus
+    // a shade more so the sweep clears the anti-aliased edge.
+    return { cx: cx / w, cy: cy / h, hx: (hx + pad) / w, hy: (hy + pad) / h };
+  });
+
+  boxes.sort((a, b) => a.cx - b.cx);
+  return boxes;
 }

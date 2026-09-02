@@ -79,6 +79,7 @@ export function buildPanel(root, ctx) {
         { type: 'note', text: 'Uses a second tracking model, so it only loads while the camera is on. Turn it off if the frame rate suffers.' },
         { type: 'toggle', key: 'arms.track', label: 'Track my arms',
           hint: 'Picks up raising your hands off the keyboard.' },
+        { type: 'armStatus' },
         { type: 'slider', key: 'arms.gain', label: 'Arm travel', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'arms.smooth', label: 'Arm steadiness', min: 0.2, max: 4, step: 0.05, format: x,
           hint: 'Higher is calmer. Arms move slowly, so they can take more smoothing than the face.' },
@@ -225,6 +226,37 @@ const BUILDERS = {
     label.append(input, el('span', null, spec.label));
     field.append(label);
     if (spec.hint) field.append(el('div', 'field__hint', spec.hint));
+    return field;
+  },
+
+  /**
+   * Live read of what the pose model is actually seeing.
+   *
+   * Arms not moving has several possible causes that look identical from the
+   * outside — the model not loaded, your shoulders out of frame, the angles
+   * being read but scaled to nothing — and no way to tell them apart without
+   * looking. This shows which one it is.
+   */
+  armStatus(spec, ctx) {
+    if (!ctx.armStatus) return null;
+    const field = el('div', 'field');
+    const line = el('div', 'field__hint');
+    line.style.cssText = 'font-variant-numeric:tabular-nums;line-height:1.6';
+    field.append(line);
+
+    const paint = () => {
+      const s = ctx.armStatus();
+      const n = (v) => (v >= 0 ? ' ' : '') + v.toFixed(2);
+      line.textContent = [
+        `camera ${s.camera ? 'on' : 'off'} · model ${s.model} · pose ${s.pose}`,
+        `shoulders ${s.shoulders} · updates ${s.rate}/s`,
+        `left  raise ${n(s.left.raise)}  upper ${n(s.left.upper)}`,
+        `right raise ${n(s.right.raise)}  upper ${n(s.right.upper)}`,
+      ].join('\n');
+      line.style.whiteSpace = 'pre';
+    };
+    paint();
+    setInterval(paint, 250);
     return field;
   },
 

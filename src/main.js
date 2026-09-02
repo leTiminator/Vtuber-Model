@@ -200,6 +200,16 @@ buildPanel(dom.panelBody, {
     return true;
   },
   hasArtwork: () => Boolean(avatars.warp2d.image),
+  armStatus: () => ({
+    camera: tracker.running,
+    model: pose.error ? 'failed' : pose.landmarker ? 'ready' : pose.enabled ? 'loading' : 'off',
+    pose: pose.hasPose ? 'found' : 'none',
+    shoulders: pose.frame?.joints?.shoulderL && pose.frame?.joints?.shoulderR ? 'both'
+      : pose.frame?.joints?.shoulderL || pose.frame?.joints?.shoulderR ? 'one' : 'none',
+    rate: pose.rate.toFixed(1),
+    left: rig.state.arms.left,
+    right: rig.state.arms.right,
+  }),
 });
 
 async function startCamera() {

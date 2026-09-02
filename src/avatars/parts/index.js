@@ -148,7 +148,7 @@ export class Parts2D {
     if (!gl || !this.image) return;
 
     const m = this.markers();
-    const { parts, width, height } = cutParts(this.image, m);
+    const { parts, width, height, sockets } = cutParts(this.image, m);
     this.imageSize = { width, height };
 
     for (const old of this.parts) {
@@ -164,7 +164,7 @@ export class Parts2D {
 
     this.parts = parts
       .sort((a, b) => a.z - b.z)
-      .map((part) => this.upload(part, width, height, m));
+      .map((part) => this.upload(part, width, height, m, sockets));
 
     /* One cylinder radius for the whole head, not one per part.
      *
@@ -190,7 +190,7 @@ export class Parts2D {
     this.rebuild = false;
   }
 
-  upload(part, width, height, m) {
+  upload(part, width, height, m, sockets) {
     const gl = this.gl;
 
     const texture = gl.createTexture();
@@ -253,8 +253,21 @@ export class Parts2D {
     }
     const cylR = Math.max(m.headR * 1.85, reachX / 0.98, reachY / 0.803);
 
-    // Eye sockets, converted from image UV into this part's texture space.
-    const socket = (rect) => [
+    /* Eye sockets, in this part's texture space.
+     *
+     * Prefer the extent measured from the pixels that were actually cut out.
+     * The marker rectangle is only a hint about where to look for the shard,
+     * and anything the shard reaches past it stays uncovered at full blink —
+     * a permanent sliver of open eye. Fall back to the marker when the cut
+     * could not find two shards.
+     */
+    const fromBox = (b) => [
+      (b.cx * width - part.x) / part.w,
+      (b.cy * height - part.y) / part.h,
+      (b.hx * width) / part.w,
+      (b.hy * height) / part.h,
+    ];
+    const fromMarker = (rect) => [
       (((rect[0] + rect[2]) / 2) * width - part.x) / part.w,
       (((rect[1] + rect[3]) / 2) * height - part.y) / part.h,
       (Math.abs(rect[2] - rect[0]) / 2) * width / part.w,
@@ -264,8 +277,8 @@ export class Parts2D {
     return {
       ...part,
       texture, vao, indexCount: idx.length, skinned, cylR,
-      eyeL: socket(m.eyeL),
-      eyeR: socket(m.eyeR),
+      eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
+      eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
     };
   }
 

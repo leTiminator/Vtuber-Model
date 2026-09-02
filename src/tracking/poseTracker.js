@@ -44,6 +44,8 @@ export class PoseTracker {
     this.budgetMs = 3.5;
     this.costMs = 0; // EMA of one inference
     this.maxStride = 12; // ~5 arm updates a second at worst; still smooth
+    this.rate = 0; // measured inferences per second, for the panel readout
+    this.recent = [];
   }
 
   async load() {
@@ -113,6 +115,12 @@ export class PoseTracker {
     // Cheap machines get a wider stride, fast ones narrow it back. The EMA
     // keeps one slow frame — a garbage collection, a window resize — from
     // throwing the rate away.
+    // Inference rate, over a short window — the honest answer to "are the
+    // arms even being looked at", which a stride number alone does not give.
+    this.recent.push(now);
+    while (this.recent.length && now - this.recent[0] > 2000) this.recent.shift();
+    this.rate = this.recent.length / 2;
+
     const elapsed = performance.now() - started;
     this.costMs = this.costMs === 0 ? elapsed : this.costMs * 0.85 + elapsed * 0.15;
     this.stride = Math.min(Math.max(Math.ceil(this.costMs / this.budgetMs), 1), this.maxStride);
