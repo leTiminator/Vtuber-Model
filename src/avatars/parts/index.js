@@ -186,7 +186,14 @@ export class Parts2D {
     const { parts, width, height, sockets } = cutParts(this.image, m);
     this.imageSize = { width, height };
 
-    for (const old of this.parts) {
+    /* Free what this renderer built, not whatever is currently being drawn.
+     *
+     * `parts` is a plain field, and a caller that swaps it to draw a subset —
+     * the test suite does, to look at one piece at a time — would otherwise
+     * have the rebuild free only that subset and orphan the rest, leaving the
+     * caller holding freed textures it then puts back.
+     */
+    for (const old of this.owned ?? this.parts) {
       gl.deleteTexture(old.texture);
       gl.deleteVertexArray(old.vao);
     }
@@ -233,6 +240,7 @@ export class Parts2D {
     }
     this.headCylR = headCylR || 1;
 
+    this.owned = this.parts;
     this.ready = this.parts.length > 0;
     this.rebuild = false;
   }

@@ -473,6 +473,17 @@ try {
     const a = avatars.parts2d;
     store.patch({ 'stage.zoom': 0.9, 'stage.offsetX': 0, 'stage.offsetY': 0,
       'warp.wind': 0, 'body.breathAmount': 0, 'body.swayAmount': 0 });
+    /* Flush the rebuild before taking hold of the part list.
+     *
+     * Changing any warp setting marks the model for rebuild, and the next
+     * render acts on it: the parts are re-cut and the old textures freed. A
+     * reference taken before that render is left pointing at freed objects —
+     * and because this block puts its reference back when it finishes, the
+     * renderer kept drawing them for every check that came after. That is why
+     * the one-piece check below reported the model in three pieces while the
+     * running app was demonstrably in one.
+     */
+    window.__t.pose(a, emptyRig, {}, 1);
     const all = a.parts;
 
     const maskOf = (name, mut) => {
