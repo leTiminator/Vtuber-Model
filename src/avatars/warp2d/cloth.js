@@ -180,6 +180,14 @@ export class HeadInertia {
     this.seeded = false;
   }
 
+  /** Forget the motion so far, and re-seed from wherever the head is next. */
+  reset() {
+    this.vx = 0; this.vy = 0;
+    this.ax = 0; this.ay = 0;
+    this.speed = 0;
+    this.seeded = false;
+  }
+
   update(x, y, dt) {
     if (dt <= 0) return this;
     // Without seeding, the first frame reads as a jump from the origin to the

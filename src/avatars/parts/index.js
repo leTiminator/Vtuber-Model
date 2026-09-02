@@ -20,8 +20,14 @@ import { cutParts } from './cut.js';
 /**
  * The parts that take the head's cylindrical bend. They have to share one
  * radius — see the note where it is computed.
+ *
+ * The eyes belong here for the plainest reason there is: they are painted on
+ * the visor. Left out, they stayed pinned to where the artist drew them while
+ * the shell turned out from under them, so by forty degrees one shard was
+ * hanging off the chin and the other was in open space beside the glove. They
+ * are not a separate object from the face; they are the face.
  */
-const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap', 'tails']);
+const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap', 'tails', 'eyes', 'armLeft', 'armRight']);
 
 /**
  * Where the head's turn stops being the head's, as multiples of the head's own
@@ -49,7 +55,7 @@ import { parseRect } from '../warp2d/index.js';
 import { extractSpine } from './spine.js';
 
 const UNIFORMS = [
-  'u_model', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
+  'u_model', 'u_modelFar', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
@@ -240,8 +246,8 @@ export class Parts2D {
    * agree at the seam no matter where the cut fell.
    */
   followAt(name, px, py) {
-    if (name === 'head' || name === 'tufts') return 1;
-    if (name !== 'wrap' && name !== 'tails') return 0;
+    if (name === 'head' || name === 'tufts' || name === 'eyes') return 1;
+    if (name === 'body') return 0;
     const h = this.headSpan;
     const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
     const t = clamp((d - FOLLOW_FULL) / (FOLLOW_NONE - FOLLOW_FULL), 0, 1);
@@ -409,18 +415,34 @@ export class Parts2D {
     // Scale note: the chain settles at force*weight/rest, and weight now
     // reaches 4.2 at the tip, so the per-node force has to come down to keep
     // the tip inside its limit instead of railing against it.
-    const fx = clamp(-this.inertia.ax, -12, 12) * 0.70;
-    const fy = clamp(-this.inertia.ay, -12, 12) * 0.70;
-    const swing = this.scarf.step(fx, fy, 0.11 * store.get('warp.wind'), dt);
+    /* "Scarf travel" drives the chain; it does not scale what comes out of it.
+     *
+     * The chain's two limits — how far a node may leave the drawn pose, and
+     * how much neighbouring nodes may differ — are the whole reason the ribbon
+     * stays a ribbon, because the art is skinned between those nodes. This
+     * setting used to multiply the chain's output, which multiplied straight
+     * past both: at the slider's top the tip could leave by half the width of
+     * the artwork, and the scarf came off the neck and floated away on its own.
+     * Idle wind is enough to drive that, so it happened sitting still with the
+     * camera off — which is exactly how it was reported.
+     *
+     * Scaling the force instead lands in the same place while the chain is in
+     * its linear range (it settles at force/rest either way, so 1x is
+     * unchanged), and past that the limits hold, so the scarf can be made to
+     * move a lot without being made to come apart.
+     */
+    const weight = clamp(store.get('warp.clothWeight'), 0, 3);
+    const fx = clamp(-this.inertia.ax, -12, 12) * 0.70 * weight;
+    const fy = clamp(-this.inertia.ay, -12, 12) * 0.70 * weight;
+    const swing = this.scarf.step(fx, fy, 0.11 * store.get('warp.wind') * weight, dt);
 
     // Displace each bone by its own node in the chain. The chain's later nodes
     // move further, so the ribbon lags along its length and folds rather than
     // sliding as one piece — the whole reason for the skeleton.
-    const weight = store.get('warp.clothWeight');
     if (this.spine) {
       for (let i = 0; i < SPINE_NODES; i++) {
-        this.bones[i * 2] = this.spine.nodes[i][0] + swing[i * 2] * weight;
-        this.bones[i * 2 + 1] = this.spine.nodes[i][1] + swing[i * 2 + 1] * weight;
+        this.bones[i * 2] = this.spine.nodes[i][0] + swing[i * 2];
+        this.bones[i * 2 + 1] = this.spine.nodes[i][1] + swing[i * 2 + 1];
       }
     }
 
@@ -470,6 +492,8 @@ export class Parts2D {
     // --- draw, back to front ---------------------------------------------
     for (const part of this.parts) {
       gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
+      gl.uniformMatrix3fv(L.u_modelFar, false,
+        joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
 
       gl.uniform1f(L.u_spineMode, part.skinned ? 1 : 0);
       if (part.skinned) gl.uniform2fv(L.u_spine, this.bones);
@@ -603,6 +627,14 @@ export class Parts2D {
     /* Arms hang off the hips rather than the neck: lifting a hand should not
      * inherit the head's tilt, and a shoulder that followed the head would
      * shear the sleeve every time you looked sideways.
+     *
+     * That holds for the shoulder. The raised fist in this drawing sits
+     * against the cheek, and leaving it behind when the head turns strands it
+     * in mid-air with nothing joining it to anything. So an arm is held at
+     * both ends too, by the same rule as the cloth: the hand by the head where
+     * it touches it, the shoulder by the body, and the sleeve between them.
+     * The objection above is about the shoulder following the head, and under
+     * a gradient the shoulder does not.
      *
      * Sides cross over, and they have to. After mirroring, `rig.arms.left` is
      * the character's own left arm — and a character facing you wears its left

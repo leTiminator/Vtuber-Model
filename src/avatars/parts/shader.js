@@ -18,7 +18,20 @@ in vec2 a_uv;    // into this part's own texture
 in vec3 a_bind;  // cloth only: where along the spine, and where in its local frame
 in float a_follow; // how much of the head's turn this vertex takes, 0..1
 
-uniform mat3 u_model;      // this part's joint transform, in image space
+uniform mat3 u_model;      // the joint this part's head end hangs off
+/* The joint its far end hangs off, blended in by the same follow weight.
+ *
+ * The torso was cut into the scarf piece, and that piece hangs off the neck —
+ * so tilting the head swung the whole trunk and left a boot standing on its
+ * own. A part is not attached at one point: the scarf is held by the neck
+ * where it crosses the face and by the hips where it reaches the waist, and
+ * which of those a vertex answers to is a question about where it sits, not
+ * about which piece the cut put it in. Same weight as the turn, so a point
+ * cannot take the head's rotation without taking the head's joint.
+ *
+ * Equal to u_model for parts held at one joint, which is most of them.
+ */
+uniform mat3 u_modelFar;
 uniform float u_aspect;    // image width / height
 
 // Head turn. Applied before the joint transform, so it bends the art in place.
@@ -101,7 +114,11 @@ void main() {
     p = u_headCenter + local / vec2(u_aspect, 1.0);
   }
 
-  p = (u_model * vec3(p, 1.0)).xy;
+  // Blend the transformed points, not the matrices: two rotations averaged
+  // element-wise are not a rotation, and the error shows as a squash.
+  vec2 near = (u_model * vec3(p, 1.0)).xy;
+  vec2 far = (u_modelFar * vec3(p, 1.0)).xy;
+  p = mix(far, near, a_follow);
 
   v_uv = a_uv;
   vec2 ndc = (p * u_viewScale + u_viewOffset) * 2.0 - 1.0;

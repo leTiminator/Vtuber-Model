@@ -308,10 +308,18 @@ try {
   check('the character does not shrink or vanish at the extremes',
     sweep.worstArea > 0.84, `smallest ${(sweep.worstArea * 100).toFixed(0)}% of rest at ${sweep.worstAreaAt}`);
 
-  // Cloth tearing loose from the body shows up as pieces that were not there
-  // at rest.
+  /* Cloth tearing loose from the body shows up as pieces that were not there
+   * at rest.
+   *
+   * No slack. This allowed two extra pieces and duly passed while the model
+   * was rendering three: at a turn the raised fist was stranded in mid-air and
+   * an eye shard was out in the open beside it, and at a tilt a boot was left
+   * standing on its own. The artwork is a single connected shape, so anything
+   * above one piece is the model coming apart, and a tolerance here only ever
+   * buys silence about it.
+   */
   check('the character does not come apart into extra pieces',
-    sweep.maxBlobs <= sweep.baseBlobs + 2,
+    sweep.maxBlobs <= sweep.baseBlobs && sweep.baseBlobs === 1,
     `${sweep.maxBlobs} pieces at ${sweep.maxBlobsAt}, ${sweep.baseBlobs} at rest`);
 
   check('the pose moves smoothly, with no pops',
@@ -521,6 +529,93 @@ try {
   check('the scarf stays joined to itself in every pose',
     worst.gap <= 6,
     joined.out.map((o) => `${o.label} ${o.gap}px`).join(', '));
+
+  /* --- the character is one piece, at every setting the panel can reach -----
+   *
+   * The artwork is a single connected shape — one blob of opaque pixels, which
+   * this asserts against the file rather than assuming. So the model is only
+   * ever right if what it renders is a single blob too.
+   *
+   * This is the check that was missing. Everything above runs at the default
+   * settings, and the fault the user hit needed three sliders away from their
+   * defaults at once: a slack scarf, full travel, full drift. Then idle wind
+   * alone — no camera, no motion, sitting still — pulled the ribbon off the
+   * neck and left it floating. No single setting did it, so a one-at-a-time
+   * sweep would have missed it as well; the combination is the point.
+   *
+   * Sampled repeatedly through the run, because coming apart is something the
+   * cloth does on its way somewhere, not only where it settles.
+   */
+  const sourceBlobs = await page.evaluate(async () => {
+    const img = window.__vtuber.avatars.parts2d.image;
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    return window.__t.blobs({ d, w: c.width, h: c.height }, 60);
+  });
+  check('the artwork itself is a single connected shape', sourceBlobs === 1,
+    `${sourceBlobs} blobs`);
+
+  const intact = await page.evaluate(async () => {
+    const { avatars, emptyRig, store } = window.__vtuber;
+    const a = avatars.parts2d;
+    // A phone's worth of pixels: the size it is actually looked at.
+    a.resize(412, 900, 1);
+
+    const CASES = [
+      ['defaults', {}],
+      ['slack scarf, full travel and drift',
+        { 'warp.clothStiffness': 0.1, 'warp.clothWeight': 3, 'warp.wind': 3 }],
+      ['every cloth control at its maximum',
+        { 'warp.clothStiffness': 0.1, 'warp.clothWeight': 3, 'warp.wind': 3,
+          'warp.tuftStiffness': 0.1, 'warp.tuftWeight': 3, 'body.hairPhysics': 2.5,
+          'body.breathAmount': 2.5, 'body.swayAmount': 2.5, 'body.followGain': 2,
+          'warp.lowerDamping': 1 }],
+      ['every cloth control at its minimum',
+        { 'warp.clothStiffness': 4, 'warp.clothWeight': 0, 'warp.wind': 0,
+          'warp.tuftStiffness': 4, 'warp.tuftWeight': 0, 'body.hairPhysics': 0,
+          'body.breathAmount': 0, 'body.swayAmount': 0, 'body.followGain': 0 }],
+    ];
+    // At rest with the camera off, and thrown about, because the chain is
+    // driven by head inertia and idle wind both.
+    const POSES = [
+      ['at rest', null],
+      ['turning', (rig, f) => { rig.head.yaw = Math.sin(f / 14) * 0.7; rig.head.roll = Math.sin(f / 9) * 0.4; }],
+    ];
+
+    const out = [];
+    for (const [label, patch] of CASES) {
+      for (const [poseName, drive] of POSES) {
+        store.reset();
+        store.patch(patch);
+        a.scarf.reset();
+        a.inertia.reset();
+        const rig = emptyRig();
+        let worst = 1;
+        let where = '';
+        for (let f = 0; f < 240; f++) {
+          if (drive) drive(rig, f);
+          a.render(rig, 1 / 60);
+          if (f % 20 !== 19) continue;
+          const n = window.__t.blobs(window.__t.read(a), 60);
+          if (n > worst) { worst = n; where = ` at frame ${f}`; }
+        }
+        out.push({ label: `${label}, ${poseName}`, worst, where });
+      }
+    }
+    store.reset();
+    a.scarf.reset();
+    a.inertia.reset();
+    return out;
+  });
+
+  const torn = intact.filter((o) => o.worst !== 1);
+  check('the character renders as one piece at every setting',
+    torn.length === 0,
+    torn.length
+      ? torn.map((o) => `${o.label}: ${o.worst} pieces${o.where}`).join('; ')
+      : intact.map((o) => o.label).join('; '));
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

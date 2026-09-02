@@ -26,13 +26,13 @@ const ALPHA_FLOOR = 40;
  * the head cannot drift off the neck because the neck carries it.
  */
 export const PART_SPECS = [
-  { name: 'tails', parent: 'root', joint: 'neck', z: 0 },
+  { name: 'tails', parent: 'root', joint: 'neck', farJoint: 'hips', z: 0 },
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
-  { name: 'armLeft', parent: 'root', joint: 'shoulderLeft', z: 2 },
-  { name: 'armRight', parent: 'root', joint: 'shoulderRight', z: 3 },
+  { name: 'armLeft', parent: 'root', joint: 'neck', farJoint: 'shoulderLeft', z: 2 },
+  { name: 'armRight', parent: 'root', joint: 'neck', farJoint: 'shoulderRight', z: 3 },
   { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
   { name: 'head', parent: 'neck', joint: 'neck', z: 5 },
-  { name: 'wrap', parent: 'neck', joint: 'neck', z: 6 },
+  { name: 'wrap', parent: 'neck', joint: 'neck', farJoint: 'hips', z: 6 },
   // Drawn last, above the scarf. The slit and the scarf do not overlap in the
   // drawing, so this changes nothing about the composition — but it puts the
   // eye above every contact shadow. It is the one thing on the model that

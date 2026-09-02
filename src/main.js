@@ -277,10 +277,32 @@ dom.resetBtn.addEventListener('click', () => {
   if (confirm('Reset every setting to its default?')) store.reset();
 });
 
-// Which build is on screen. Without it, "the fix is not there" and "the fix is
-// there and did not work" look identical from a photograph.
+/* Which build is on screen, and what it is running with.
+ *
+ * Without the build, "the fix is not there" and "the fix is there and did not
+ * work" look identical from a photograph. Without the settings, so do "the
+ * model is broken" and "the model is doing what these sliders ask of it" —
+ * settings persist across every visit, so a session tuned weeks ago is still
+ * in force, and the one fault that reached the user needed three of them away
+ * from their defaults at once. A phone has no console; this line is the only
+ * way that state can be read off a screenshot.
+ */
 const stamp = document.getElementById('build-stamp');
-if (stamp) stamp.textContent = `build ${typeof __BUILD__ === 'string' ? __BUILD__ : 'dev'}`;
+function showStamp() {
+  if (!stamp) return;
+  const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+  const now = store.snapshot();
+  const changed = Object.keys(store.DEFAULTS)
+    .filter((k) => now[k] !== store.DEFAULTS[k])
+    // A device id is a page of hex and says nothing useful here.
+    .map((k) => (k === 'camera.deviceId' ? 'camera.deviceId set' : `${k} ${now[k]}`));
+  const shown = changed.slice(0, 6).join(', ');
+  const rest = changed.length > 6 ? ` +${changed.length - 6} more` : '';
+  stamp.textContent = changed.length
+    ? `build ${build} · changed: ${shown}${rest}`
+    : `build ${build} · all settings default`;
+}
+showStamp();
 
 installHotkeys({
   rig,
@@ -295,6 +317,7 @@ store.subscribe((key) => {
   if (key === 'stage.showPreview' || key === 'camera.mirror') applyPreview();
   if (key === 'mouth.source') applyMicSource();
   if (key === 'arms.track') applyPoseSource();
+  showStamp();
 });
 
 /* ---------------------------------------------------------------- framing */
