@@ -648,8 +648,20 @@ try {
     store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
       'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.2 });
     a.resize(300, 300, 2);
+    for (let f = 0; f < 3; f++) a.render(rig.state, 1 / 60);
     const gl = a.gl;
+    /* The head alone, not the whole figure.
+     *
+     * This is the mistake that let a backwards nod through three rounds of
+     * "fixed". The scarf is most of the silhouette and barely moves when the
+     * head nods, so on the figure a full nod is about four pixels — noise —
+     * while on the head it is thirty. A check that measures the wrong thing
+     * passes for the wrong reason, and this one did.
+     */
+    const all = a.parts;
     const centreY = () => {
+      a.parts = all.filter((p) => ['head', 'eyes', 'tufts'].includes(p.name));
+      a.render(rig.state, 1 / 60);
       const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
       const d = new Uint8Array(w * h * 4);
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
@@ -659,6 +671,7 @@ try {
         const x = p % w;
         n++; sy += h - 1 - ((p - x) / w);
       }
+      a.parts = all;
       return n ? sy / n : NaN;
     };
     const feed = (pitch, frames = 60) => {
@@ -693,8 +706,8 @@ try {
    * the screen at all, and that the switch reverses it — the semantics belong
    * to whoever can see both their own head and the screen.
    */
-  check('a nod moves the model up or down the screen, not merely squashing it',
-    Math.abs(nod.plain.down) > 1 && Math.abs(nod.plain.up) > 1
+  check('a nod visibly moves the head up or down, not merely squashing it',
+    Math.abs(nod.plain.down) > 12 && Math.abs(nod.plain.up) > 12
       && Math.sign(nod.plain.down) !== Math.sign(nod.plain.up),
     `pitch -0.5 ${nod.plain.down.toFixed(1)}px, +0.5 ${nod.plain.up.toFixed(1)}px`);
 
