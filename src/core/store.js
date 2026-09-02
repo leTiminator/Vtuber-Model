@@ -17,6 +17,15 @@ export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
   'camera.deviceId': '',
   'camera.mirror': true,
+  /* The calibrated rest pose, as JSON; empty means none.
+   *
+   * Kept here rather than in memory because a camera off to one side is not a
+   * one-off. Sitting at an angle reads as a permanent yaw, so without a
+   * neutral the model sits turned before you have moved — parked in the part
+   * of its range it renders worst. That is a property of where the camera is
+   * bolted, not of this session, so it should outlive a reload.
+   */
+  'camera.neutral': '',
 
   // --- smoothing -------------------------------------------------------
   'smooth.minCutoff': 1.2, // Hz — lower is steadier, laggier

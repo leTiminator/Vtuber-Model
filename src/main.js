@@ -323,7 +323,7 @@ dom.resetBtn.addEventListener('click', () => {
  * defaults on every machine, and listing them buries the handful that were
  * actually tuned — which is the only thing this line is for.
  */
-const MACHINE_SET = /^(warp\.(head|pivot|waist|eye)|camera\.deviceId|stage\.avatarChosen)/;
+const MACHINE_SET = /^(warp\.(head|pivot|waist|eye)|camera\.(deviceId|neutral)|stage\.avatarChosen)/;
 
 const stamp = document.getElementById('build-stamp');
 function showStamp() {
@@ -353,6 +353,8 @@ showStamp();
 const selfcheckEl = document.getElementById('selfcheck');
 let selfcheckDue = 0;
 let selfcheckOff = false;
+const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}\u00b0`;
+
 function runSelfCheck() {
   if (!selfcheckEl || selfcheckOff) return;
   const r = current?.selfCheck?.();
@@ -369,6 +371,12 @@ function runSelfCheck() {
     `${build} · ${r.pieces} piece${r.pieces === 1 ? '' : 's'}` +
       (torn ? ` (stray ${r.strays.join(', ')})` : ''),
     `${r.buffer} buffer · dpr ${r.dpr} · spine ${r.spine}`,
+    // Where "facing forward" is. Sitting off to one side reads as a permanent
+    // yaw, so this is the difference between a model at rest and one parked
+    // in the worst part of its range.
+    rig.neutral
+      ? `neutral yaw ${deg(rig.neutral.yaw)} pitch ${deg(rig.neutral.pitch)} roll ${deg(rig.neutral.roll)}`
+      : 'neutral not set — press "Set neutral pose" sitting how you stream',
     r.drawn,
     changed.length
       ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`

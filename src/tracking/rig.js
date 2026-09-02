@@ -64,6 +64,19 @@ export function emptyRig() {
   };
 }
 
+/** The saved rest pose, or null. Anything malformed is treated as none. */
+function readNeutral() {
+  try {
+    const raw = store.get('camera.neutral');
+    if (!raw) return null;
+    const n = JSON.parse(raw);
+    const ok = ['yaw', 'pitch', 'roll', 'x', 'y', 'z'].every((k) => Number.isFinite(n?.[k]));
+    return ok ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 export class Rig {
   constructor() {
     this.state = emptyRig();
@@ -73,7 +86,7 @@ export class Rig {
     // cutoff than the face, and its steadiness is a separate knob.
     this.arms = new FilterBank({ minCutoff: 0.9, beta: 0.04, dCutoff: 1.0 });
 
-    this.neutral = null; // calibrated baseline, set by calibrate()
+    this.neutral = readNeutral(); // calibrated baseline, set by calibrate()
     this.pendingCalibration = null;
     this.armNeutral = null; // resting arm angles, captured on the same signal
 
@@ -122,6 +135,7 @@ export class Rig {
     this.neutral = null;
     this.pendingCalibration = null;
     this.armNeutral = null;
+    store.set('camera.neutral', '');
   }
 
   setOverride(name, weight) {
@@ -333,6 +347,7 @@ export class Rig {
       x: mean('px'), y: mean('py'), z: mean('pz'),
     };
     this.pendingCalibration = null;
+    store.set('camera.neutral', JSON.stringify(this.neutral));
   }
 
   applyTracked(shapes, head, pos, dt) {
