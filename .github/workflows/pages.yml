@@ -18,9 +18,13 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time, and a newer push supersedes one still queued.
+# A newer push supersedes an older one still running — but only for the same
+# branch. Sharing one group across branches meant a push to the working branch
+# cancelled a deploy of main that was already under way, which is how a merge
+# could land, report itself deployed, and leave the old build on the site.
+# Only main deploys (see below), so this still serialises deployments.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
