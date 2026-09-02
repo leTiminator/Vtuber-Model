@@ -43,9 +43,7 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'head.pitchGain', label: 'Nod', min: 0, max: 3, step: 0.05, format: x },
         { type: 'headStatus' },
         { type: 'toggle', key: 'head.invertNod', label: 'Invert nod',
-          hint: 'Look down. If the line above says looking DOWN but the model looks up, '
-            + 'leave this alone and tell me — the drawing is at fault. If it says looking UP, '
-            + 'turn this on.' },
+          hint: 'On by default. Turn it off if nodding now goes the wrong way.' },
         { type: 'slider', key: 'head.rollGain', label: 'Tilt', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.positionGain', label: 'Lean / move', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.limitDeg', label: 'Range limit', min: 10, max: 80, step: 1, format: deg },

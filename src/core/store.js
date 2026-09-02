@@ -40,13 +40,19 @@ export const DEFAULTS = {
   'head.limitDeg': 42,
   /* Which way a nod goes.
    *
-   * Every convention here is confirmed — the tracker's sign against a recorded
-   * session, the renderer's against a measured one — and it was still reported
-   * backwards by the person looking at it. Whoever is watching the model is
-   * the authority on which way its head is going, so they get a switch rather
-   * than an argument.
+   * On by default, because the person watching the model said it was backwards
+   * twice and they are the ones who can see it. Everything I could check said
+   * otherwise — the tracker's sign against a recorded session, the renderer's
+   * against a measured one — and all that proves is that I was checking the
+   * wrong thing, or checking it against a camera that is not theirs. An
+   * argument from measurements nobody can reproduce loses to somebody looking
+   * at the screen.
+   *
+   * The panel prints what the tracker believes the head is doing, so this can
+   * still be settled properly rather than left as a guess that happens to
+   * work.
    */
-  'head.invertNod': false,
+  'head.invertNod': true,
 
   // --- eyes ------------------------------------------------------------
   'eyes.blinkGain': 1.35,

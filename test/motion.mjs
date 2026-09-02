@@ -684,13 +684,24 @@ try {
   });
 
   // Screen coordinates, so a positive number is further down the screen.
-  check('looking down moves the model down, looking up moves it up',
-    nod.plain.down > 1 && nod.plain.up < -1,
-    `down ${nod.plain.down.toFixed(1)}px, up ${nod.plain.up.toFixed(1)}px`);
+  /* Named for the mechanism, not for which way a head is going.
+   *
+   * An earlier version of this asserted "looking down moves the model down",
+   * which reads like ground truth and is not: it encodes my reading of the
+   * tracker's sign, and that reading was contradicted by the person watching
+   * the model. What is genuinely testable is that a nod moves the model along
+   * the screen at all, and that the switch reverses it — the semantics belong
+   * to whoever can see both their own head and the screen.
+   */
+  check('a nod moves the model up or down the screen, not merely squashing it',
+    Math.abs(nod.plain.down) > 1 && Math.abs(nod.plain.up) > 1
+      && Math.sign(nod.plain.down) !== Math.sign(nod.plain.up),
+    `pitch -0.5 ${nod.plain.down.toFixed(1)}px, +0.5 ${nod.plain.up.toFixed(1)}px`);
 
   check('and "Invert nod" reverses exactly that',
-    nod.inverted.down < -1 && nod.inverted.up > 1,
-    `down ${nod.inverted.down.toFixed(1)}px, up ${nod.inverted.up.toFixed(1)}px`);
+    Math.sign(nod.inverted.down) === -Math.sign(nod.plain.down)
+      && Math.sign(nod.inverted.up) === -Math.sign(nod.plain.up),
+    `inverted: ${nod.inverted.down.toFixed(1)}px, ${nod.inverted.up.toFixed(1)}px`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
