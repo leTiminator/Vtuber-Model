@@ -30,7 +30,7 @@ export const PART_SPECS = [
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
   { name: 'armLeft', parent: 'root', joint: 'shoulderLeft', z: 2 },
   { name: 'armRight', parent: 'root', joint: 'shoulderRight', z: 3 },
-  { name: 'tufts', parent: 'head', joint: 'neck', z: 4 },
+  { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
   { name: 'head', parent: 'neck', joint: 'neck', z: 5 },
   { name: 'eyes', parent: 'head', joint: 'eyes', z: 6 },
   { name: 'wrap', parent: 'neck', joint: 'neck', z: 7 },

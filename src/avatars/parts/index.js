@@ -63,6 +63,11 @@ export class Parts2D {
     // stopped. Damping is low enough to let it swing back once.
     this.scarf = new ChainField({ nodes: 16, chain: 240, rest: 26, damping: 2.2, tipBias: 4.2 });
     this.inertia = new HeadInertia();
+    // Hair lag: a single damped spring per axis, driven by the head's own
+    // acceleration. The spikes are short and stiff, so they want a much
+    // faster, tighter response than the scarf — a chain here would read as
+    // seaweed.
+    this.tuft = { x: 0, y: 0, vx: 0, vy: 0 };
     this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
     this.glowPulse = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
@@ -359,6 +364,33 @@ export class Parts2D {
       }
     }
 
+    /* Hair lag.
+     *
+     * The tufts took the head's bend and nothing else, so they were welded to
+     * the shell — the one thing hair never is. They now trail the head's
+     * acceleration and swing back after it stops, which is what sells a head
+     * turn as having weight.
+     */
+    {
+      const stiff = clamp(store.get('warp.tuftStiffness'), 0.1, 4);
+      const k = 150 * stiff;
+      const c = 13 * Math.sqrt(stiff);
+      const drive = 1.2 * store.get('warp.tuftWeight') * store.get('body.hairPhysics');
+      const t = this.tuft;
+      // Fixed sub-steps, so a slow frame cannot overshoot into a spasm.
+      let left = clamp(dt, 0, 0.1);
+      while (left > 0) {
+        const h = Math.min(left, 1 / 120);
+        const ax = clamp(-this.inertia.ax, -12, 12) * drive - k * t.x - c * t.vx;
+        const ay = clamp(-this.inertia.ay, -12, 12) * drive - k * t.y - c * t.vy;
+        t.vx += ax * h;
+        t.vy += ay * h;
+        t.x = clamp(t.x + t.vx * h, -0.05, 0.05);
+        t.y = clamp(t.y + t.vy * h, -0.05, 0.05);
+        left -= h;
+      }
+    }
+
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
     this.glowPulse = damp(this.glowPulse, 0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare, 9, dt);
 
@@ -483,8 +515,17 @@ export class Parts2D {
       );
     };
 
+    // The hair swings about the head rather than sliding across it: a tuft is
+    // rooted in the hood, so its tip travels much further than its base.
+    const lag = this.tuft;
+    const tufts = compose(
+      neck,
+      rotateAbout(lag.x * 10.5, m.headX, m.headY, this.aspect),
+      translate(IDENTITY, lag.x * 0.35, lag.y * 0.55),
+    );
+
     return {
-      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck,
+      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts,
       shoulderLeft: armAt('armLeft', 'right'),
       shoulderRight: armAt('armRight', 'left'),
     };
