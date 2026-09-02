@@ -61,7 +61,7 @@ const UNIFORMS = [
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_shadow', 'u_shadowOffset',
-  'u_spineMode', 'u_spine', 'u_flipU',
+  'u_flipU',
   'u_shell', 'u_depth',
 ];
 
@@ -132,35 +132,9 @@ export class Parts2D {
     this.loc = {};
     for (const name of UNIFORMS) this.loc[name] = gl.getUniformLocation(program, name);
 
-    /* Address the spine array by its first element, and check the driver
-     * agrees how long it is.
-     *
-     * "u_spine" is the convenient spelling and the one desktop accepts, but
-     * the portable name for an array is "u_spine[0]" — and a driver that
-     * hands back a location for one element instead of the whole array leaves
-     * every bone after the first sitting at the origin, which drags the middle
-     * of the ribbon off the character and leaves a clean-edged hole where it
-     * used to be. Cheap to spell correctly, and cheap to verify rather than
-     * assume: if the array does not come back the length it should, each
-     * element gets its own location.
-     */
-    this.loc.u_spine = gl.getUniformLocation(program, 'u_spine[0]') ?? this.loc.u_spine;
-    this.spineSlots = null;
-    let spineLen = 0;
-    for (let i = 0, n = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); i < n; i++) {
-      const info = gl.getActiveUniform(program, i);
-      if (info && info.name.startsWith('u_spine')) spineLen = info.size;
-    }
-    if (spineLen !== SPINE_NODES) {
-      this.spineSlots = [];
-      for (let i = 0; i < SPINE_NODES; i++) {
-        this.spineSlots.push(gl.getUniformLocation(program, `u_spine[${i}]`));
-      }
-    }
     this.attr = {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
-      bind: gl.getAttribLocation(program, 'a_bind'),
       follow: gl.getAttribLocation(program, 'a_follow'),
       depth: gl.getAttribLocation(program, 'a_depth'),
     };
@@ -353,9 +327,9 @@ export class Parts2D {
 
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
-    bind(gl, this.attr.pos, new Float32Array(pos), 2);
+    const posBuffer = bind(gl, this.attr.pos, new Float32Array(pos), 2,
+      skinned ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
-    bind(gl, this.attr.bind, new Float32Array(bindData), 3);
     bind(gl, this.attr.follow, new Float32Array(followData), 1);
     bind(gl, this.attr.depth, new Float32Array(depthData), 1);
     const ib = gl.createBuffer();
@@ -398,6 +372,11 @@ export class Parts2D {
     return {
       ...part,
       texture, vao, indexCount: idx.length, skinned, cylR,
+      // Skinning happens on the CPU — see skinCloth. The bind stays here
+      // because that is where it is now used.
+      posBuffer,
+      binds: skinned ? new Float32Array(bindData) : null,
+      live: skinned ? new Float32Array(pos) : null,
       eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
       eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
     };
@@ -490,6 +469,7 @@ export class Parts2D {
         this.bones[i * 2] = this.spine.nodes[i][0] + swing[i * 2];
         this.bones[i * 2 + 1] = this.spine.nodes[i][1] + swing[i * 2 + 1];
       }
+      this.skinCloth();
     }
 
     /* Hair lag.
@@ -552,16 +532,6 @@ export class Parts2D {
       gl.uniformMatrix3fv(L.u_modelFar, false,
         joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
 
-      gl.uniform1f(L.u_spineMode, part.skinned ? 1 : 0);
-      if (part.skinned) {
-        if (this.spineSlots) {
-          for (let i = 0; i < SPINE_NODES; i++) {
-            gl.uniform2f(this.spineSlots[i], this.bones[i * 2], this.bones[i * 2 + 1]);
-          }
-        } else {
-          gl.uniform2fv(L.u_spine, this.bones);
-        }
-      }
 
       // Tufts and the neck wrap are attached to the shell, so they have to
       // take the same bend as it; only the head itself ever mirrors.
@@ -679,6 +649,52 @@ export class Parts2D {
    * when the body leans — the failure that makes a cheap layered rig look
    * broken.
    */
+  /* Move the cloth onto its bones, here rather than in the shader.
+   *
+   * The shader used to do this, reading each bone out of a uniform array with
+   * an index it computed per vertex. That is legal and it works on a desktop
+   * driver, and it is also one of the oldest ways to get wrong geometry out of
+   * a mobile one: the reported symptom was the middle of the ribbon arriving
+   * somewhere else entirely, with clean straight edges where it had been cut,
+   * on a phone whose cut, bone array and buffer size all matched this machine
+   * exactly. Nothing else in the model indexes an array per vertex, and
+   * nothing else was breaking.
+   *
+   * Seven hundred vertices of the same arithmetic on the CPU is nothing, and
+   * the maths here is the same function the bind was computed against, so the
+   * rest pose is exact by construction rather than by two implementations
+   * agreeing.
+   */
+  skinCloth() {
+    for (const part of this.parts) {
+      if (!part.skinned || !part.binds || !part.live) continue;
+      const { binds, live } = part;
+      const skew = this.aspect || 1;
+      for (let v = 0, b = 0; v < live.length; v += 2, b += 3) {
+        const f = spineFrame(this.boneNodes(), binds[b], skew);
+        const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
+        const oy = f.ny * binds[b + 1] + f.ty * binds[b + 2];
+        live[v] = f.hx + ox / skew;
+        live[v + 1] = f.hy + oy;
+      }
+      const gl = this.gl;
+      gl.bindBuffer(gl.ARRAY_BUFFER, part.posBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, live);
+    }
+  }
+
+  /** The bone chain as spineFrame wants it, without rebuilding it per vertex. */
+  boneNodes() {
+    const nodes = this.boneList ?? (this.boneList = []);
+    for (let i = 0; i < SPINE_NODES; i++) {
+      const n = nodes[i] ?? (nodes[i] = [0, 0]);
+      n[0] = this.bones[i * 2];
+      n[1] = this.bones[i * 2 + 1];
+    }
+    nodes.length = SPINE_NODES;
+    return nodes;
+  }
+
   solveJoints(rig, roll, m) {
     const lean = rig.head.x * 0.045 + rig.body.leanX * 0.02;
     const rise = -rig.head.y * 0.04 + rig.body.bounce * 0.004;
@@ -809,7 +825,7 @@ export class Parts2D {
       buffer: `${w}x${h}`,
       dpr: (window.devicePixelRatio || 1).toFixed(2),
       drawn: this.parts.map((p) => `${p.name} ${Math.round((p.pixels ?? 0) / 1000)}k`).join(' '),
-      spine: this.spineSlots ? 'per-element' : 'array',
+      skinning: 'cpu',
     };
   }
 
@@ -878,13 +894,17 @@ function scaleAbout(sx, sy, cx, cy) {
 
 /* ------------------------------------------------------------------ setup */
 
-function bind(gl, location, data, size) {
+function bind(gl, location, data, size, usage) {
   const buffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, data, usage ?? gl.STATIC_DRAW);
   gl.enableVertexAttribArray(location);
   gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+  return buffer;
 }
+
+/** The frame's normal x, kept named so the offset below reads as it is built. */
+const frameNormalX = (f) => f.nx;
 
 function linkProgram(gl, vertexSource, fragmentSource) {
   const compile = (type, source) => {
@@ -949,8 +969,11 @@ function findSpine(part, image, width, height, m) {
 
 /**
  * The frame of the centreline at a given distance along it: a point, and the
- * tangent and normal there. Must match the shader's `fromSpine` exactly — the
- * bind is only reversible if both sides agree on the frame.
+ * tangent and normal there.
+ *
+ * The single implementation, used both to compute the bind and to undo it, so
+ * the rest pose is exact by construction. It used to have a twin in the vertex
+ * shader that had to be kept in step by hand.
  */
 function spineFrame(nodes, s, aspect) {
   const skew = aspect || 1;

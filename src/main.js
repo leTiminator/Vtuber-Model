@@ -370,7 +370,7 @@ function runSelfCheck() {
   selfcheckEl.textContent = [
     `${build} · ${r.pieces} piece${r.pieces === 1 ? '' : 's'}` +
       (torn ? ` (stray ${r.strays.join(', ')})` : ''),
-    `${r.buffer} buffer · dpr ${r.dpr} · spine ${r.spine}`,
+    `${r.buffer} buffer · dpr ${r.dpr} · skinning ${r.skinning}`,
     // Where "facing forward" is. Sitting off to one side reads as a permanent
     // yaw, so this is the difference between a model at rest and one parked
     // in the worst part of its range.

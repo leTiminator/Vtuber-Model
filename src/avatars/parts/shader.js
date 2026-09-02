@@ -15,7 +15,6 @@ precision highp float;
 
 in vec2 a_pos;   // image space, 0..1 across the whole artwork
 in vec2 a_uv;    // into this part's own texture
-in vec3 a_bind;  // cloth only: where along the spine, and where in its local frame
 in float a_follow; // how much of the head's turn this vertex takes, 0..1
 in float a_depth;  // how far this vertex stands off the drawing, 0..1
 
@@ -44,46 +43,10 @@ uniform float u_pitch;
 uniform float u_shell;  // 0 bends on the old cylinder, 1 turns the shell
 uniform float u_depth;  // how deep the shell is, in the same units as x
 
-// Cloth skinning. The part is bound to a centreline; moving the line's bones
-// carries the art with it, so the ribbon genuinely bends instead of sliding.
-uniform float u_spineMode;
-uniform vec2 u_spine[16];
-
 uniform vec2 u_viewScale;
 uniform vec2 u_viewOffset;
 
 out vec2 v_uv;
-
-/**
- * Rebuild a point from where it was bound to the spine.
- *
- * Both components of the local frame are kept, not just the sideways one.
- * Storing only the perpendicular offset throws the along-the-spine component
- * away, so a point does not land back where it started and the cloth sits
- * subtly wrong even at rest. With both, the bind is exact and the frame simply
- * rotates as the bones move.
- *
- * The JS side computes this frame with identical maths at build time; if the
- * two ever drift apart, the rest pose stops reassembling.
- */
-vec2 fromSpine(vec3 bind, float aspect) {
-  vec2 skew = vec2(aspect, 1.0);
-  float f = clamp(bind.x, 0.0, 1.0) * 15.0;
-  int i = int(floor(f));
-  int j = min(i + 1, 15);
-  float t = fract(f);
-
-  vec2 here = mix(u_spine[i], u_spine[j], t);
-
-  // Tangent from the neighbouring bones, so the frame turns smoothly along the
-  // ribbon rather than kinking at every joint.
-  vec2 prev = mix(u_spine[max(i - 1, 0)], u_spine[i], t);
-  vec2 next = mix(u_spine[j], u_spine[min(j + 1, 15)], t);
-  vec2 tangent = normalize((next - prev) * skew + vec2(1e-6, 0.0));
-  vec2 normal = vec2(-tangent.y, tangent.x);
-
-  return here + (normal * bind.y + tangent * bind.z) / skew;
-}
 
 /**
  * Rotate a point on a cylinder of radius R and read off its new position.
@@ -95,7 +58,15 @@ float cylinder(float x, float R, float angle) {
 }
 
 void main() {
-  vec2 p = u_spineMode > 0.5 ? fromSpine(a_bind, u_aspect) : a_pos;
+  /* Cloth arrives already on its bones.
+   *
+   * This used to look each bone up out of a uniform array with a per-vertex
+   * index. It is done on the CPU now — see skinCloth — because that indexing
+   * is a known way to get wrong geometry out of a mobile driver, and the
+   * scarf was the only part breaking on a phone that matched this machine in
+   * every other respect.
+   */
+  vec2 p = a_pos;
 
   /* The head's turn, taken per vertex rather than per part.
    *
