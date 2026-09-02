@@ -75,6 +75,12 @@ try {
 
   check('avatar canvas is mounted', await page.locator('#avatar-host canvas').count() === 1);
 
+  // The way a real tracker session gets into the test suite. Silently losing
+  // this control would leave replay.mjs permanently skipping with nothing to
+  // say why.
+  check('the session recorder is offered',
+    await page.locator('button', { hasText: 'Record 20 seconds' }).count() === 1);
+
   // The HUD lives inside the stage, so its buttons compete with the drag-to-pan
   // handler. Capturing the pointer there once swallowed the click outright.
   await page.click('#toggle-panel');

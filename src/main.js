@@ -8,6 +8,7 @@ import { ZOOM_MAX, ZOOM_MIN, fitTo, zoomAbout } from './core/framing.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
+import { SessionRecorder } from './tracking/recorder.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Layered2D } from './avatars/layered2d/index.js';
 import { Warp2D } from './avatars/warp2d/index.js';
@@ -39,6 +40,7 @@ const tracker = new FaceTracker();
 const pose = new PoseTracker();
 const mic = new MicLevel();
 const rig = new Rig();
+const recorder = new SessionRecorder();
 
 const avatars = {
   layered2d: new Layered2D(),
@@ -75,6 +77,7 @@ function frame(now) {
   rig.update(tracker.frame, tracker.hasFace, dt);
   if (pose.enabled && tracker.running) pose.detect(tracker.video, now);
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
+  recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
   current?.render(rig.state, dt);
 
   if (tracker.running) {
@@ -200,6 +203,12 @@ buildPanel(dom.panelBody, {
     return true;
   },
   hasArtwork: () => Boolean(avatars.warp2d.image),
+  recorder,
+  startRecording: (seconds) => {
+    if (!tracker.running) return false;
+    recorder.start(seconds);
+    return true;
+  },
   armStatus: () => ({
     camera: tracker.running,
     model: pose.error ? 'failed' : pose.landmarker ? 'ready' : pose.enabled ? 'loading' : 'off',
@@ -403,7 +412,8 @@ artwork.recall().then(async (saved) => {
 // Dev-only handle, so the test suite can render a chosen pose and read the
 // pixels back without going through the camera.
 if (import.meta.env.DEV) {
-  window.__vtuber = { rig, avatars, tracker, pose, store, emptyRig, get current() { return current; } };
+  window.__vtuber = { rig, avatars, tracker, pose, recorder, store, emptyRig,
+    get current() { return current; } };
 }
 
 requestAnimationFrame(frame);

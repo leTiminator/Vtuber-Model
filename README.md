@@ -335,6 +335,8 @@ install time, so the app has no CDN dependency and works offline.
 npm test             # every suite
 npm run test:rig     # rig maths, headless, no camera needed
 npm run test:parts   # the cut: reassembly, and each part being the right part
+npm run test:motion  # behaviour, motion invariants, and how it looks
+npm run test:replay  # a recorded tracker session, if one has been added
 npm run test:mobile  # phone layout, on a phone-shaped viewport over HTTPS
 npm run test:warp    # mesh warp: head motion, blink, background key
 ```
@@ -353,6 +355,22 @@ npm run warp-demo  # drives real artwork through the rig, with a control cell
 mirroring, calibration, clamping, blink behaviour, arm angles and recovery from
 a stalled frame. `test/smoke.mjs` boots the real app in Chromium against a fake
 webcam and checks the whole pipeline comes up.
+
+`test/replay.mjs` drives the rig and the renderer with a **recorded tracker
+session** instead of a synthetic sweep, and skips when none has been added.
+Every other motion check here is a sweep somebody wrote by hand, so each one
+encodes an assumption about what a camera produces — smooth curves, one axis at
+a time, tidy extremes. Real tracking jitters, drops out, and reaches
+combinations no sweep tries.
+
+To record one: start the camera, then **☰ → Camera & tracking → Record 20
+seconds**. Move the way you normally would. It saves `tracker-session.json`;
+put that in `test/fixtures/` and the suite picks it up.
+
+The file holds numbers only — blendshape weights, head angles, body landmark
+coordinates, the same values the rig already works from. No video is captured
+and no image data is written. It is plain JSON, about 400 KB for 20 seconds,
+and you can read it.
 
 `test/parts.mjs` is the one that guards the cut. Every part keeps image-space
 coordinates, so stacking them back at their stored positions has to reproduce

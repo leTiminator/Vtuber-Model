@@ -33,6 +33,7 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3),
           hint: 'Higher keeps fast movement lag-free.' },
         { type: 'slider', key: 'smooth.expression', label: 'Face response', min: 0.5, max: 6, step: 0.1, format: hz },
+        { type: 'record' },
       ],
     },
     {
@@ -259,6 +260,57 @@ const BUILDERS = {
     };
     paint();
     setInterval(paint, 250);
+    return field;
+  },
+
+  /**
+   * Record what the trackers see, for replaying in tests.
+   *
+   * The synthetic sweeps in the test suite are guesses about what a camera
+   * produces. This captures what one actually did.
+   */
+  record(spec, ctx) {
+    if (!ctx.recorder || !ctx.startRecording) return null;
+    const field = el('div', 'field');
+    const button = el('button', 'btn', 'Record 20 seconds');
+    button.type = 'button';
+    const hint = el('div', 'field__hint',
+      'Saves the tracking numbers — blendshapes, head angles, body points — as a file. '
+      + 'No video is recorded and no image data is saved.');
+    field.append(button, hint);
+
+    const paint = () => {
+      const r = ctx.recorder;
+      if (r.recording) {
+        button.disabled = true;
+        button.textContent = `Recording… ${(r.seconds - r.elapsed).toFixed(1)}s (${r.frames.length} frames)`;
+      } else {
+        button.disabled = false;
+        button.textContent = 'Record 20 seconds';
+      }
+    };
+
+    button.addEventListener('click', () => {
+      if (!ctx.startRecording(20)) {
+        hint.textContent = 'Start the camera first — there is nothing to record yet.';
+        return;
+      }
+      hint.textContent = 'Move the way you normally would: turn, nod, tilt, blink, '
+        + 'raise your hands. The awkward moments are the useful ones.';
+    });
+
+    let saved = false;
+    ctx.recorder.onTick = (r) => {
+      paint();
+      if (r.recording) { saved = false; return; }
+      if (saved || !r.frames.length) return;
+      saved = true;
+      r.save();
+      hint.textContent = `Saved ${r.frames.length} frames as tracker-session.json. `
+        + 'Put it in the repo under test/fixtures/ and the suite will replay it.';
+    };
+    setInterval(paint, 120);
+    paint();
     return field;
   },
 
