@@ -35,6 +35,23 @@ uniform mat3 u_modelFar;
 uniform float u_aspect;    // image width / height
 
 // Head turn. Applied before the joint transform, so it bends the art in place.
+/* Mirroring, about the head's axis rather than about each part's own.
+ *
+ * This used to flip the texture coordinate inside whichever part was being
+ * drawn, which mirrors that part about the middle of its own box. For the head
+ * that is very nearly the head's axis, so it looked right. For the eyes it is
+ * not: their box is a small patch off to one side of the face, so flipping
+ * inside it left the eye exactly where it was while the face it belongs to
+ * moved across. The face did not follow the head.
+ *
+ * Reflecting the drawing itself about one shared axis is what a mirror does,
+ * and it puts every part where its mirror image belongs whatever shape its
+ * own box happens to be. Applied before the joints, so a mirrored head still
+ * tilts and nods the way its owner does rather than the opposite way.
+ */
+uniform float u_flip;      // 1 mirrors this part about u_flipAxis
+uniform float u_flipAxis;  // in image space, 0..1 across the artwork
+
 uniform float u_warp;      // 0 disables the whole block
 uniform vec2 u_headCenter;
 uniform float u_cylR;
@@ -67,6 +84,7 @@ void main() {
    * every other respect.
    */
   vec2 p = a_pos;
+  if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
 
   /* The head's turn, taken per vertex rather than per part.
    *
@@ -129,7 +147,6 @@ out vec4 fragColor;
 
 uniform sampler2D u_tex;
 uniform float u_opacity;
-uniform float u_flipU;   // mirror the head to face the other way
 uniform float u_shadow;  // >0: draw this part as a contact shadow instead
 uniform vec2 u_shadowOffset;
 
@@ -272,7 +289,7 @@ float softAlpha(vec2 uv) {
 }
 
 void main() {
-  vec2 uv = u_flipU > 0.5 ? vec2(1.0 - v_uv.x, v_uv.y) : v_uv;
+  vec2 uv = v_uv;
 
   /* Contact shadow pass.
    *

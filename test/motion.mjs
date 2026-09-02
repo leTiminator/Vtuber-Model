@@ -726,6 +726,73 @@ try {
     nod.inverted.neg > 12 && nod.inverted.pos < -12,
     `flipped: ${nod.inverted.neg.toFixed(1)}px, ${nod.inverted.pos.toFixed(1)}px`);
 
+  /* --- the face goes with the head ---------------------------------------
+   *
+   * The eyes are their own layer so a lid can erase them, not because they are
+   * a separate object from the face. When the head swaps for its mirror image
+   * they have to swap with it, and for a while they did not: the mirror was
+   * done by flipping each part's texture inside its own box, which for the
+   * head is nearly its own axis and for the eyes is a small patch off to one
+   * side — so the eye stayed exactly where it was while the face moved across
+   * it. Obvious in a second to anyone watching the model, and invisible to
+   * every check here, because none of them asked where the eye had got to.
+   */
+  const face = await page.evaluate(async () => {
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0,
+      'stage.zoom': 1.9, 'stage.offsetX': -0.10, 'stage.offsetY': 0.22 });
+    a.resize(300, 300, 2);
+    // Flush the rebuild before holding the part list — see the note above.
+    for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+    const all = a.parts;
+    const gl = a.gl;
+    const draw = (names, yaw) => {
+      a.parts = all.filter((p) => names.includes(p.name));
+      const rig = emptyRig();
+      rig.head.yaw = yaw;
+      for (let f = 0; f < 40; f++) a.render(rig, 1 / 60);
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      a.parts = all;
+      return d;
+    };
+    const w = gl.drawingBufferWidth;
+    const centroid = (d) => {
+      let n = 0, sx = 0;
+      for (let k = 0, p = 0; k < d.length; k += 4, p++) {
+        if (d[k + 3] <= 40) continue;
+        n++; sx += p % w;
+      }
+      return { n, cx: n ? sx / n : NaN };
+    };
+    const out = [];
+    for (const [label, yaw] of [['facing as drawn', 0.70], ['mirrored', -0.70]]) {
+      const head = centroid(draw(['head'], yaw));
+      const eyes = centroid(draw(['eyes'], yaw));
+      // Where the eye sits across the head, as a signed offset from its middle.
+      out.push({ label, eye: eyes.n, offset: eyes.cx - head.cx });
+    }
+    store.reset();
+    return out;
+  });
+
+  /* Sitting on the head is not enough — the head is big, and an eye left
+   * behind still lands somewhere on it. What has to be true is that the eye
+   * crosses to the other side of the head's middle when the head does.
+   */
+  const drawn = face.find((f) => f.label === 'facing as drawn');
+  const flipped = face.find((f) => f.label === 'mirrored');
+  check('the eyes cross the head with it when it flips',
+    drawn.eye > 500 && flipped.eye > 500
+      && Math.abs(drawn.offset) > 6
+      && Math.sign(flipped.offset) === -Math.sign(drawn.offset),
+    `eye sits ${drawn.offset.toFixed(0)}px from the middle of the head as drawn, `
+      + `${flipped.offset.toFixed(0)}px mirrored`);
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

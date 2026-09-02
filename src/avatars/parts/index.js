@@ -47,6 +47,13 @@ const FOLLOW_NONE = 2.30;
  */
 const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']);
 
+/**
+ * What the mirrored view takes with it: the head cutout and what is drawn on
+ * it. The hair is part of the head; the neck wrap is cloth that continues into
+ * the scarf, and mirroring half a scarf would tear it off the shoulders.
+ */
+const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyes']);
+
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
@@ -61,7 +68,7 @@ const UNIFORMS = [
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_shadow', 'u_shadowOffset',
-  'u_flipU',
+  'u_flip', 'u_flipAxis',
   'u_shell', 'u_depth',
 ];
 
@@ -552,8 +559,13 @@ export class Parts2D {
       // than dissolve: a cross-fade of two bright shards on a dark visor reads
       // as the character briefly having two eyes, which is far worse than the
       // ghosting the hood gets away with at its own low contrast.
-      const isHead = part.name === 'head';
-      const snapsWithHead = part.name === 'eyes';
+      /* What the mirror takes with it: the head and everything drawn on it.
+       *
+       * The eyes especially. They are a separate layer so a lid can erase
+       * them, not because they are a separate object — leave them behind and
+       * the face does not follow the head across.
+       */
+      const flips = FLIPS_WITH_HEAD.has(part.name) && mirror > 0.5;
       // Nothing bends any more; the head turns instead. Kept behind a setting
       // rather than deleted, so the two can still be compared.
       const bends = BENDS_WITH_HEAD.has(part.name) && store.get('parts.bendHead') > 0;
@@ -600,6 +612,7 @@ export class Parts2D {
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
 
+      gl.uniform1f(L.u_flipAxis, this.headSpan.cx);
       gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
 
       gl.activeTexture(gl.TEXTURE0);
@@ -622,7 +635,7 @@ export class Parts2D {
         gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
         gl.uniform1f(L.u_shadow, shadowStrength);
         gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
-        gl.uniform1f(L.u_flipU, isHead && mirror > 0.5 ? 1 : 0);
+        gl.uniform1f(L.u_flip, flips ? 1 : 0);
         gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
         gl.uniform1f(L.u_shadow, 0);
@@ -646,15 +659,9 @@ export class Parts2D {
        * are the same shape and the swap has nothing to give itself away with
        * except the drawing changing hands.
        */
-      if (isHead || snapsWithHead) {
-        gl.uniform1f(L.u_flipU, mirror > 0.5 ? 1 : 0);
-        gl.uniform1f(L.u_opacity, 1);
-        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-      } else {
-        gl.uniform1f(L.u_flipU, 0);
-        gl.uniform1f(L.u_opacity, 1);
-        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-      }
+      gl.uniform1f(L.u_flip, flips ? 1 : 0);
+      gl.uniform1f(L.u_opacity, 1);
+      gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
     }
     gl.bindVertexArray(null);
   }
