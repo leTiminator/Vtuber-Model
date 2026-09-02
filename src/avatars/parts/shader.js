@@ -149,7 +149,13 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   vec2 p = toEye(uv, e);
   if (abs(p.x) > 1.2 || abs(p.y) > 1.2) return base;
   float bow = 1.0 - clamp(p.x * p.x, 0.0, 1.0);
-  float upper = -1.0 + blink * 2.0 * (1.0 + 0.28 * bow);
+  // Overshoot the far edge of the socket at full blink.
+  //
+  // Sweeping to exactly 1.0 puts the lid's soft edge astride the boundary, so
+  // the corners of the slit — where the bow is flat and there is no extra
+  // travel — end up half covered and stay lit. The socket is measured to fit
+  // the slit, so anything past it costs nothing.
+  float upper = -1.0 + blink * 2.25 * (1.0 + 0.28 * bow);
   float lower = 1.0 - squint * 1.1 * (1.0 + 0.28 * bow);
 
   // 1 where the lid covers, 0 where the eye is still open.
