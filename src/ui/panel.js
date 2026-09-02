@@ -55,6 +55,9 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'eyes.blinkGain', label: 'Blink strength', min: 0.4, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'eyes.blinkThreshold', label: 'Blink threshold', min: 0.05, max: 0.85, step: 0.01, format: pct,
           hint: 'Raise it if the model looks sleepy; lower it if blinks get missed.' },
+        { type: 'slider', key: 'eyes.gazeLid', label: 'Ignore lid from gaze', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'Looking down pulls your eyelid down, which the tracker reads as a blink. '
+            + 'Raise this if the model shuts its eyes while yours are open; lower it if blinks get missed.' },
         { type: 'toggle', key: 'eyes.linkBlinks', label: 'Blink both eyes together', hint: 'Turn off to allow winks — needs good lighting.' },
         { type: 'toggle', key: 'eyes.autoBlink', label: 'Blink on its own when idle' },
         { type: 'slider', key: 'eyes.gazeGain', label: 'Eye darting', min: 0, max: 3, step: 0.05, format: x },

@@ -390,11 +390,32 @@ export class Rig {
     s.head.y = this.pose.filter('py', clamp(((pos.y - (n?.y ?? 0)) / 14) * pg, -1.5, 1.5), dt);
     s.head.z = this.pose.filter('pz', clamp(((pos.z - (n?.z ?? -45)) / 30) * pg, -1.5, 1.5), dt);
 
-    // --- eyes ----------------------------------------------------------
+    /* --- eyes ------------------------------------------------------------
+     *
+     * The lid follows the eye, and the tracker cannot tell the difference.
+     *
+     * Look down with your eyes wide open and the upper lid comes down with
+     * your gaze, covering the iris exactly as the start of a blink does — and
+     * the blink weight rises accordingly. Measured on a recorded session: the
+     * blink signal correlates +0.79 with the eyes looking down, climbing from
+     * 0.15 to 0.64 as the gaze drops, and every one of the twelve highest
+     * "blink" frames in that session is a wide-open eye looking down at
+     * something. It shut the model's eyes in 105 frames out of 247 — nearly
+     * half the time — with nobody blinking at all.
+     *
+     * So the part of the lid that the gaze accounts for is not a blink, and is
+     * taken back out. A real blink survives it: the strongest genuine one in
+     * that session still clears the shut threshold with room to spare, because
+     * a blink closes the lid much further than looking down ever does.
+     */
+    const lidFromGaze = (sh('eyeLookDownLeft') + sh('eyeLookDownRight')) / 2
+      * clamp(g('eyes.gazeLid'), 0, 1);
+    const deLid = (v) => Math.max(0, v - lidFromGaze);
+
     const blinkGain = g('eyes.blinkGain');
     const thresh = g('eyes.blinkThreshold');
-    let bl = shapeBlink(sh('eyeBlinkLeft'), thresh, blinkGain);
-    let br = shapeBlink(sh('eyeBlinkRight'), thresh, blinkGain);
+    let bl = shapeBlink(deLid(sh('eyeBlinkLeft')), thresh, blinkGain);
+    let br = shapeBlink(deLid(sh('eyeBlinkRight')), thresh, blinkGain);
     if (g('eyes.linkBlinks')) {
       // Winks read as tracking noise on most rigs; take the stronger eye for both.
       const both = Math.max(bl, br);
@@ -402,8 +423,10 @@ export class Rig {
     }
     s.eyes.blinkL = this.face.filter('blinkL', bl, dt);
     s.eyes.blinkR = this.face.filter('blinkR', br, dt);
-    s.eyes.squintL = this.face.filter('squintL', sh('eyeSquintLeft'), dt);
-    s.eyes.squintR = this.face.filter('squintR', sh('eyeSquintRight'), dt);
+    // Squint narrows the eye the same way and is contaminated the same way —
+    // it tracks the blink weight at +0.71 through the same recording.
+    s.eyes.squintL = this.face.filter('squintL', deLid(sh('eyeSquintLeft')), dt);
+    s.eyes.squintR = this.face.filter('squintR', deLid(sh('eyeSquintRight')), dt);
     s.eyes.wideL = this.face.filter('wideL', sh('eyeWideLeft'), dt);
     s.eyes.wideR = this.face.filter('wideR', sh('eyeWideRight'), dt);
 

@@ -52,6 +52,13 @@ export const DEFAULTS = {
   // --- eyes ------------------------------------------------------------
   'eyes.blinkGain': 1.35,
   'eyes.blinkThreshold': 0.42, // below this, the eye reads as fully open
+  /* How much of the lid to blame on the gaze rather than on a blink.
+   *
+   * Looking down pulls the upper lid down with it, which the tracker reports
+   * as a blink; see the note in rig.js. Zero trusts the tracker's blink as it
+   * comes, which shuts the eyes for anyone who looks down at a screen.
+   */
+  'eyes.gazeLid': 0.6,
   'eyes.linkBlinks': true, // wink support off by default; most rigs look better linked
   'eyes.gazeGain': 1.0,
   'eyes.autoBlink': true, // fire natural blinks when tracking is idle/lost

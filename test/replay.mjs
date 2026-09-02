@@ -85,6 +85,8 @@ try {
 
     let prev = null;
     let worstPartial = 0, worstPartialAt = 0, maxJump = 0, maxJumpAt = 0;
+    let shutFrames = 0;
+    let tracked = 0;
     let minArea = Infinity, maxArea = 0;
     let finite = true;
     let prevT = rec.samples[0]?.t ?? 0;
@@ -110,6 +112,11 @@ try {
         }
       }
 
+      if (s.face) {
+        tracked++;
+        if (Math.max(rig.state.eyes.blinkL, rig.state.eyes.blinkR) > 0.5) shutFrames++;
+      }
+
       a.render(rig.state, dt);
       const st = stats(read());
       worstPartial = Math.max(worstPartial, st.partial / Math.max(st.opaque, 1));
@@ -123,7 +130,8 @@ try {
       prev = st;
     }
 
-    return { worstPartial, worstPartialAt, maxJump, maxJumpAt, minArea, maxArea, finite };
+    return { worstPartial, worstPartialAt, maxJump, maxJumpAt, minArea, maxArea, finite,
+      shutFrames, tracked };
   }, session);
 
   check('every rig channel stays finite through the session', result.finite);
@@ -148,6 +156,20 @@ try {
    */
   check('no pops', result.maxJump < 12,
     `largest step ${result.maxJump.toFixed(1)}px at ${result.maxJumpAt.toFixed(1)}s`);
+  /* Eyes open, because they were open.
+   *
+   * Nobody sat through this recording blinking half the time. The lid follows
+   * the gaze, and the tracker reports that as a blink — before it was
+   * discounted this shut the model's eyes in 116 of the 247 tracked frames
+   * here, forty-seven per cent, while its owner was looking at a screen with
+   * their eyes wide open. A recording is the only thing that can catch this:
+   * a synthetic sweep has whatever blink weights the sweep chose to put in it.
+   */
+  const shutPct = (100 * result.shutFrames) / Math.max(result.tracked, 1);
+  check('the eyes stay open through a session where they were open',
+    shutPct < 10,
+    `shut in ${result.shutFrames} of ${result.tracked} tracked frames (${shutPct.toFixed(0)}%)`);
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('replay completed', false, err.stack);

@@ -683,11 +683,13 @@ try {
       store.set('head.flipNod', invert);
       rig.clearCalibration();
       const rest = feed(0);
-      const down = feed(-0.5) - rest;
+      // Named for the tracker's numbers, not for which way a head is going —
+      // the semantics are asserted below, once, where they can be justified.
+      const neg = feed(-0.5) - rest;
       rig.clearCalibration();
       feed(0);
-      const up = feed(0.5) - rest;
-      return { down, up };
+      const pos = feed(0.5) - rest;
+      return { neg, pos };
     };
     const plain = run(false);
     const inverted = run(true);
@@ -706,15 +708,23 @@ try {
    * the screen at all, and that the switch reverses it — the semantics belong
    * to whoever can see both their own head and the screen.
    */
-  check('a nod visibly moves the head up or down, not merely squashing it',
-    Math.abs(nod.plain.down) > 12 && Math.abs(nod.plain.up) > 12
-      && Math.sign(nod.plain.down) !== Math.sign(nod.plain.up),
-    `pitch -0.5 ${nod.plain.down.toFixed(1)}px, +0.5 ${nod.plain.up.toFixed(1)}px`);
+  /* The direction, not merely that there is one.
+   *
+   * Asserting only "it moves, and oppositely for opposite nods" passes just as
+   * happily with the sign reversed — which is the state this shipped in three
+   * times. The direction below is not derived from the tracker's documented
+   * convention, which I read the wrong way round; it is fixed from two
+   * photographs of the running app on a real camera, one looking up and one
+   * looking down, and it is the direction the person in front of that camera
+   * confirmed. If it ever needs changing, it needs changing the same way.
+   */
+  check('a nod visibly moves the head, and the right way',
+    nod.plain.neg < -12 && nod.plain.pos > 12,
+    `tracker pitch -0.5 moves the head ${nod.plain.neg.toFixed(1)}px, +0.5 moves it ${nod.plain.pos.toFixed(1)}px`);
 
   check('and "Flip nod" reverses exactly that',
-    Math.sign(nod.inverted.down) === -Math.sign(nod.plain.down)
-      && Math.sign(nod.inverted.up) === -Math.sign(nod.plain.up),
-    `inverted: ${nod.inverted.down.toFixed(1)}px, ${nod.inverted.up.toFixed(1)}px`);
+    nod.inverted.neg > 12 && nod.inverted.pos < -12,
+    `flipped: ${nod.inverted.neg.toFixed(1)}px, ${nod.inverted.pos.toFixed(1)}px`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
