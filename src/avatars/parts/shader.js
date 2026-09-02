@@ -169,12 +169,26 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
 }
 
 /**
+ * Coverage at a point, and nothing outside the part's own texture.
+ *
+ * The blur and the shadow's offset both sample past the edge of the quad,
+ * where CLAMP_TO_EDGE repeats the border texel outward. Where that border is
+ * opaque — the dilated margin usually is — the repeat smears into a hard
+ * rectangle the width of the part, which is exactly what appeared as a dark
+ * slab beside the scarf.
+ */
+float alphaAt(vec2 uv) {
+  vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+  return texture(u_tex, uv).a * inside.x * inside.y;
+}
+
+/**
  * How much of the slit survives the lids at this point, sampled from the
  * texture rather than from geometry so the glow follows the shard's real
  * shape. Used to build the halo.
  */
 float slitAt(vec2 uv) {
-  float a = texture(u_tex, uv).a;
+  float a = alphaAt(uv);
   float lum = dot(texture(u_tex, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
   // Only the bright core glows; the ink outline around it does not.
   float core = a * smoothstep(0.55, 0.80, lum);
@@ -217,14 +231,14 @@ float halo(vec2 uv) {
  * out of it.
  */
 float softAlpha(vec2 uv) {
-  float sum = texture(u_tex, uv).a * 1.6;
+  float sum = alphaAt(uv) * 1.6;
   float weight = 1.6;
   for (int ring = 1; ring <= 2; ring++) {
     float r = float(ring) * 2.2;
     float w = 1.0 / float(ring);
     for (int k = 0; k < 8; k++) {
       float ang = float(k) * 0.7853981634;
-      sum += texture(u_tex, uv + vec2(cos(ang), sin(ang)) * r * u_texel).a * w;
+      sum += alphaAt(uv + vec2(cos(ang), sin(ang)) * r * u_texel) * w;
       weight += w;
     }
   }
