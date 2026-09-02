@@ -58,7 +58,13 @@ jobs:
         with:
           path: dist
 
+  # Only the default branch may deploy: the github-pages environment refuses a
+  # deployment from anywhere else, so a push to the working branch built fine
+  # and then went red on this job every single time. A red cross that always
+  # means nothing is worse than no check at all — it trains you to ignore the
+  # one that matters. The branch still builds, which is the part worth knowing.
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
