@@ -508,12 +508,22 @@ export class Parts2D {
     // until the turn is committed enough that a flip reads as rotation rather
     // than as the face suddenly changing.
     const start = store.get('parts.mirrorStart');
+    /* Hysteresis, so a head held near the threshold does not flicker.
+     *
+     * A snap needs it and a fade did not: sitting at the angle where the swap
+     * happens, the smallest wobble in the tracker would hand the drawing back
+     * and forth several times a second. Once flipped it stays flipped until
+     * the turn comes well back, which is also how a real turn behaves — you
+     * do not un-turn by two degrees.
+     */
+    this.mirrored = this.mirrored
+      ? Math.abs(yaw) > start * 0.55
+      : Math.abs(yaw) > start;
     // A short ramp. Cross-fading hard-edged line art always ghosts, so the
     // dissolve wants to be over quickly — long enough not to pop, short enough
     // that the doubled image is a flicker rather than a pose you sit in.
-    const mirror = clamp((Math.abs(yaw) - start) / 0.13, 0, 1)
-      * store.get('parts.mirrorTurn')
-      * (yaw < 0 ? 1 : 0); // the art already faces one way; only flip the other
+    // the art already faces one way; only the other way needs the mirror
+    const mirror = this.mirrored && yaw < 0 ? store.get('parts.flipTurn') : 0;
 
     const shadowStrength = store.get('parts.contactShadow');
 
@@ -620,30 +630,23 @@ export class Parts2D {
       }
       gl.bindVertexArray(part.vao);
 
-      // Turning past a threshold cross-fades the head into its mirror image.
-      // For a character drawn at three-quarters, the mirror IS the opposite
-      // three-quarter view — far closer to the truth than warping toward a view
-      // the drawing does not contain. Both copies are drawn during the blend,
-      // because a straight swap pops.
-      if (isHead && mirror > 0.001) {
-        /* Cross-fade with the far copy underneath, at full opacity.
-         *
-         * Fading both copies is the obvious way and it is wrong: "over"
-         * blending composites them to 1 - m + m² of alpha, which bottoms out
-         * at 0.75 halfway through, so a quarter of the background showed
-         * straight through the head. That is what made the flip look like the
-         * helmet turning black — nothing to do with the turn itself.
-         *
-         * Painting the mirrored copy solid and dissolving the near one over it
-         * keeps the total at 1 the whole way across.
-         */
-        gl.uniform1f(L.u_flipU, 1);
-        gl.uniform1f(L.u_opacity, 1);
-        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-        gl.uniform1f(L.u_flipU, 0);
-        gl.uniform1f(L.u_opacity, 1 - mirror);
-        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-      } else if (snapsWithHead) {
+      /* Turning past a threshold swaps the head for its mirror image.
+       *
+       * For a character drawn at three-quarters, the mirror IS the opposite
+       * three-quarter view — far closer to the truth than warping toward a
+       * view the drawing does not contain.
+       *
+       * It swaps rather than cross-fades. The fade was an attempt to avoid a
+       * pop and it bought a worse fault: two copies of hard-edged line art
+       * laid over each other are legible as two, and halfway through the turn
+       * the visor plainly had two outlines and two rims. Nothing about a fade
+       * makes that read as one head. The eyes have snapped since they were
+       * separated for exactly this reason, and now the head does too — which
+       * is only viable because the cutout no longer bends, so the two copies
+       * are the same shape and the swap has nothing to give itself away with
+       * except the drawing changing hands.
+       */
+      if (isHead || snapsWithHead) {
         gl.uniform1f(L.u_flipU, mirror > 0.5 ? 1 : 0);
         gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);

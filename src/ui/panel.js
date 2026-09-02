@@ -146,9 +146,10 @@ export function buildPanel(root, ctx) {
             + 'anything above zero.' },
         { type: 'slider', key: 'parts.turnShell', label: '— as a solid', min: 0, max: 1, step: 0.01, format: x },
         { type: 'slider', key: 'parts.shellDepth', label: '— head roundness', min: 0, max: 0.9, step: 0.01, format: x },
-        { type: 'slider', key: 'parts.mirrorTurn', label: 'Mirror turn', min: 0, max: 1, step: 0.01, format: x,
-          hint: 'Flips the head to face the other way as you turn past the threshold.' },
-        { type: 'slider', key: 'parts.mirrorStart', label: 'Mirror threshold', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.flipTurn', label: 'Flip to the other side', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'Swaps the head for its mirror image once you turn far enough. For a character '
+            + 'drawn at three-quarters, the mirror is the opposite three-quarter view.' },
+        { type: 'slider', key: 'parts.mirrorStart', label: 'Flip at', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },

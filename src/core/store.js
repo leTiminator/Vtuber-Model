@@ -122,7 +122,15 @@ export const DEFAULTS = {
   // Depth between the layers: a soft dark shape laid behind each part so the
   // scarf reads as sitting in front of the arm rather than printed on it.
   'parts.contactShadow': 0.34,
-  'parts.mirrorTurn': 1.0,
+  /* Swapping the head for its mirror image once the turn commits.
+   *
+   * Renamed from parts.mirrorTurn, which had been turned off by hand while the
+   * head still bent and the swap still cross-faded. A saved value outlives any
+   * change of default, so the only way to hand back a setting somebody
+   * switched off for a reason that no longer applies is to ask again under a
+   * new name.
+   */
+  'parts.flipTurn': 1.0,
   // Radians of yaw before the mirror starts blending. Late on purpose: cross-
   // fading hard-edged line art ghosts, so the swap belongs where the far side
   // of the face is already hidden by the turn and there is least to see.
