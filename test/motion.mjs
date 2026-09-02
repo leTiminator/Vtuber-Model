@@ -628,6 +628,70 @@ try {
       ? torn.map((o) => `${o.label}: ${o.worst} pieces${o.where}`).join('; ')
       : intact.map((o) => o.label).join('; '));
 
+  /* --- which way a nod goes ----------------------------------------------
+   *
+   * Nothing here ever asserted this, and it was reported backwards more than
+   * once while every other check stayed green. The convention is fixed from
+   * the recorded session: its tracking drops out at negative pitch, which is
+   * the hat brim cutting the face off when its wearer looks down, and the
+   * gaze weights agree — the further pitch rises the further the eyes roll
+   * down to stay on the screen. So negative pitch is looking down, and looking
+   * down has to move the model down.
+   *
+   * Driven through the real rig rather than a hand-built pose, because the
+   * sign passes through calibration, the gain and the invert on its way.
+   */
+  const nod = await page.evaluate(async () => {
+    const { avatars, store, rig, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.2 });
+    a.resize(300, 300, 2);
+    const gl = a.gl;
+    const centreY = () => {
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      let n = 0, sy = 0;
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        if (d[i + 3] <= 40) continue;
+        const x = p % w;
+        n++; sy += h - 1 - ((p - x) / w);
+      }
+      return n ? sy / n : NaN;
+    };
+    const feed = (pitch, frames = 60) => {
+      const f = { shapes: {}, head: { yaw: 0, pitch, roll: 0 }, position: { x: 0, y: 0, z: -45 } };
+      for (let i = 0; i < frames; i++) { rig.update(f, true, 1 / 60); a.render(rig.state, 1 / 60); }
+      return centreY();
+    };
+    const run = (invert) => {
+      store.set('head.invertNod', invert);
+      rig.clearCalibration();
+      const rest = feed(0);
+      const down = feed(-0.5) - rest;
+      rig.clearCalibration();
+      feed(0);
+      const up = feed(0.5) - rest;
+      return { down, up };
+    };
+    const plain = run(false);
+    const inverted = run(true);
+    store.set('head.invertNod', false);
+    rig.clearCalibration();
+    return { plain, inverted };
+  });
+
+  // Screen coordinates, so a positive number is further down the screen.
+  check('looking down moves the model down, looking up moves it up',
+    nod.plain.down > 1 && nod.plain.up < -1,
+    `down ${nod.plain.down.toFixed(1)}px, up ${nod.plain.up.toFixed(1)}px`);
+
+  check('and "Invert nod" reverses exactly that',
+    nod.inverted.down < -1 && nod.inverted.up > 1,
+    `down ${nod.inverted.down.toFixed(1)}px, up ${nod.inverted.up.toFixed(1)}px`);
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

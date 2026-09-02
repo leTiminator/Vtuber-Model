@@ -219,6 +219,15 @@ async function applyMicSource() {
 const cameraListeners = new Set();
 
 buildPanel(dom.panelBody, {
+  // The rig's own numbers, so "it is backwards" can be pinned to the half of
+  // the pipeline that is actually backwards.
+  headStatus: () => ({
+    camera: tracker.running,
+    tracked: rig.state.tracked,
+    yaw: rig.state.head.yaw,
+    pitch: rig.state.head.pitch,
+    roll: rig.state.head.roll,
+  }),
   listCameras: () => FaceTracker.listCameras(),
   onCamerasChanged: (fn) => cameraListeners.add(fn),
   selectCamera: async (deviceId) => {

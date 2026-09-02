@@ -41,8 +41,11 @@ export function buildPanel(root, ctx) {
       controls: [
         { type: 'slider', key: 'head.yawGain', label: 'Turn', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.pitchGain', label: 'Nod', min: 0, max: 3, step: 0.05, format: x },
+        { type: 'headStatus' },
         { type: 'toggle', key: 'head.invertNod', label: 'Invert nod',
-          hint: 'If looking down makes the model look up, turn this on.' },
+          hint: 'Look down. If the line above says looking DOWN but the model looks up, '
+            + 'leave this alone and tell me — the drawing is at fault. If it says looking UP, '
+            + 'turn this on.' },
         { type: 'slider', key: 'head.rollGain', label: 'Tilt', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.positionGain', label: 'Lean / move', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.limitDeg', label: 'Range limit', min: 10, max: 80, step: 1, format: deg },
@@ -248,6 +251,41 @@ const BUILDERS = {
    * being read but scaled to nothing — and no way to tell them apart without
    * looking. This shows which one it is.
    */
+  /* What the tracker says your head is doing, in words.
+   *
+   * "Up and down are reversed" has two completely different causes with
+   * opposite fixes — the tracker reading the nod backwards for this camera, or
+   * the model drawing it backwards — and from the outside they look identical.
+   * This splits them: look down, read the line. If it says looking down, the
+   * tracker is right and the drawing is wrong; if it says looking up, the
+   * tracker is wrong and Invert nod is the fix. It lives in the panel rather
+   * than on the stage because the panel is not what OBS captures.
+   */
+  headStatus(spec, ctx) {
+    if (!ctx.headStatus) return null;
+    const field = el('div', 'field');
+    const line = el('div', 'field__hint');
+    line.style.cssText = 'font-variant-numeric:tabular-nums;line-height:1.6;white-space:pre';
+    field.append(line);
+
+    const deg1 = (r) => `${r >= 0 ? '+' : ''}${((r * 180) / Math.PI).toFixed(0)}°`;
+    const paint = () => {
+      const h = ctx.headStatus();
+      if (!h.camera) { line.textContent = 'Start the camera to see this.'; return; }
+      if (!h.tracked) { line.textContent = 'No face found.'; return; }
+      const nod = Math.abs(h.pitch) < 0.06 ? 'level' : h.pitch > 0 ? 'looking UP' : 'looking DOWN';
+      const turn = Math.abs(h.yaw) < 0.06 ? 'straight on' : h.yaw > 0 ? 'turned RIGHT' : 'turned LEFT';
+      line.textContent = [
+        `nod   ${deg1(h.pitch)}  ${nod}`,
+        `turn  ${deg1(h.yaw)}  ${turn}`,
+        `tilt  ${deg1(h.roll)}`,
+      ].join('\n');
+    };
+    paint();
+    setInterval(paint, 150);
+    return field;
+  },
+
   armStatus(spec, ctx) {
     if (!ctx.armStatus) return null;
     const field = el('div', 'field');
