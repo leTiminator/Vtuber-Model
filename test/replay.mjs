@@ -122,6 +122,7 @@ try {
       }
       prev = st;
     }
+
     return { worstPartial, worstPartialAt, maxJump, maxJumpAt, minArea, maxArea, finite };
   }, session);
 
@@ -130,7 +131,19 @@ try {
     `worst ${(result.worstPartial * 100).toFixed(1)}% at ${result.worstPartialAt.toFixed(1)}s`);
   check('the character never collapses', result.minArea > result.maxArea * 0.55,
     `${result.minArea} smallest of ${result.maxArea} largest`);
-  check('no pops', result.maxJump < 10,
+  /* The plain size of the largest step, deliberately.
+   *
+   * A cleverer metric was tried first — each step against the median of its
+   * neighbours — on the reasoning that real motion arrives in runs while a
+   * teleport stands alone. It does not discriminate here: the teleport drags
+   * the model out and back over several frames, so its neighbours are large
+   * too, and it scored 6.3x against the fixed model's 6.7x. It passed either
+   * way, which makes it worse than useless.
+   *
+   * Absolute size does discriminate, measured on this recording: 23.7px with
+   * the head guards removed, 9.0px with them in. The threshold sits between.
+   */
+  check('no pops', result.maxJump < 14,
     `largest step ${result.maxJump.toFixed(1)}px at ${result.maxJumpAt.toFixed(1)}s`);
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

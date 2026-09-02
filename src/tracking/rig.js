@@ -14,6 +14,18 @@ import { FilterBank } from '../core/oneEuro.js';
 import { clamp, damp, DEG, lerp, makeSpring, remap, spring, TAU } from '../core/math.js';
 import * as store from '../core/store.js';
 
+/**
+ * Ceilings on how fast the head may turn and travel, in radians and in units
+ * of head-width per second. Both sit well above brisk human movement — a quick
+ * 45-degree glance runs at roughly 5 rad/s — so they bite only on estimates no
+ * neck could have produced.
+ */
+const MAX_HEAD_SLEW = 6;
+const MAX_HEAD_DRIFT = 5;
+
+/** How long the head takes to trust the tracker fully again after a dropout. */
+const REACQUIRE_SECONDS = 0.3;
+
 /** Blendshape channels that come in mirrored pairs. */
 const PAIRS = [
   'browDown', 'browOuterUp', 'cheekSquint', 'eyeBlink', 'eyeLookDown', 'eyeLookIn',
@@ -62,6 +74,9 @@ export class Rig {
       hairX: makeSpring(), hairY: makeSpring(),
     };
 
+    // How far back in after tracking was lost, 0 to 1. The tracker's first
+    // estimates after a dropout are its least reliable, so they are eased in.
+    this.reacquire = 1;
     this.clock = 0;
     this.blink = { timer: 1.4, value: 0, phase: 'idle' };
     this.overrides = new Map(); // expression name -> weight, driven by hotkeys
@@ -235,6 +250,9 @@ export class Rig {
     const s = this.state;
     const mirror = store.get('camera.mirror');
 
+    if (tracked && !this.state.tracked) this.reacquire = 0;
+    if (tracked) this.reacquire = Math.min(1, this.reacquire + dt / REACQUIRE_SECONDS);
+
     if (frame && tracked) {
       const shapes = mirror ? mirrorShapes(frame.shapes) : frame.shapes;
       const head = mirror
@@ -245,7 +263,38 @@ export class Rig {
         : frame.position;
 
       this.collectCalibration(head, pos);
+      const before = { ...s.head };
       this.applyTracked(shapes, head, pos, dt);
+
+      /* Limit how fast the head is allowed to move.
+       *
+       * A head has a top speed; a tracker does not. Recorded from a real
+       * session: the face was found at yaw -0.29, lost for a single frame,
+       * then found again at +1.14 — eighty-two degrees in a tenth of a second,
+       * and back again shortly after. It was a bad estimate on reacquisition,
+       * not a movement, but nothing downstream could tell the difference.
+       *
+       * The One Euro filter makes this worse rather than better: a large
+       * derivative is precisely what widens its cutoff, so the jump passes
+       * through almost untouched. That is the right behaviour for real fast
+       * motion and the wrong one for a glitch, and the filter cannot
+       * distinguish them.
+       *
+       * A speed cap can. It is set well above a brisk human head turn, so it
+       * costs nothing on real movement, and it turns a teleport into a short
+       * lean that unwinds as soon as good frames resume.
+       */
+      // Tighter while easing back in, because that is when a bad estimate is
+      // most likely and when there is no recent history to judge it against.
+      const trust = 0.25 + 0.75 * this.reacquire * this.reacquire;
+      const step = MAX_HEAD_SLEW * trust * dt;
+      for (const k of ['yaw', 'pitch', 'roll']) {
+        s.head[k] = clamp(s.head[k], before[k] - step, before[k] + step);
+      }
+      const move = MAX_HEAD_DRIFT * trust * dt;
+      for (const k of ['x', 'y']) {
+        s.head[k] = clamp(s.head[k], before[k] - move, before[k] + move);
+      }
       s.tracked = true;
       s.confidence = damp(s.confidence, 1, 8, dt);
     } else {
