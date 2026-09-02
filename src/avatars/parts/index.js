@@ -398,7 +398,10 @@ export class Parts2D {
     // until the turn is committed enough that a flip reads as rotation rather
     // than as the face suddenly changing.
     const start = store.get('parts.mirrorStart');
-    const mirror = clamp((Math.abs(yaw) - start) / 0.30, 0, 1)
+    // A short ramp. Cross-fading hard-edged line art always ghosts, so the
+    // dissolve wants to be over quickly — long enough not to pop, short enough
+    // that the doubled image is a flicker rather than a pose you sit in.
+    const mirror = clamp((Math.abs(yaw) - start) / 0.13, 0, 1)
       * store.get('parts.mirrorTurn')
       * (yaw < 0 ? 1 : 0); // the art already faces one way; only flip the other
 
@@ -411,7 +414,13 @@ export class Parts2D {
 
       // Tufts and the neck wrap are attached to the shell, so they have to
       // take the same bend as it; only the head itself ever mirrors.
+      // The eyes flip with the face — they are painted on the visor, so leaving
+      // them put while it mirrors slides them off it. But they snap rather
+      // than dissolve: a cross-fade of two bright shards on a dark visor reads
+      // as the character briefly having two eyes, which is far worse than the
+      // ghosting the hood gets away with at its own low contrast.
       const isHead = part.name === 'head';
+      const snapsWithHead = part.name === 'eyes';
       const bends = BENDS_WITH_HEAD.has(part.name);
       gl.uniform1f(L.u_warp, bends ? 1 : 0);
       if (bends) {
@@ -457,11 +466,26 @@ export class Parts2D {
       // the drawing does not contain. Both copies are drawn during the blend,
       // because a straight swap pops.
       if (isHead && mirror > 0.001) {
+        /* Cross-fade with the far copy underneath, at full opacity.
+         *
+         * Fading both copies is the obvious way and it is wrong: "over"
+         * blending composites them to 1 - m + m² of alpha, which bottoms out
+         * at 0.75 halfway through, so a quarter of the background showed
+         * straight through the head. That is what made the flip look like the
+         * helmet turning black — nothing to do with the turn itself.
+         *
+         * Painting the mirrored copy solid and dissolving the near one over it
+         * keeps the total at 1 the whole way across.
+         */
+        gl.uniform1f(L.u_flipU, 1);
+        gl.uniform1f(L.u_opacity, 1);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
         gl.uniform1f(L.u_flipU, 0);
         gl.uniform1f(L.u_opacity, 1 - mirror);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-        gl.uniform1f(L.u_flipU, 1);
-        gl.uniform1f(L.u_opacity, mirror);
+      } else if (snapsWithHead) {
+        gl.uniform1f(L.u_flipU, mirror > 0.5 ? 1 : 0);
+        gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
       } else {
         gl.uniform1f(L.u_flipU, 0);

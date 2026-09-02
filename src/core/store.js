@@ -89,13 +89,15 @@ export const DEFAULTS = {
   'warp.eyesEnabled': true,
   // Turning a 3/4 character by mirroring its head is closer to the truth than
   // warping toward a view the drawing does not contain.
-  // Off by default. Mirroring the head does read as the opposite 3/4 view,
-  // but the mirrored copy is still bent by the same yaw as the unmirrored one,
-  // so past about 25 degrees it folds in on itself and goes black. The
-  // cylindrical bend alone turns the head convincingly; the flip stays here as
-  // a slider until it is right.
-  'parts.mirrorTurn': 0,
-  'parts.mirrorStart': 0.14, // radians of yaw before the mirror starts blending
+  // Mirroring the cutout is the opposite 3/4 view, which beats warping toward
+  // one. It went black before because both copies were drawn semi-transparent
+  // and "over" blending bottoms out at 0.75 alpha halfway through; the far
+  // copy is painted solid now and the near one dissolves over it.
+  'parts.mirrorTurn': 1.0,
+  // Radians of yaw before the mirror starts blending. Late on purpose: cross-
+  // fading hard-edged line art ghosts, so the swap belongs where the far side
+  // of the face is already hidden by the turn and there is least to see.
+  'parts.mirrorStart': 0.30,
 
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
