@@ -421,6 +421,24 @@ function labelPixels(src, m, w, h, sockets) {
     out[i] = label;
   }
 
+  /* --- a stray of neck wrap belongs to the cloth around it ----------------
+   *
+   * The split above is a distance test, and the scarf is a ribbon that loops:
+   * it crosses that circle more than once, so a scrap of cloth far along its
+   * length can dip inside the radius and be labelled wrap while everything
+   * touching it stays tails. That scrap is then welded to the head in the
+   * middle of cloth that swings on the chain — invisible at rest, because the
+   * tails cover the seam, and a red chip left floating beside the ribbon the
+   * moment the scarf moves.
+   *
+   * Only scraps. What hugs the neck is genuinely more than one region — the
+   * head sits in the middle of it — and an earlier attempt at this kept just
+   * the largest and handed a real lobe of neck cloth to the swinging tails,
+   * which tore a boot off at rest. A fifteenth of the main region is the line
+   * between a lobe and a scrap.
+   */
+  reassignScraps(out, w, h, LABEL.wrap, LABEL.tails, 0.15);
+
   /* --- between passes: drop specks ---------------------------------------
    * A few stray pixels can land on the wrong label — a highlight the colour of
    * the scarf, say — and once dilated they read as debris floating beside the
@@ -660,6 +678,48 @@ function dropSmall(mask, w, h, min) {
 }
 
 /** As dropSmall, but over a label map: unlabel runs too small to be real art. */
+/**
+ * Give a label's small outlying regions to another label.
+ *
+ * For a label that means "the part of this shape nearest that point", a region
+ * far too small to be that is something the distance test caught by accident,
+ * and it belongs to whatever surrounds it.
+ *
+ * @param {number} share  keep regions at least this fraction of the largest
+ */
+function reassignScraps(out, w, h, label, fallback, share) {
+  const n = w * h;
+  const seen = new Uint8Array(n);
+  const stack = [];
+  const regions = [];
+  for (let start = 0; start < n; start++) {
+    if (seen[start] || out[start] !== label) continue;
+    const region = [];
+    seen[start] = 1;
+    stack.push(start);
+    while (stack.length) {
+      const i = stack.pop();
+      region.push(i);
+      const x = i % w;
+      const y = (i - x) / w;
+      const visit = (j) => { if (!seen[j] && out[j] === label) { seen[j] = 1; stack.push(j); } };
+      if (x > 0) visit(i - 1);
+      if (x < w - 1) visit(i + 1);
+      if (y > 0) visit(i - w);
+      if (y < h - 1) visit(i + w);
+    }
+    regions.push(region);
+  }
+  if (regions.length < 2) return;
+  let biggest = 0;
+  for (const r of regions) if (r.length > biggest) biggest = r.length;
+  const floor = biggest * share;
+  for (const r of regions) {
+    if (r.length >= floor) continue;
+    for (const i of r) out[i] = fallback;
+  }
+}
+
 function dropSmallByLabel(out, w, h, min) {
   const n = w * h;
   const seen = new Uint8Array(n);
