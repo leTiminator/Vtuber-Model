@@ -110,7 +110,7 @@ export const DEFAULTS = {
 
   'warp.lowerDamping': 0.15, // waist down barely moves
   'warp.squint': 1.0,
-  'warp.eyeGlow': 0.35,
+  'warp.eyeGlow': 0.7, // the visor is already blue-grey; a timid glow vanishes into it
   'warp.keyWhite': 0, // 0 = off, otherwise the luminance threshold
   'warp.mesh': 48, // grid resolution; higher bends more smoothly
 

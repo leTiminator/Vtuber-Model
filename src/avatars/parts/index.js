@@ -34,7 +34,7 @@ const UNIFORMS = [
   'u_model', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
-  'u_blink', 'u_squint', 'u_glow', 'u_glowPulse',
+  'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_spineMode', 'u_spine', 'u_flipU',
 ];
 
@@ -57,7 +57,11 @@ export class Parts2D {
     this.clock = 0;
     this.onStatus = () => {};
 
-    this.scarf = new ChainField({ nodes: 16, chain: 240, rest: 26, damping: 4.4, tipBias: 2.2 });
+    // tipBias is what makes it read as a chain rather than a flag: the base is
+    // pinned at the neck and each node further out carries more of the motion,
+    // so the wave arrives late at the tip and keeps going after the head has
+    // stopped. Damping is low enough to let it swing back once.
+    this.scarf = new ChainField({ nodes: 16, chain: 240, rest: 26, damping: 2.2, tipBias: 4.2 });
     this.inertia = new HeadInertia();
     this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
     this.glowPulse = 1;
@@ -337,8 +341,11 @@ export class Parts2D {
     // Scale note: the chain settles at force/rest, so with rest ~26 a tip that
     // should travel a few percent of the image wants forces below one. The
     // earlier gain produced ~5 and railed the chain against its own limit.
-    const fx = clamp(-this.inertia.ax, -12, 12) * 0.16;
-    const fy = clamp(-this.inertia.ay, -12, 12) * 0.16;
+    // Scale note: the chain settles at force*weight/rest, and weight now
+    // reaches 4.2 at the tip, so the per-node force has to come down to keep
+    // the tip inside its limit instead of railing against it.
+    const fx = clamp(-this.inertia.ax, -12, 12) * 0.70;
+    const fy = clamp(-this.inertia.ay, -12, 12) * 0.70;
     const swing = this.scarf.step(fx, fy, 0.11 * store.get('warp.wind'), dt);
 
     // Displace each bone by its own node in the chain. The chain's later nodes
@@ -399,6 +406,10 @@ export class Parts2D {
         gl.uniform2f(L.u_blink, rig.eyes.blinkL, rig.eyes.blinkR);
         const sq = store.get('warp.squint');
         gl.uniform2f(L.u_squint, clamp(rig.eyes.squintL * sq, 0, 1), clamp(rig.eyes.squintR * sq, 0, 1));
+        gl.uniform2f(L.u_wide, rig.eyes.wideL, rig.eyes.wideR);
+        const gz = store.get('eyes.gazeGain');
+        gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * gz, -1, 1), clamp(rig.eyes.gazeY * gz, -1, 1));
+        gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
         gl.uniform1f(L.u_glow, store.get('warp.eyeGlow'));
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }

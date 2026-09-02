@@ -933,15 +933,34 @@ function fillEnclosedHoles(od, dist, pw, ph) {
     // Fit, then throw out the samples the fit disagrees with most and fit
     // again. The ring around a cut-out slit is not purely surface: a few
     // pixels of its ink outline, or a sliver of the slit itself, survive on
-    // this side of the cut. Left in, they drag the plane light or dark and
-    // leave a visible rim. One robust pass is enough to shake them off.
+    // this side of the cut. Left in, they drag the fit light or dark and leave
+    // a visible rim. One robust pass is enough to shake them off.
     const inliers = robustRing(ring, od, pw);
+
+    // Quadratic, not a plane. The visor is a curved surface with a highlight
+    // rolling across it, so its shading is not a straight ramp — a plane
+    // matches the average and misses the curvature, which shows as a patch
+    // slightly too flat against everything around it. Six terms follow the
+    // roll closely enough that the shut eye reads as visor.
+    let cx = 0, cy = 0;
+    for (const i of inliers) { const x = i % pw; cx += x; cy += (i - x) / pw; }
+    cx /= inliers.length;
+    cy /= inliers.length;
+    const basis = (x, y) => {
+      const u = (x - cx) / 32;
+      const v = (y - cy) / 32;
+      return [1, u, v, u * u, u * v, v * v];
+    };
+
     for (let ch = 0; ch < 3; ch++) {
-      const plane = fitPlane(inliers, od, pw, ch);
+      const coef = fitBasis(inliers, pw, basis, (i) => od[i * 4 + ch]);
       for (const i of group) {
         const x = i % pw;
         const y = (i - x) / pw;
-        od[i * 4 + ch] = clamp(plane.a + plane.b * x + plane.c * y, 0, 255);
+        const b = basis(x, y);
+        let v = 0;
+        for (let k = 0; k < b.length; k++) v += coef[k] * b[k];
+        od[i * 4 + ch] = clamp(v, 0, 255);
       }
     }
     for (const i of group) od[i * 4 + 3] = 255;
@@ -1117,4 +1136,55 @@ function socketsFor(shardMask, m, w, h, pad) {
 
   boxes.sort((a, b) => a.cx - b.cx);
   return boxes;
+}
+
+/**
+ * Least squares over an arbitrary basis, solved by Gaussian elimination with
+ * partial pivoting.
+ *
+ * Falls back to progressively simpler fits when the samples cannot support the
+ * full basis — a hole ringed by a thin arc has no information about curvature,
+ * and forcing six terms through it produces wild extrapolation inside the gap.
+ */
+function fitBasis(samples, pw, basis, value) {
+  const probe = basis(0, 0);
+  const n = probe.length;
+  if (samples.length < n * 3) {
+    const mean = samples.reduce((sum, i) => sum + value(i), 0) / Math.max(samples.length, 1);
+    return [mean, ...new Array(n - 1).fill(0)];
+  }
+
+  // Normal equations: (B^T B) c = B^T v
+  const A = Array.from({ length: n }, () => new Float64Array(n + 1));
+  for (const i of samples) {
+    const x = i % pw;
+    const y = (i - x) / pw;
+    const b = basis(x, y);
+    const v = value(i);
+    for (let r = 0; r < n; r++) {
+      for (let k = 0; k < n; k++) A[r][k] += b[r] * b[k];
+      A[r][n] += b[r] * v;
+    }
+  }
+
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(A[r][col]) > Math.abs(A[pivot][col])) pivot = r;
+    if (Math.abs(A[pivot][col]) < 1e-9) {
+      // Rank-deficient: drop to the terms already solved and zero the rest.
+      const out = new Array(n).fill(0);
+      const mean = samples.reduce((sum, i) => sum + value(i), 0) / samples.length;
+      out[0] = mean;
+      return out;
+    }
+    [A[col], A[pivot]] = [A[pivot], A[col]];
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const f = A[r][col] / A[col][col];
+      for (let k = col; k <= n; k++) A[r][k] -= f * A[col][k];
+    }
+  }
+  const out = new Array(n);
+  for (let r = 0; r < n; r++) out[r] = A[r][n] / A[r][r];
+  return out;
 }

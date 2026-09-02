@@ -121,7 +121,10 @@ export class ChainField {
     // Clamping position alone is a trap: the position pins at the boundary but
     // the velocity survives, so every step shoves it back out and the chain
     // sits railed instead of relaxing.
-    const LIMIT = 0.08;
+    // Room for the tip to actually travel. A scarf this long reads as stiff
+    // if its end can only move eight percent of the frame; the limit is a
+    // backstop against divergence, not the intended range of motion.
+    const LIMIT = 0.17;
     for (let i = 1; i < n; i++) {
       if (dx[i] > LIMIT) { dx[i] = LIMIT; if (vx[i] > 0) vx[i] = 0; }
       else if (dx[i] < -LIMIT) { dx[i] = -LIMIT; if (vx[i] < 0) vx[i] = 0; }

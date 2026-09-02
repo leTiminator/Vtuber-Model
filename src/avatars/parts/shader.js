@@ -112,8 +112,11 @@ uniform vec4 u_eyeR;
 uniform float u_eyeAngle;
 uniform vec2 u_blink;
 uniform vec2 u_squint;
+uniform vec2 u_wide;
+uniform vec2 u_gaze;      // where the eyes are looking, -1..1
 uniform float u_glow;
 uniform float u_glowPulse;
+uniform vec2 u_texel;     // one texel of this part, for the glow's blur
 
 vec2 toEye(vec2 uv, vec4 e) {
   vec2 d = uv - e.xy;
@@ -157,6 +160,46 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   return vec4(base.rgb, base.a * (1.0 - covered));
 }
 
+/**
+ * How much of the slit survives the lids at this point, sampled from the
+ * texture rather than from geometry so the glow follows the shard's real
+ * shape. Used to build the halo.
+ */
+float slitAt(vec2 uv) {
+  float a = texture(u_tex, uv).a;
+  float lum = dot(texture(u_tex, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+  // Only the bright core glows; the ink outline around it does not.
+  float core = a * smoothstep(0.55, 0.80, lum);
+  vec4 lit = lidded(uv, u_eyeL, u_blink.x, u_squint.x, vec4(1.0, 1.0, 1.0, core));
+  lit = lidded(uv, u_eyeR, u_blink.y, u_squint.y, lit);
+  return lit.a;
+}
+
+/**
+ * A soft halo around the slit, blurred out far enough to spill onto the visor.
+ *
+ * The old glow only tinted pixels that were already bright, so it lived
+ * entirely inside the shard and read as a slightly bluer white rather than as
+ * light. Light leaves the thing emitting it. Two rings of taps at different
+ * radii is enough of a blur for a feature this small, and it closes when the
+ * lid does because it is sampled through the same lids.
+ */
+float halo(vec2 uv) {
+  float sum = 0.0;
+  float weight = 0.0;
+  for (int ring = 1; ring <= 3; ring++) {
+    float r = float(ring) * 5.0;
+    float w = 1.0 / float(ring * ring);
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.7853981634; // 2pi/8
+      vec2 off = vec2(cos(a), sin(a)) * r * u_texel;
+      sum += slitAt(uv + off) * w;
+      weight += w;
+    }
+  }
+  return sum / weight;
+}
+
 void main() {
   vec2 uv = u_flipU > 0.5 ? vec2(1.0 - v_uv.x, v_uv.y) : v_uv;
   vec4 c = texture(u_tex, uv);
@@ -164,9 +207,32 @@ void main() {
   if (u_eyesEnabled > 0.5) {
     c = lidded(v_uv, u_eyeL, u_blink.x, u_squint.x, c);
     c = lidded(v_uv, u_eyeR, u_blink.y, u_squint.y, c);
+
     if (u_glow > 0.0) {
-      float lum = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-      c.rgb += vec3(0.55, 0.78, 1.0) * smoothstep(0.62, 0.95, lum) * c.a * u_glow * u_glowPulse;
+      float pulse = u_glow * u_glowPulse;
+
+      // Along the slit, brighter toward whatever the eyes are turned to. A
+      // masked face has no pupil to move, so gaze reads as the light shifting
+      // inside the visor — which also cannot tear, the way sliding the shard
+      // itself would.
+      vec2 e = toEye(v_uv, u_eyeL);
+      float lookX = clamp(0.5 + 0.6 * (e.x * u_gaze.x + e.y * u_gaze.y), 0.0, 1.0);
+      float bias = mix(0.40, 1.55, lookX);
+
+      // Wide eyes burn hotter, squinting banks the fire down.
+      float open = 1.0 + 0.45 * max(u_wide.x, u_wide.y)
+                       - 0.30 * max(u_squint.x, u_squint.y);
+
+      // Inside the slit: lift toward white-hot.
+      float core = smoothstep(0.55, 0.92, dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)));
+      c.rgb += vec3(0.42, 0.66, 1.0) * core * c.a * pulse * bias * open * 1.4;
+
+      // Outside it: the halo spilling onto the visor behind.
+      float spill = halo(uv) * (1.0 - c.a);
+      vec3 lightColour = vec3(0.62, 0.80, 1.0);
+      float lit = spill * pulse * bias * open * 2.1;
+      c.rgb = mix(c.rgb, lightColour, clamp(lit / max(lit + c.a, 1e-4), 0.0, 1.0));
+      c.a = clamp(c.a + lit, 0.0, 1.0);
     }
   }
 
