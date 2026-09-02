@@ -129,6 +129,8 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'warp.turn', label: 'Turn left/right', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.nod', label: 'Nod up/down', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.parallax', label: 'Face depth', min: 0, max: 2.5, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.contactShadow', label: 'Layer depth', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'Shades where one layer sits over another, so the parts read as stacked rather than flat.' },
         { type: 'slider', key: 'parts.mirrorTurn', label: 'Mirror turn', min: 0, max: 1, step: 0.01, format: x,
           hint: 'Flips the head to face the other way as you turn past the threshold.' },
         { type: 'slider', key: 'parts.mirrorStart', label: 'Mirror threshold', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },

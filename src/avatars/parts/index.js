@@ -25,6 +25,16 @@ const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap']);
 
 /** How much of the head's turn the neck wrap takes. */
 const WRAP_FOLLOW = 0.45;
+
+/**
+ * Parts that cast a contact shadow on what is behind them. The backmost part
+ * has nothing to cast onto, and the eyes sit flush in the visor rather than
+ * over it.
+ */
+const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']);
+
+/** Which way the light comes from, in texels of the casting part. */
+const SHADOW_DIR = [-3.5, -3.5];
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
 import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
 import { parseRect } from '../warp2d/index.js';
@@ -35,6 +45,7 @@ const UNIFORMS = [
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
+  'u_shadow', 'u_shadowOffset',
   'u_spineMode', 'u_spine', 'u_flipU',
 ];
 
@@ -405,6 +416,8 @@ export class Parts2D {
       * store.get('parts.mirrorTurn')
       * (yaw < 0 ? 1 : 0); // the art already faces one way; only flip the other
 
+    const shadowStrength = store.get('parts.contactShadow');
+
     // --- draw, back to front ---------------------------------------------
     for (const part of this.parts) {
       gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
@@ -450,14 +463,38 @@ export class Parts2D {
         gl.uniform2f(L.u_wide, rig.eyes.wideL, rig.eyes.wideR);
         const gz = store.get('eyes.gazeGain');
         gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * gz, -1, 1), clamp(rig.eyes.gazeY * gz, -1, 1));
-        gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
         gl.uniform1f(L.u_glow, store.get('warp.eyeGlow'));
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
 
+      gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
+
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, part.texture);
       gl.uniform1i(L.u_tex, 0);
+
+      /* Contact shadow, laid down before the part itself.
+       *
+       * Parts are drawn back to front, so a shadow drawn just before a part
+       * lands on everything behind it and on nothing in front — which is
+       * exactly what a contact shadow is. Without it the layers read as paper
+       * cutouts: nothing says the scarf is in front of the arm rather than
+       * printed on it.
+       *
+       * Multiplying by the destination alpha keeps it off the empty
+       * background; otherwise a transparent OBS source gets a black halo
+       * around the whole character.
+       */
+      if (shadowStrength > 0 && SHADOWS.has(part.name)) {
+        gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+        gl.uniform1f(L.u_shadow, shadowStrength);
+        gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
+        gl.uniform1f(L.u_flipU, isHead && mirror > 0.5 ? 1 : 0);
+        gl.uniform1f(L.u_opacity, 1);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+        gl.uniform1f(L.u_shadow, 0);
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      }
       gl.bindVertexArray(part.vao);
 
       // Turning past a threshold cross-fades the head into its mirror image.

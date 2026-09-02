@@ -228,40 +228,72 @@ try {
   const sweep = await page.evaluate(async () => {
     const { avatars, emptyRig, store } = window.__vtuber;
     const a = avatars.parts2d;
-    store.patch({ 'stage.zoom': 1.15, 'stage.offsetX': 0, 'stage.offsetY': 0 });
+    // Zoomed out far enough that nothing leaves the frame at the extremes.
+    // Cropping confounds every measurement here: a ribbon swinging past the
+    // edge splits the silhouette into "extra pieces" and drags the centroid,
+    // neither of which is the model doing anything wrong.
+    // Physics frozen. This sweep is about the pose transforms holding together;
+    // cloth and idle drift legitimately lag behind a pose change, and with only
+    // a few settle frames per sample that lag reads as the model jumping. The
+    // chain's own behaviour is measured separately, where it is the subject.
+    const held = ['warp.clothWeight', 'warp.wind', 'warp.overshoot', 'body.breathAmount',
+      'body.swayAmount', 'body.hairPhysics'];
+    const before = Object.fromEntries(held.map((k) => [k, store.get(k)]));
+    for (const k of held) store.set(k, 0);
+    store.patch({ 'stage.zoom': 0.62, 'stage.offsetX': 0, 'stage.offsetY': 0 });
 
-    const base = window.__t.stats(window.__t.read(a));
-    const baseBlobs = window.__t.blobs(window.__t.read(a), 60);
+    // Render before measuring: read() returns the last frame drawn, which
+    // would otherwise still be the previous block's framing entirely.
+    window.__t.pose(a, emptyRig, {}, 40);
+    const baseShot = window.__t.read(a);
+    const base = window.__t.stats(baseShot);
+    const baseBlobs = window.__t.blobs(baseShot, 60);
 
-    const out = { base, baseBlobs, worstPartial: 0, worstPartialAt: 0,
-      worstArea: 1, worstAreaAt: 0, maxBlobs: baseBlobs, maxBlobsAt: 0,
-      maxJump: 0, maxJumpAt: 0 };
+    const out = { base, baseBlobs, worstPartial: 0, worstPartialAt: '',
+      worstArea: 1, worstAreaAt: '', maxBlobs: baseBlobs, maxBlobsAt: '',
+      maxJump: 0, maxJumpAt: '' };
+
+    // Every axis, not just yaw. Yaw got all the attention because that is
+    // where the visible faults were, and an axis nobody sweeps is where the
+    // next one waits.
+    const AXES = [
+      ['yaw', (v) => ({ yaw: v })],
+      ['pitch', (v) => ({ pitch: v * 0.75 })],
+      ['roll', (v) => ({ roll: v * 0.9 })],
+      ['lean', (v) => ({ x: v * 3, y: v * 1.4 })],
+      // Everything at once, within what tracking can actually produce.
+      ['all', (v) => ({ yaw: v, pitch: v * 0.4, roll: -v * 0.5, x: v * 1.1 })],
+    ];
 
     let prev = null;
     // Past the rig's own clamp, so the extremes really are exercised.
-    for (let deg = -46; deg <= 46; deg += 2) {
-      const yaw = (deg * Math.PI) / 180;
-      window.__t.pose(a, emptyRig, {
-        head: { yaw, pitch: 0.18 * Math.sin(deg / 9), roll: 0.22 * Math.sin(deg / 13) },
-      }, 26);
+    for (const [axis, make] of AXES) {
+    for (let deg = -46; deg <= 46; deg += 4) {
+      const v = (deg * Math.PI) / 180;
+      window.__t.pose(a, emptyRig, { head: make(v) }, 24);
       const shot = window.__t.read(a);
       const s = window.__t.stats(shot);
 
       const partial = s.partial / Math.max(s.opaque, 1);
-      if (partial > out.worstPartial) { out.worstPartial = partial; out.worstPartialAt = deg; }
+      if (partial > out.worstPartial) { out.worstPartial = partial; out.worstPartialAt = `${axis} ${deg}`; }
 
       const area = s.opaque / Math.max(base.opaque, 1);
-      if (area < out.worstArea) { out.worstArea = area; out.worstAreaAt = deg; }
+      if (area < out.worstArea) { out.worstArea = area; out.worstAreaAt = `${axis} ${deg}`; }
 
       const blobs = window.__t.blobs(shot, 60);
-      if (blobs > out.maxBlobs) { out.maxBlobs = blobs; out.maxBlobsAt = deg; }
+      if (blobs > out.maxBlobs) { out.maxBlobs = blobs; out.maxBlobsAt = `${axis} ${deg}`; }
 
-      if (prev) {
+      // Only within an axis: the jump between the end of one sweep and the
+      // start of the next is a cut, not a pop.
+      if (prev && deg > -46) {
         const jump = Math.hypot(s.cx - prev.cx, s.cy - prev.cy);
-        if (jump > out.maxJump) { out.maxJump = jump; out.maxJumpAt = deg; }
+        if (jump > out.maxJump) { out.maxJump = jump; out.maxJumpAt = `${axis} ${deg}`; }
       }
       prev = s;
     }
+    prev = null;
+    }
+    for (const k of held) store.set(k, before[k]);
     return out;
   });
 
@@ -269,21 +301,21 @@ try {
   // background showed through the helmet. It is invisible to an opaque-pixel
   // count and obvious in the proportion that are part-transparent.
   check('nothing goes translucent through the range of motion',
-    sweep.worstPartial < 0.30,
-    `worst ${(sweep.worstPartial * 100).toFixed(1)}% part-transparent at ${sweep.worstPartialAt}°` +
+    sweep.worstPartial < 0.16,
+    `worst ${(sweep.worstPartial * 100).toFixed(1)}% part-transparent at ${sweep.worstPartialAt}` +
     ` (rest ${((sweep.base.partial / sweep.base.opaque) * 100).toFixed(1)}%)`);
 
   check('the character does not shrink or vanish at the extremes',
-    sweep.worstArea > 0.72, `smallest ${(sweep.worstArea * 100).toFixed(0)}% of rest at ${sweep.worstAreaAt}°`);
+    sweep.worstArea > 0.84, `smallest ${(sweep.worstArea * 100).toFixed(0)}% of rest at ${sweep.worstAreaAt}`);
 
   // Cloth tearing loose from the body shows up as pieces that were not there
   // at rest.
   check('the character does not come apart into extra pieces',
     sweep.maxBlobs <= sweep.baseBlobs + 2,
-    `${sweep.maxBlobs} pieces at ${sweep.maxBlobsAt}°, ${sweep.baseBlobs} at rest`);
+    `${sweep.maxBlobs} pieces at ${sweep.maxBlobsAt}, ${sweep.baseBlobs} at rest`);
 
   check('the pose moves smoothly, with no pops',
-    sweep.maxJump < 14, `largest step ${sweep.maxJump.toFixed(1)}px at ${sweep.maxJumpAt}°`);
+    sweep.maxJump < 8, `largest step ${sweep.maxJump.toFixed(1)}px at ${sweep.maxJumpAt}`);
 
   /* --- features by what you would see ------------------------------------
    * Measured by differencing renders rather than by hunting for a colour that
@@ -382,6 +414,40 @@ try {
   check('the glow goes out with the eye', looks.glowShutChanged < looks.glowChanged * 0.25,
     `${looks.glowShutChanged}px vs ${looks.glowChanged}px open`);
   check('gaze changes where the light falls', looks.gazeChanged > 100, `${looks.gazeChanged}px`);
+
+  /* --- the contact shadow stays on the character -------------------------
+   * It is drawn multiplied by the destination's alpha so it can only darken
+   * what has already been drawn. If that ever breaks, a transparent OBS source
+   * grows a black halo around the whole character — which looks fine on the
+   * dark preview here and catastrophic on stream.
+   */
+  const shade = await page.evaluate(async () => {
+    const { avatars, emptyRig, store } = window.__vtuber;
+    const a = avatars.parts2d;
+    const saved = store.get('parts.contactShadow');
+    const sample = (level) => {
+      store.set('parts.contactShadow', level);
+      window.__t.pose(a, emptyRig, {}, 40);
+      const { d } = window.__t.read(a);
+      let outside = 0, inside = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        // Colour written where nothing is drawn: the halo.
+        if (d[i + 3] < 8 && (d[i] > 8 || d[i + 1] > 8 || d[i + 2] > 8)) outside++;
+        if (d[i + 3] > 200) inside += d[i] + d[i + 1] + d[i + 2];
+      }
+      return { outside, inside };
+    };
+    const off = sample(0);
+    const full = sample(1);
+    store.set('parts.contactShadow', saved);
+    return { off, full };
+  });
+  check('the contact shadow never touches the transparent background',
+    shade.full.outside <= shade.off.outside,
+    `${shade.full.outside} stray px at full strength, ${shade.off.outside} with it off`);
+  check('the contact shadow actually darkens the character',
+    shade.full.inside < shade.off.inside * 0.97,
+    `brightness ${Math.round(shade.full.inside / 1e6)}M vs ${Math.round(shade.off.inside / 1e6)}M`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

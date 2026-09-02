@@ -93,6 +93,9 @@ export const DEFAULTS = {
   // one. It went black before because both copies were drawn semi-transparent
   // and "over" blending bottoms out at 0.75 alpha halfway through; the far
   // copy is painted solid now and the near one dissolves over it.
+  // Depth between the layers: a soft dark shape laid behind each part so the
+  // scarf reads as sitting in front of the arm rather than printed on it.
+  'parts.contactShadow': 0.34,
   'parts.mirrorTurn': 1.0,
   // Radians of yaw before the mirror starts blending. Late on purpose: cross-
   // fading hard-edged line art ghosts, so the swap belongs where the far side

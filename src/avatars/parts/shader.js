@@ -104,6 +104,8 @@ out vec4 fragColor;
 uniform sampler2D u_tex;
 uniform float u_opacity;
 uniform float u_flipU;   // mirror the head to face the other way
+uniform float u_shadow;  // >0: draw this part as a contact shadow instead
+uniform vec2 u_shadowOffset;
 
 // Eye lids, applied only to the part that carries the eyes.
 uniform float u_eyesEnabled;
@@ -206,8 +208,50 @@ float halo(vec2 uv) {
   return sum / weight;
 }
 
+/**
+ * This part's own coverage, blurred, for the shadow it casts.
+ *
+ * Kept tight on purpose. A contact shadow is the dark line where two surfaces
+ * meet; spread it out and it stops reading as contact and starts dimming
+ * whatever is nearby — here it reached the glowing slit and took the light
+ * out of it.
+ */
+float softAlpha(vec2 uv) {
+  float sum = texture(u_tex, uv).a * 1.6;
+  float weight = 1.6;
+  for (int ring = 1; ring <= 2; ring++) {
+    float r = float(ring) * 2.2;
+    float w = 1.0 / float(ring);
+    for (int k = 0; k < 8; k++) {
+      float ang = float(k) * 0.7853981634;
+      sum += texture(u_tex, uv + vec2(cos(ang), sin(ang)) * r * u_texel).a * w;
+      weight += w;
+    }
+  }
+  return sum / weight;
+}
+
 void main() {
   vec2 uv = u_flipU > 0.5 ? vec2(1.0 - v_uv.x, v_uv.y) : v_uv;
+
+  /* Contact shadow pass.
+   *
+   * Layers sliding over one another with no shading read as paper cutouts —
+   * there is nothing to say the scarf is in front of the arm rather than
+   * printed on it. This lays a soft dark shape just behind each part before
+   * the part itself is drawn, so whatever is underneath is shaded by it.
+   *
+   * The blend is set up to multiply by the destination's alpha, so the shadow
+   * only appears where something has already been drawn. Without that it would
+   * halo into empty space — which on a transparent OBS source is a black
+   * outline around the whole character.
+   */
+  if (u_shadow > 0.0) {
+    float a = softAlpha(uv - u_shadowOffset);
+    fragColor = vec4(0.0, 0.0, 0.0, a * u_shadow * u_opacity);
+    return;
+  }
+
   vec4 c = texture(u_tex, uv);
 
   if (u_eyesEnabled > 0.5) {

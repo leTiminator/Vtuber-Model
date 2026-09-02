@@ -32,8 +32,13 @@ export const PART_SPECS = [
   { name: 'armRight', parent: 'root', joint: 'shoulderRight', z: 3 },
   { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
   { name: 'head', parent: 'neck', joint: 'neck', z: 5 },
-  { name: 'eyes', parent: 'head', joint: 'eyes', z: 6 },
-  { name: 'wrap', parent: 'neck', joint: 'neck', z: 7 },
+  { name: 'wrap', parent: 'neck', joint: 'neck', z: 6 },
+  // Drawn last, above the scarf. The slit and the scarf do not overlap in the
+  // drawing, so this changes nothing about the composition — but it puts the
+  // eye above every contact shadow. It is the one thing on the model that
+  // emits light rather than receiving it, and the scarf's shadow reaching
+  // across the visor greyed it out.
+  { name: 'eyes', parent: 'head', joint: 'eyes', z: 7 },
 ];
 
 /**
