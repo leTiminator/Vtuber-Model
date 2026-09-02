@@ -38,6 +38,15 @@ export const DEFAULTS = {
   'head.rollGain': 1.25,
   'head.positionGain': 1.0,
   'head.limitDeg': 42,
+  /* Which way a nod goes.
+   *
+   * Every convention here is confirmed — the tracker's sign against a recorded
+   * session, the renderer's against a measured one — and it was still reported
+   * backwards by the person looking at it. Whoever is watching the model is
+   * the authority on which way its head is going, so they get a switch rather
+   * than an argument.
+   */
+  'head.invertNod': false,
 
   // --- eyes ------------------------------------------------------------
   'eyes.blinkGain': 1.35,

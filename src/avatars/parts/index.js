@@ -428,7 +428,7 @@ export class Parts2D {
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
 
     // --- joints ----------------------------------------------------------
-    const joints = this.solveJoints(rig, roll, m);
+    const joints = this.solveJoints(rig, roll, pitch, m);
 
     // --- cloth -----------------------------------------------------------
     const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045;
@@ -707,7 +707,7 @@ export class Parts2D {
     return nodes;
   }
 
-  solveJoints(rig, roll, m) {
+  solveJoints(rig, roll, pitch, m) {
     const lean = rig.head.x * 0.045 + rig.body.leanX * 0.02;
     const rise = -rig.head.y * 0.04 + rig.body.bounce * 0.004;
     const breath = rig.body.breath * 0.012;
@@ -717,7 +717,27 @@ export class Parts2D {
       rotateAbout(rig.body.twist * 0.16, m.pivotX, 1.25, this.aspect),
       scaleAbout(1, 1 + breath, m.pivotX, m.pivotY),
     );
-    const neck = compose(hips, rotateAbout(roll, m.pivotX, m.pivotY, this.aspect));
+    /* A nod moves the head, not just the drawing on it.
+     *
+     * Roll has always read correctly because the whole head rotates about the
+     * neck: it is a rigid motion, and the eye reads rigid motion instantly.
+     * Pitch had nothing of the kind — only the surface warp, which at these
+     * angles is mostly a symmetric vertical squash, the same shape whether the
+     * chin goes up or down. A head that just gets shorter is not nodding, and
+     * with no direction in it the strongest thing left to read is the squash,
+     * which is why the nod was reported backwards no matter which way the
+     * maths went.
+     *
+     * Nodding pivots at the neck, below the head, so the head swings: down
+     * carries it down and slightly forward, up carries it up. That is the
+     * cue, and it is worth far more than the surface detail on top of it.
+     */
+    const nod = clamp(-pitch, -1.2, 1.2) * 0.075 * store.get('warp.nod');
+    const neck = compose(
+      hips,
+      translate(IDENTITY, 0, nod),
+      rotateAbout(roll, m.pivotX, m.pivotY, this.aspect),
+    );
 
     /* Arms hang off the hips rather than the neck: lifting a hand should not
      * inherit the head's tilt, and a shoulder that followed the head would

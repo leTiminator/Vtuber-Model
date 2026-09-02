@@ -359,7 +359,11 @@ export class Rig {
 
     // --- head ----------------------------------------------------------
     const yaw = (head.yaw - (n?.yaw ?? 0)) * g('head.yawGain');
-    const pitch = (head.pitch - (n?.pitch ?? 0)) * g('head.pitchGain');
+    // Inverted here rather than at the renderer, so everything downstream —
+    // the cloth's idea of where the head went, the hair's lag — agrees with
+    // what is on screen.
+    const pitch = (head.pitch - (n?.pitch ?? 0)) * g('head.pitchGain')
+      * (g('head.invertNod') ? -1 : 1);
     const roll = (head.roll - (n?.roll ?? 0)) * g('head.rollGain');
 
     s.head.yaw = this.pose.filter('yaw', clamp(yaw, -limit, limit), dt);
