@@ -26,6 +26,14 @@ const MAX_HEAD_DRIFT = 5;
 /** How long the head takes to trust the tracker fully again after a dropout. */
 const REACQUIRE_SECONDS = 0.3;
 
+/**
+ * How long the head keeps its pose after the face is lost, and how long it
+ * then takes to let go. Sized from real dropouts: a glance down under a cap
+ * brim runs one to two seconds, and should not move the model at all.
+ */
+const HOLD_SECONDS = 1.6;
+const RELEASE_SECONDS = 2.0;
+
 /** Blendshape channels that come in mirrored pairs. */
 const PAIRS = [
   'browDown', 'browOuterUp', 'cheekSquint', 'eyeBlink', 'eyeLookDown', 'eyeLookIn',
@@ -77,6 +85,7 @@ export class Rig {
     // How far back in after tracking was lost, 0 to 1. The tracker's first
     // estimates after a dropout are its least reliable, so they are eased in.
     this.reacquire = 1;
+    this.lostFor = 0; // seconds since the face was last seen
     this.clock = 0;
     this.blink = { timer: 1.4, value: 0, phase: 'idle' };
     this.overrides = new Map(); // expression name -> weight, driven by hotkeys
@@ -252,6 +261,7 @@ export class Rig {
 
     if (tracked && !this.state.tracked) this.reacquire = 0;
     if (tracked) this.reacquire = Math.min(1, this.reacquire + dt / REACQUIRE_SECONDS);
+    this.lostFor = tracked ? 0 : this.lostFor + dt;
 
     if (frame && tracked) {
       const shapes = mirror ? mirrorShapes(frame.shapes) : frame.shapes;
@@ -403,7 +413,26 @@ export class Rig {
   relax(dt) {
     const s = this.state;
     const rate = 2.2;
-    for (const k of ['yaw', 'pitch', 'roll', 'x', 'y', 'z']) s.head[k] = damp(s.head[k], 0, rate, dt);
+
+    /* Hold the head where it was, before easing it back to neutral.
+     *
+     * Losing the face usually means the face went somewhere, not that the
+     * person left. Recorded from a real session — someone in a cap, whose brim
+     * hides their face whenever they look down — nine of eleven dropouts began
+     * from a downward pitch, and four of them lasted over a second. Decaying
+     * straight to neutral means the model looks *up* the moment they look
+     * down, then snaps back when tracking returns: the opposite of what they
+     * did, twice, every time they glance at the keyboard.
+     *
+     * So the pose is held while the absence is short, then let go gradually if
+     * it is not. Expressions are not held — a smile frozen on an empty chair
+     * is worse than a neutral face.
+     */
+    const letGo = clamp((this.lostFor - HOLD_SECONDS) / RELEASE_SECONDS, 0, 1);
+    const headRate = rate * letGo * letGo;
+    for (const k of ['yaw', 'pitch', 'roll', 'x', 'y', 'z']) {
+      s.head[k] = damp(s.head[k], 0, headRate, dt);
+    }
     for (const k of ['blinkL', 'blinkR', 'squintL', 'squintR', 'wideL', 'wideR',
                      'gazeX', 'gazeY', 'browL', 'browR', 'browInner']) {
       s.eyes[k] = damp(s.eyes[k], 0, rate, dt);

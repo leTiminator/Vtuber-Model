@@ -140,10 +140,13 @@ try {
    * too, and it scored 6.3x against the fixed model's 6.7x. It passed either
    * way, which makes it worse than useless.
    *
-   * Absolute size does discriminate, measured on this recording: 23.7px with
-   * the head guards removed, 9.0px with them in. The threshold sits between.
+   * Absolute size does discriminate. Measured on this recording, by removing
+   * one guard at a time: 19.2px with the speed cap gone, 6.7px with
+   * everything in place. The threshold sits between. The pose hold is worth a
+   * further 9.0px to 6.7px but is not what this check catches — it has its own
+   * assertions in test/rig.mjs, which is the right place for it.
    */
-  check('no pops', result.maxJump < 14,
+  check('no pops', result.maxJump < 12,
     `largest step ${result.maxJump.toFixed(1)}px at ${result.maxJumpAt.toFixed(1)}s`);
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

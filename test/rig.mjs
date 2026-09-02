@@ -322,5 +322,45 @@ const runPose = (rig, n, f, has = true) => {
   settings.reset();
 }
 
+/* --- a face lost briefly is a face that moved, not a face that left --------
+ * Someone in a cap loses tracking every time they look down, for a second or
+ * two at a time. Decaying to neutral on the way would make the model look up
+ * exactly when they look down, and snap back when tracking returns.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  const looking = frame({ head: { yaw: 0.5, pitch: -0.4 } });
+  const held = run(rig, 200, looking);
+  const yawWhileTracked = held.head.yaw;
+  check('the head follows while tracked', Math.abs(yawWhileTracked) > 0.3,
+    `yaw ${yawWhileTracked.toFixed(2)}`);
+
+  // Under a second: the pose should barely move.
+  let state;
+  for (let i = 0; i < 50; i++) state = rig.update(null, false, DT);
+  check('a short dropout holds the pose',
+    Math.abs(state.head.yaw - yawWhileTracked) < 0.05 &&
+    Math.abs(state.head.pitch) > 0.1,
+    `yaw ${state.head.yaw.toFixed(2)} was ${yawWhileTracked.toFixed(2)}, pitch ${state.head.pitch.toFixed(2)}`);
+
+  // Expressions are not held: a smile left on an empty chair is worse.
+  const smiling = run(new Rig(), 120, frame({ shapes: { mouthSmileLeft: 0.9, mouthSmileRight: 0.9 } }));
+  const smileWhileTracked = smiling.mouth.smile;
+  const rig2 = new Rig();
+  run(rig2, 120, frame({ shapes: { mouthSmileLeft: 0.9, mouthSmileRight: 0.9 } }));
+  let after;
+  for (let i = 0; i < 50; i++) after = rig2.update(null, false, DT);
+  check('expressions let go even while the pose is held',
+    after.mouth.smile < smileWhileTracked * 0.6,
+    `smile ${after.mouth.smile.toFixed(2)} from ${smileWhileTracked.toFixed(2)}`);
+
+  // Gone for good: it does return to neutral.
+  for (let i = 0; i < 700; i++) state = rig.update(null, false, DT);
+  check('a long absence still returns the head to neutral',
+    Math.abs(state.head.yaw) < 0.05 && Math.abs(state.head.pitch) < 0.05,
+    `yaw ${state.head.yaw.toFixed(3)} pitch ${state.head.pitch.toFixed(3)}`);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);
