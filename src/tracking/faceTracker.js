@@ -55,9 +55,26 @@ export class FaceTracker {
           numFaces: 1,
           outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
+          /* Hard to find, easy to keep.
+           *
+           * Measured on a recorded session at the camera position its owner
+           * actually uses: the face was there for seventy-one per cent of a
+           * minute, and the gaps were not flickers — twenty-eight of them, the
+           * longest a second and a half. Losing the lock for that long is the
+           * model freezing and then drifting back to its rest pose, over and
+           * over, which is far more visible than a slightly noisy landmark.
+           *
+           * The reason it is hard here is the geometry, not the distance: a
+           * lens off to one side of the screen and a head looking down at the
+           * screen is a compound angle of about thirty-five degrees, and that
+           * is where a face detector gets least confident.
+           *
+           * So finding a face still takes real evidence, and keeping one takes
+           * much less. The failure that costs is the second kind.
+           */
           minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minFacePresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         });
         this.delegate = delegate;
         return this.landmarker;

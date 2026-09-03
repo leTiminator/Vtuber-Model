@@ -67,13 +67,22 @@ export function emptyRig() {
 /**
  * What a head can plausibly be resting at, per axis.
  *
- * Measured on a real session at a desk: yaw sits at a median of one and a
- * third degrees, pitch at seventeen down because that is where the screen is,
- * roll at half a degree. So there is essentially nothing to correct on yaw and
- * a lot on pitch, and a captured neutral that claims otherwise on yaw is a
- * capture taken while somebody was looking away.
+ * These were five, twenty-five and ten degrees, off one recorded session that
+ * happened to sit square to its camera — yaw median one and a third degrees,
+ * so seemingly nothing to correct there and a bad capture the only way to get
+ * a large one. A second session, taken at the camera position its owner
+ * actually uses, has a resting yaw of twenty-six degrees: the lens is off to
+ * one side of the screen, so looking at the screen genuinely is looking that
+ * far from the camera. Extremely common, and the tight bound left twenty-one
+ * degrees of it uncorrected — parking the model permanently past its own flip,
+ * which is the fault the bound was added to prevent.
+ *
+ * So the bound cannot be what tells a resting pose from a glance. It is only
+ * a backstop against a figure no camera placement explains, and the work of
+ * telling the two apart belongs to the evidence: a pose has to hold still for
+ * a stretch before it is believed. Nobody has to sit square to the lens.
  */
-const REST_LIMIT = { yaw: 5 * DEG, pitch: 25 * DEG, roll: 10 * DEG };
+const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
 
 /**
  * The saved rest pose, or null. Anything malformed is treated as none.
@@ -409,8 +418,13 @@ export class Rig {
       return Math.max(...v) - Math.min(...v);
     };
 
-    // A head at rest, not one on its way somewhere. Worth waiting a moment for,
-    // but not worth refusing over — see the clamp below.
+    /* Steadiness is what separates a resting pose from a glance.
+     *
+     * Not how far round it is — a camera beside the screen puts a perfectly
+     * ordinary working pose twenty-six degrees off the lens, and refusing that
+     * is refusing the pose somebody actually sits in. What a glance cannot do
+     * is hold still, so that is the thing worth waiting for.
+     */
     const STILL = 12 * DEG;
     const steady = spread('yaw') < STILL && spread('pitch') < STILL;
     if (cal.auto && !steady && this.clock < cal.deadline) { cal.samples = []; return; }
@@ -443,7 +457,7 @@ export class Rig {
     this.pendingCalibration = null;
     const trimmed = Object.keys(REST_LIMIT).some((k) => Math.abs(raw[k] - this.neutral[k]) > 1e-4);
     this.neutralWarning = trimmed
-      ? 'that pose read well off centre, so most of it was ignored — set it again facing the lens if the model sits wrong'
+      ? 'that pose read further round than any camera placement explains — set it again while sitting normally'
       : '';
     store.set('camera.neutral', JSON.stringify(this.neutral));
   }
