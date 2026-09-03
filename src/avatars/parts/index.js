@@ -443,6 +443,11 @@ export class Parts2D {
       posBuffer,
       binds: skinned ? new Float32Array(bindData) : null,
       live: skinned ? new Float32Array(pos) : null,
+      // Where the cloth was drawn, and how much of the head each point takes.
+      // Both are needed on the CPU to taper the chain out at the neck — see
+      // skinCloth.
+      rest: skinned ? new Float32Array(pos) : null,
+      follows: skinned ? new Float32Array(followData) : null,
       ...this.socketOf(part, sockets, width, height, fromBox, fromMarker, m),
     };
   }
@@ -946,14 +951,35 @@ export class Parts2D {
   skinCloth() {
     for (const part of this.parts) {
       if (!part.skinned || !part.binds || !part.live) continue;
-      const { binds, live } = part;
+      const { binds, live, rest, follows } = part;
       const skew = this.aspect || 1;
       for (let v = 0, b = 0; v < live.length; v += 2, b += 3) {
         const f = spineFrame(this.boneNodes(), binds[b], skew);
         const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
         const oy = f.ny * binds[b + 1] + f.ty * binds[b + 2];
-        live[v] = f.hx + ox / skew;
-        live[v + 1] = f.hy + oy;
+        /* The chain lets go at the neck.
+         *
+         * The scarf is one piece of cloth cut in two: what hugs the neck rides
+         * with the head, the rest swings on the chain. Both halves take the
+         * head's turn through the same weight, so the joints agree at the
+         * seam — but only one of them was also being carried by the chain, and
+         * it was being carried all the way up to the cut. So the two halves
+         * sheared along that line every time the cloth moved, and what showed
+         * was a hard straight edge across the scarf beside the neck with the
+         * darker paint underneath laid bare. It is not a gap, which is why the
+         * check for the halves coming apart never saw it.
+         *
+         * The same weight settles it. Where a point takes all of the head's
+         * turn it takes none of the chain, which is exactly what the other
+         * half of the seam does; where it has left the head it takes all of
+         * the chain. In between it is a gradient rather than a cut, and cloth
+         * wrapped round a neck does not flap at the neck anyway.
+         */
+        const loose = 1 - (follows ? follows[v >> 1] : 0);
+        const sx = f.hx + ox / skew;
+        const sy = f.hy + oy;
+        live[v] = rest[v] + (sx - rest[v]) * loose;
+        live[v + 1] = rest[v + 1] + (sy - rest[v + 1]) * loose;
       }
       const gl = this.gl;
       gl.bindBuffer(gl.ARRAY_BUFFER, part.posBuffer);

@@ -474,20 +474,7 @@ function labelPixels(src, m, w, h, sockets) {
    */
   reassignScraps(out, w, h, LABEL.wrap, LABEL.tails, 0.15);
 
-  /* --- and the same the other way round -----------------------------------
-   *
-   * The rule above was written for a scrap of tail dipping inside the circle.
-   * A loop that dips back out strands the mirror image of it: sixteen hundred
-   * pixels of cloth just past the line, a head-radius and a quarter from the
-   * middle, with neck wrap on every side and nothing joining it to the rest of
-   * the tails. It then swings on the chain while the cloth it was drawn
-   * against rides with the head — a chip of scarf tearing loose beside the
-   * neck, which is exactly what it looked like.
-   *
-   * Same threshold, because it is the same question: a fifteenth of the main
-   * region is the line between a lobe of cloth and a scrap of it.
-   */
-  reassignScraps(out, w, h, LABEL.tails, LABEL.wrap, 0.15);
+
 
   /* --- between passes: drop specks ---------------------------------------
    * A few stray pixels can land on the wrong label — a highlight the colour of
