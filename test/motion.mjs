@@ -1167,7 +1167,7 @@ try {
       + `(${(100 * (haze.flipKept - haze.flipCut) / haze.flipCut).toFixed(1)}%)`);
   check('and changes nothing at all when nothing has flipped',
     haze.restCut === haze.restKept,
-    `${haze.restCut}px either way`);
+    `${haze.restCut}px trimmed vs ${haze.restKept}px kept`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

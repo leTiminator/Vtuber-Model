@@ -706,7 +706,7 @@ export class Parts2D {
      * axis. Anything holding on to the head has to go the same distance or the
      * seam opens, which is what the neck wrap was doing.
      */
-    const slide = this.mirrored && this.headSpan
+    const flipSlide = this.mirrored && this.headSpan
       ? 2 * (this.flipAxis - this.headSpan.cx) : 0;
 
     const shadowStrength = store.get('parts.contactShadow');
@@ -773,10 +773,16 @@ export class Parts2D {
 
       /* The near eye slides onto the head's centre line as the face comes
        * round; every other part stays exactly where it was cut from.
+       *
+       * Named apart from the flip's own slide on purpose. They were both
+       * called `slide`, one inside the loop and one outside it, and the inner
+       * one quietly won: the eyes took their slide twice over and walked off
+       * the side of the visor, and the flip's slide reached nothing at all —
+       * so the fix it was written for was never running.
        */
-      const slide = this.headOn && part.name === 'eyeNear'
+      const eyeSlide = this.headOn && part.name === 'eyeNear'
         ? headOnT * (this.headOn.nearX - this.headOn.near.cx) : 0;
-      gl.uniform4f(L.u_place, 1, slide, 1, 0);
+      gl.uniform4f(L.u_place, 1, eyeSlide, 1, 0);
 
       const carriesEyes = EYES.has(part.name);
       gl.uniform1f(L.u_eyesEnabled, carriesEyes && store.get('warp.eyesEnabled') ? 1 : 0);
@@ -864,7 +870,7 @@ export class Parts2D {
         gl.uniform1f(L.u_shadow, shadowStrength);
         gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
         gl.uniform1f(L.u_flip, flips ? 1 : 0);
-        gl.uniform1f(L.u_flipSlide, flips ? 0 : slide);
+        gl.uniform1f(L.u_flipSlide, flips ? 0 : flipSlide);
         gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
         gl.uniform1f(L.u_shadow, 0);
@@ -888,7 +894,7 @@ export class Parts2D {
        * except the drawing changing hands.
        */
       gl.uniform1f(L.u_flip, flips ? 1 : 0);
-      gl.uniform1f(L.u_flipSlide, flips ? 0 : slide);
+      gl.uniform1f(L.u_flipSlide, flips ? 0 : flipSlide);
       gl.uniform1f(L.u_opacity, part.name === 'eyeFar' ? farOut : 1);
       gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
 
