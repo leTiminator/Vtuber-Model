@@ -11,7 +11,17 @@
 // v3: saves from before the parts model pinned the retired whole-image warp
 //     and a head flip that folds in on itself past 25 degrees. Both are
 //     settings a save can carry forward into a broken-looking model.
-const KEY = 'vtuber-model/settings/v3';
+/* Bumped from v3.
+ *
+ * Every save until now wrote the whole settings object, so any browser that
+ * had ever touched a control was pinned to that build's defaults for all of
+ * them — and stayed pinned, silently, through every later change. There is no
+ * way to tell a deliberate choice from a frozen default inside such a blob,
+ * so the only honest migration is to start again: current defaults for
+ * everything, and from here on only real changes are written, so this cannot
+ * happen twice.
+ */
+const KEY = 'vtuber-model/settings/v4';
 
 export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
@@ -134,7 +144,14 @@ export const DEFAULTS = {
   // Radians of yaw before the mirror starts blending. Late on purpose: cross-
   // fading hard-edged line art ghosts, so the swap belongs where the far side
   // of the face is already hidden by the turn and there is least to see.
-  'parts.mirrorStart': 0.30,
+  /* Pushed out from 0.30 to leave the head-on handover somewhere to happen.
+   *
+   * The square-on face gives way at 0.26 and the flip fired at 0.30, so the
+   * two landed on top of each other — the eyes crossed the visor and the head
+   * swapped sides in almost the same movement, which reads as one lurching
+   * event rather than two decisions.
+   */
+  'parts.mirrorStart': 0.46,
 
   /* The head-on view, built out of the three-quarter one.
    *
@@ -168,7 +185,18 @@ export const DEFAULTS = {
    * outlives a change of default, and the old number in the new meaning would
    * put the handover on top of the flip again.
    */
-  'parts.headOnHold': 0.17,
+  'parts.headOnHold': 0.26,
+  /* The least time a view is kept before it may hand over again, in seconds.
+   *
+   * A threshold on its own is not enough. Whatever angle it sits at, a head
+   * that spends its time near that angle crosses it constantly — measured on a
+   * real minute, thirty-three times, and every crossing slides the eyes across
+   * the visor. Widening the band moves the problem; it does not remove it.
+   *
+   * Refusing to change again for a moment does remove it, because it turns a
+   * threshold into a decision.
+   */
+  'parts.headOnDwell': 1.1,
   /* How long the handover takes, in seconds — a time, not an angle.
    *
    * Tying it to the angle cannot win. Narrow, and the eyes cross the visor in
@@ -209,6 +237,20 @@ export const DEFAULTS = {
    * pixels the guess is just paint on the background.
    */
   'parts.flipMargin': 3,
+  /* How much invented paint the swinging cloth may draw, in pixels.
+   *
+   * Every part is grown outward so the piece in front has something to move
+   * off, and the limit above lets all of it through — which is right for a
+   * part that barely moves. The scarf is not that: its chain may carry it a
+   * hundred pixels, and the twenty-eight pixel band was painted to sit under
+   * the body. Once it travels further than the band is wide, that invented
+   * paint slides out into the open as a hard-edged red slab with nothing
+   * behind it. That is the cutoff in the scarf.
+   *
+   * It is the backmost piece, so what its margin hides is only ever the
+   * background, and it can afford to keep just enough to cover a seam.
+   */
+  'parts.clothMargin': 8,
   /* The same cap for every part, flipped or not.
    *
    * Full by default, because the margin is doing its job wherever a piece in
@@ -290,11 +332,31 @@ function load() {
 load();
 
 let saveTimer = 0;
+/**
+ * Save only what the user actually changed.
+ *
+ * This used to write the whole settings object, which quietly froze every
+ * returning user at the defaults of whatever build they were on the first time
+ * they touched any one control. A single nudge of a single slider pinned all
+ * ninety-odd keys, so every later improvement to a default reached nobody who
+ * had ever used the app — and this codebase leans on changed defaults
+ * constantly, with four separate comments explaining that a key had to be
+ * renamed to get a new value out. Renaming only ever rescued the renamed key;
+ * the rest stayed stale, invisibly, forever.
+ *
+ * Storing the difference instead means an untouched control keeps following
+ * its default, and only a deliberate choice sticks. It also makes the saved
+ * blob small and readable, and it retires the rename trick.
+ */
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      const changed = {};
+      for (const k of Object.keys(DEFAULTS)) {
+        if (!Object.is(state[k], DEFAULTS[k])) changed[k] = state[k];
+      }
+      localStorage.setItem(KEY, JSON.stringify(changed));
     } catch {
       /* private browsing / quota — settings just will not persist */
     }

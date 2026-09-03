@@ -66,51 +66,115 @@ export function thin(mask, w, h) {
  */
 export function longestPath(skeleton, w, h, anchorX, anchorY) {
   const n = w * h;
-  let start = -1;
-  let best = Infinity;
-  for (let i = 0; i < n; i++) {
-    if (!skeleton[i]) continue;
-    const x = i % w;
-    const y = (i - x) / w;
-    const d = (x - anchorX) ** 2 + (y - anchorY) ** 2;
-    if (d < best) { best = d; start = i; }
-  }
-  if (start < 0) return null;
 
-  const from = new Int32Array(n).fill(-1);
-  const seen = new Uint8Array(n);
+  /* Follow the cloth, not whatever happens to be nearest the body.
+   *
+   * This used to seed from the skeleton pixel closest to the anchor and flood
+   * from there, which cannot leave that pixel's connected component — and a
+   * ribbon that crosses itself is not one component. On this drawing the
+   * anchor sits under the visor and the nearest piece of scarf is the little
+   * drape over the hip, fifty pixels away; the great sweeping arc that is
+   * visually the entire scarf is two hundred away and was never reached. So
+   * all sixteen bones landed on a bar a hundred and seventy pixels long in the
+   * bottom corner, and nine tenths of the ribbon hung off its ends as one
+   * rigid slab. It could not read as a chain because there was no chain in it.
+   *
+   * The piece with the most skeleton in it is the piece the cloth is made of.
+   */
+  const label = new Int32Array(n).fill(-1);
   const queue = new Int32Array(n);
-  let head = 0, tail = 0;
-  seen[start] = 1;
-  queue[tail++] = start;
-  let farthest = start;
-
-  while (head < tail) {
-    const i = queue[head++];
-    farthest = i; // BFS order means the last dequeued is the farthest
-    const x = i % w;
-    const y = (i - x) / w;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-        const j = ny * w + nx;
-        if (!skeleton[j] || seen[j]) continue;
-        seen[j] = 1;
-        from[j] = i;
-        queue[tail++] = j;
+  const sizes = [];
+  for (let seed = 0; seed < n; seed++) {
+    if (!skeleton[seed] || label[seed] >= 0) continue;
+    const id = sizes.length;
+    let head = 0;
+    let tail = 0;
+    label[seed] = id;
+    queue[tail++] = seed;
+    let count = 0;
+    while (head < tail) {
+      const i = queue[head++];
+      count++;
+      const x = i % w;
+      const y = (i - x) / w;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const j = ny * w + nx;
+          if (!skeleton[j] || label[j] >= 0) continue;
+          label[j] = id;
+          queue[tail++] = j;
+        }
       }
     }
+    sizes.push(count);
   }
+  if (!sizes.length) return null;
+
+  let pick = 0;
+  for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[pick]) pick = i;
+
+  /* The longest run through that piece, found the usual way: the point
+   * furthest from anywhere, then the point furthest from that. Walking out
+   * from a chosen start instead gives whatever path that start happens to sit
+   * on, which for a skeleton with spurs is routinely not the ribbon.
+   */
+  const from = new Int32Array(n);
+  const seen = new Uint8Array(n);
+  const sweep = (source) => {
+    from.fill(-1);
+    seen.fill(0);
+    let head = 0;
+    let tail = 0;
+    seen[source] = 1;
+    queue[tail++] = source;
+    let far = source;
+    while (head < tail) {
+      const i = queue[head++];
+      far = i; // BFS order: the last one dequeued is the furthest
+      const x = i % w;
+      const y = (i - x) / w;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const j = ny * w + nx;
+          if (label[j] !== pick || seen[j]) continue;
+          seen[j] = 1;
+          from[j] = i;
+          queue[tail++] = j;
+        }
+      }
+    }
+    return far;
+  };
+
+  let any = -1;
+  for (let i = 0; i < n && any < 0; i++) if (label[i] === pick) any = i;
+  if (any < 0) return null;
+  const tip = sweep(any);
+  const other = sweep(tip);
 
   const path = [];
-  for (let i = farthest; i >= 0; i = from[i]) {
+  for (let i = other; i >= 0; i = from[i]) {
     const x = i % w;
     path.push([x, (i - x) / w]);
   }
-  path.reverse(); // anchor first
+
+  /* Anchor end first, because node zero is the one the chain pins.
+   *
+   * Which end that is depends on the drawing, so it is asked rather than
+   * assumed: whichever end of the run is nearer the body leads.
+   */
+  const head0 = path[0];
+  const tail0 = path[path.length - 1];
+  const near = (p) => (p[0] - anchorX) ** 2 + (p[1] - anchorY) ** 2;
+  if (near(tail0) < near(head0)) path.reverse();
   return { path, length: path.length };
 }
 

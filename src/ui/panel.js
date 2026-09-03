@@ -162,11 +162,17 @@ export function buildPanel(root, ctx) {
           hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
             + 'the eyes slide onto the middle of the head and the far one is replaced by a '
             + 'mirrored copy of the near one. Same ink, so nothing drifts in style.' },
-        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°`,
+        // Printed as real head degrees. The value is in avatar space, which is
+        // the tracked angle already multiplied by head.yawGain — so the slider
+        // used to promise ten degrees of movement and deliver eight and a half.
+        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0.05, max: 0.6, step: 0.005, format: (v) => `${Math.round(v * 57 / 1.15)}°`,
           hint: 'How far you can turn before the face gives way to the drawn three-quarter '
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
             + 'so talking does not walk the eyes across the visor.' },
         { type: 'slider', key: 'parts.headOnTime', label: '— handover takes', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
+        { type: 'slider', key: 'parts.headOnDwell', label: '— then holds for', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(1)}s`,
+          hint: 'The least time a view is kept before it can hand over again. Without it, a '
+            + 'head that sits near the threshold crosses it constantly and the eyes never settle.' },
         { type: 'slider', key: 'parts.headOnTwin', label: '— far eye size', min: 0.5, max: 1.2, step: 0.01, format: x },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 

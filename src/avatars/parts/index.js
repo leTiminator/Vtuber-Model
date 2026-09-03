@@ -284,6 +284,18 @@ export class Parts2D {
 
     const tails = parts.find((p) => p.name === 'tails');
     this.spine = tails ? findSpine(tails, this.image, width, height, m) : null;
+    // How far apart the chain's links rest, for its bend limit. Measured off
+    // the spine that was actually found rather than assumed, because the run
+    // it lands on depends entirely on the drawing.
+    this.spineSpan = 0;
+    if (this.spine?.nodes?.length > 1) {
+      const ns = this.spine.nodes;
+      let total = 0;
+      for (let i = 1; i < ns.length; i++) {
+        total += Math.hypot(ns[i][0] - ns[i - 1][0], ns[i][1] - ns[i - 1][1]);
+      }
+      this.spineSpan = total / (ns.length - 1);
+    }
 
     /* The head's real extent, measured from the piece that was cut, not from
      * the marker. The marker's radius comes from eye spacing, which on this
@@ -631,7 +643,15 @@ export class Parts2D {
     const proxyY = m.headY - Math.sin(pitch) * 0.06 - rig.head.y * 0.04 + roll * 0.02;
     this.inertia.update(proxyX, proxyY, dt);
     const stiff = clamp(store.get('warp.clothStiffness'), 0.1, 4);
-    this.scarf.configure({ rest: 26 * stiff, damping: 4.4 * Math.sqrt(stiff) });
+    /* The chain is told how far apart its own links rest.
+     *
+     * Its bend limit is a share of that, so a chain laid along the whole scarf
+     * bends per joint exactly as much as a short one did — rather than going
+     * rigid because a distance tuned for eleven-pixel links was left in place
+     * for fifty-eight-pixel ones.
+     */
+    this.scarf.configure({ rest: 26 * stiff, damping: 4.4 * Math.sqrt(stiff),
+      bendSpan: this.spineSpan });
     // Scale note: the chain settles at force/rest, so with rest ~26 a tip that
     // should travel a few percent of the image wants forces below one. The
     // earlier gain produced ~5 and railed the chain against its own limit.
@@ -742,8 +762,40 @@ export class Parts2D {
      * The handover is then a time rather than a distance, so how fast you turn
      * your head changes when it happens and never how abrupt it looks.
      */
+    /* Wider, and it cannot change its mind in a hurry.
+     *
+     * Measured on a real minute of tracking, the old band changed hands
+     * thirty-three times — every other second — and each change drags the eyes
+     * bodily across the visor. That is what "the eyes slide on the face" was.
+     * Widening alone does not fix it: any threshold has a neighbourhood, and a
+     * head that lives near one will cross it all day.
+     *
+     * So there is also a floor on how soon it may change again. A view that
+     * has just been taken up is kept for a moment whatever the angle does,
+     * which is the difference between a decision and a flicker.
+     */
     const hold = store.get('parts.headOnHold');
-    this.squareOn = this.squareOn ? Math.abs(yaw) < hold : Math.abs(yaw) < hold * 0.55;
+    const dwell = store.get('parts.headOnDwell');
+    /* Decided on where the head has been, not where it is this instant.
+     *
+     * A threshold read off the live angle is crossed whenever the head wobbles
+     * near it, and a head at a desk wobbles constantly: measured on a real
+     * minute, thirty-three changes of view, each one dragging the eyes across
+     * the visor. Widening the band moved that to nineteen. It cannot fix it,
+     * because the band always has a neighbourhood and this head lives in one.
+     *
+     * Averaged over about a second, the wobble disappears and a real turn
+     * still arrives promptly, because a real turn is sustained and a wobble is
+     * not. That is the actual difference between the two, so that is what the
+     * test should be on.
+     */
+    this.yawHeld = damp(this.yawHeld ?? Math.abs(yaw), Math.abs(yaw), 1.6, dt);
+    this.squareSince = (this.squareSince ?? 0) + dt;
+    const want = this.squareOn ? this.yawHeld < hold : this.yawHeld < hold * 0.5;
+    if (want !== this.squareOn && this.squareSince >= dwell) {
+      this.squareOn = want;
+      this.squareSince = 0;
+    }
     /* A ramp of a fixed length, eased at both ends — not a decay.
      *
      * An exponential decay spends most of itself immediately: at a fifth of a
@@ -795,8 +847,27 @@ export class Parts2D {
     const shellDepth = Math.min(clamp(store.get('parts.shellDepth'), 0, 1), foldSafe)
       * this.headSpan.r;
 
+    /* Mirrored, the neck scarf goes behind the head.
+     *
+     * It is drawn in front because in the drawing it crosses the near cheek.
+     * Mirrored, that cheek is the far one, so the same cloth is now on the far
+     * side of the face and belongs behind it — and while it stayed in front it
+     * covered the chin, because the head reflects about the mirror axis while
+     * the wrap only slides. The chin sits left of that axis, so it moves some
+     * thirty pixels right while the wrap moves forty left: seventy pixels
+     * apart, with the scarf sitting exactly where the jaw used to be.
+     *
+     * Reordering says what is true about the view rather than trying to make
+     * two different transforms agree.
+     */
+    const headZ = this.parts.find((p) => p.name === 'head')?.z ?? 0;
+    const order = mirror > 0.5
+      ? [...this.parts].sort((p, q) =>
+        (p.name === 'wrap' ? headZ - 0.5 : p.z) - (q.name === 'wrap' ? headZ - 0.5 : q.z))
+      : this.parts;
+
     // --- draw, back to front ---------------------------------------------
-    for (const part of this.parts) {
+    for (const part of order) {
       gl.uniformMatrix3fv(L.u_model, false, joints[part.joint] ?? IDENTITY);
       gl.uniformMatrix3fv(L.u_modelFar, false,
         joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
@@ -913,8 +984,9 @@ export class Parts2D {
        * which is precisely what it did, the first time this was tried on
        * everything at once.
        */
-      gl.uniform1f(L.u_marginMax,
-        flips ? store.get('parts.flipMargin') : store.get('parts.margin'));
+      gl.uniform1f(L.u_marginMax, flips ? store.get('parts.flipMargin')
+        : part.skinned ? store.get('parts.clothMargin')
+          : store.get('parts.margin'));
 
       /* This part's geometry, bound before anything is drawn with it.
        *

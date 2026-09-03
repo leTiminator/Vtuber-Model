@@ -26,8 +26,13 @@ export class ChainField {
    * @param {number} opts.damping  velocity bleed
    * @param {number} opts.tipBias  how much more the tip moves than the base
    */
-  constructor({ nodes = 16, chain = 260, rest = 34, damping = 5.2, tipBias = 1.8 } = {}) {
+  constructor({ nodes = 16, chain = 260, rest = 34, damping = 5.2, tipBias = 1.8,
+    bendSpan = 0.0275 } = {}) {
     this.nodes = nodes;
+    // How far apart the nodes rest, in UV. Only the bend limit uses it, and
+    // the default is the spacing this was originally tuned against, so a
+    // caller that says nothing gets exactly the behaviour it always had.
+    this.bendSpan = bendSpan;
     this.chain = chain;
     this.rest = rest;
     this.damping = damping;
@@ -42,10 +47,11 @@ export class ChainField {
     this.clock = 0;
   }
 
-  configure({ chain, rest, damping }) {
+  configure({ chain, rest, damping, bendSpan }) {
     if (Number.isFinite(chain)) this.chain = chain;
     if (Number.isFinite(rest)) this.rest = rest;
     if (Number.isFinite(damping)) this.damping = damping;
+    if (Number.isFinite(bendSpan) && bendSpan > 0) this.bendSpan = bendSpan;
   }
 
   /**
@@ -134,7 +140,19 @@ export class ChainField {
      * A chain bends. It does not stretch.
      */
     const LIMIT = 0.17;
-    const MAX_BEND = 0.011;
+    /* How far apart two neighbours may drift, as a share of how far apart they
+     * rest.
+     *
+     * This was a fixed distance, which silently means "however many degrees
+     * that happens to be for the chain you have". Tuned against a chain whose
+     * nodes sat eleven pixels apart it allowed thirty-eight degrees a joint;
+     * the same number on a chain spanning the whole scarf allows seven, and
+     * the ribbon goes stiff for a reason nothing in the code mentions.
+     *
+     * A share of the spacing is the same bend per joint whatever the chain is
+     * laid along, which is what a chain actually does.
+     */
+    const MAX_BEND = this.bendSpan * 0.4;
     for (let i = 1; i < n; i++) {
       if (dx[i] > LIMIT) { dx[i] = LIMIT; if (vx[i] > 0) vx[i] = 0; }
       else if (dx[i] < -LIMIT) { dx[i] = -LIMIT; if (vx[i] < 0) vx[i] = 0; }
