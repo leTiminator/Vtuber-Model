@@ -89,6 +89,8 @@ export class Rig {
     this.neutral = readNeutral(); // calibrated baseline, set by calibrate()
     this.pendingCalibration = null;
     this.armNeutral = null; // resting arm angles, captured on the same signal
+    // Why the neutral cannot be trusted, when it cannot. Empty when it can.
+    this.neutralWarning = '';
 
     this.springs = {
       leanX: makeSpring(), leanY: makeSpring(), twist: makeSpring(),
@@ -125,10 +127,40 @@ export class Rig {
     this.arms.configure({ minCutoff: 0.9 / armSmooth, beta: 0.04 / armSmooth });
   }
 
-  /** Capture the next tracked frame as the neutral rest pose. */
-  calibrate() {
-    this.pendingCalibration = { samples: [], needed: 12 };
+  /**
+   * Capture the resting pose.
+   *
+   * Everything the head does is measured against this, so getting it wrong
+   * does not degrade the model gracefully — it parks it permanently in the
+   * worst part of its range. A neutral thirty degrees off means sitting
+   * straight reads as a hard turn: the head stays flipped, and the head-on
+   * face, which only shows within ten degrees of centre, is never reached at
+   * all. That is not hypothetical; it is what a session looked like.
+   *
+   * It used to take twelve frames — four tenths of a second — the instant the
+   * camera started, and average them. Nobody is looking at the lens four
+   * tenths of a second after clicking a button; they are looking at the
+   * button. So it waited, and now it also refuses.
+   *
+   * @param {boolean} auto  Fired by the camera starting rather than by a
+   *   person asking. An automatic capture has to earn its neutral: it waits,
+   *   wants the head reasonably still and reasonably square, and gives up
+   *   rather than saving a guess. Asking for it explicitly is taken at face
+   *   value — someone with a camera off to one side is entitled to a neutral
+   *   that looks turned, and they are the only one who can say so.
+   */
+  calibrate(auto = false) {
+    this.pendingCalibration = {
+      samples: [],
+      // A second and a half at thirty frames, so a blink or a glance is a
+      // minority of it rather than all of it.
+      needed: 45,
+      skip: auto ? 45 : 0,
+      auto,
+      deadline: this.clock + (auto ? 12 : 0),
+    };
     this.armNeutral = null; // re-read on the next pose frame
+    this.neutralWarning = '';
   }
 
   clearCalibration() {
@@ -338,15 +370,47 @@ export class Rig {
   collectCalibration(head, pos) {
     const cal = this.pendingCalibration;
     if (!cal) return;
+    if (cal.skip > 0) { cal.skip--; return; }
     cal.samples.push({ ...head, px: pos.x, py: pos.y, pz: pos.z });
     if (cal.samples.length < cal.needed) return;
 
-    const mean = (k) => cal.samples.reduce((a, v) => a + v[k], 0) / cal.samples.length;
+    /* The middle sample, not the average of them.
+     *
+     * An average is moved by anything that happens during the window; a median
+     * is not moved by a glance away unless the glance is most of the window.
+     */
+    const mid = (k) => {
+      const v = cal.samples.map((s) => s[k]).sort((a, b) => a - b);
+      return v[v.length >> 1];
+    };
+    const spread = (k) => {
+      const v = cal.samples.map((s) => s[k]);
+      return Math.max(...v) - Math.min(...v);
+    };
+
+    const STILL = 12 * DEG;   // a head at rest, not one on its way somewhere
+    const SQUARE = 20 * DEG;  // near enough to the lens for an unasked capture
+    const steady = spread('yaw') < STILL && spread('pitch') < STILL;
+    const square = Math.abs(mid('yaw')) < SQUARE && Math.abs(mid('pitch')) < SQUARE;
+
+    if (cal.auto && !(steady && square)) {
+      // Not a resting pose. Wait and look again rather than saving this one.
+      if (this.clock < cal.deadline) { cal.samples = []; return; }
+      this.pendingCalibration = null;
+      this.neutralWarning = 'could not find a resting pose — press "Set neutral pose"';
+      return;
+    }
+
     this.neutral = {
-      yaw: mean('yaw'), pitch: mean('pitch'), roll: mean('roll'),
-      x: mean('px'), y: mean('py'), z: mean('pz'),
+      yaw: mid('yaw'), pitch: mid('pitch'), roll: mid('roll'),
+      x: mid('px'), y: mid('py'), z: mid('pz'),
     };
     this.pendingCalibration = null;
+    // Said plainly, because a neutral this far over is almost always a capture
+    // taken at the wrong moment, and the symptom it produces — a head stuck
+    // facing away — looks like a fault in the model rather than in the setup.
+    this.neutralWarning = square ? ''
+      : 'neutral is well off centre — if the model sits turned, face the camera and set it again';
     store.set('camera.neutral', JSON.stringify(this.neutral));
   }
 

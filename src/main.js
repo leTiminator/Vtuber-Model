@@ -286,8 +286,14 @@ async function startCamera() {
     applyPreview();
     await applyMicSource();
     await applyPoseSource();
-    // A fresh start deserves a fresh neutral pose.
-    rig.calibrate();
+    /* A fresh start deserves a fresh neutral pose — but not this instant.
+     *
+     * Taken straight away it captures whoever is still looking at the button
+     * they just pressed, and that pose then becomes "facing forward" for the
+     * whole session. See rig.calibrate: an automatic capture waits, wants the
+     * head still and roughly square, and declines rather than saving a guess.
+     */
+    rig.calibrate(true);
   } catch {
     /* status line already carries the reason */
   } finally {
@@ -400,7 +406,9 @@ function runSelfCheck() {
     // in the worst part of its range.
     rig.neutral
       ? `neutral yaw ${deg(rig.neutral.yaw)} pitch ${deg(rig.neutral.pitch)} roll ${deg(rig.neutral.roll)}`
-      : 'neutral not set — press "Set neutral pose" sitting how you stream',
+        + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : '')
+      : `neutral not set — press "Set neutral pose" sitting how you stream`
+        + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
     r.drawn,
     changed.length
       ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`

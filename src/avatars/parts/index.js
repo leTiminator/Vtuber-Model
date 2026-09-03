@@ -173,7 +173,7 @@ export class Parts2D {
     // Which face is showing, and how far through changing hands it is. Latched
     // rather than derived from the angle every frame — see the note in render.
     this.squareOn = true;
-    this.headOnMix = 1;
+    this.headOnPhase = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
     this.unsubscribe = store.subscribe((key) => {
@@ -744,10 +744,22 @@ export class Parts2D {
      */
     const hold = store.get('parts.headOnHold');
     this.squareOn = this.squareOn ? Math.abs(yaw) < hold : Math.abs(yaw) < hold * 0.55;
-    const rate = 4 / clamp(store.get('parts.headOnTime'), 0.02, 2);
-    this.headOnMix = damp(this.headOnMix, this.squareOn ? 1 : 0, rate, dt);
+    /* A ramp of a fixed length, eased at both ends — not a decay.
+     *
+     * An exponential decay spends most of itself immediately: at a fifth of a
+     * second it moves nearly a third of the way in the very first frame, which
+     * for eyes crossing a visor is fourteen pixels between one frame and the
+     * next and reads as the jump this was meant to remove. Measured, nineteen.
+     *
+     * Walking a phase at a constant speed and easing it puts the fastest part
+     * in the middle and nothing at either end, so the handover starts and
+     * finishes invisibly and its worst frame is a third of what the decay's
+     * first frame was.
+     */
+    const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
+    this.headOnPhase = clamp(this.headOnPhase + (this.squareOn ? step : -step), 0, 1);
     const headOnT = this.headOn
-      ? this.headOnMix * clamp(store.get('parts.headOn'), 0, 1)
+      ? smoothstep(this.headOnPhase) * clamp(store.get('parts.headOn'), 0, 1)
       : 0;
     /* The far shard leaves before its replacement is fully there.
      *
