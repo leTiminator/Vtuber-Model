@@ -84,11 +84,20 @@ const run = (rig, n, f, tracked = true) => {
   check('mirroring flips head yaw', state.head.yaw < -0.1, `yaw ${state.head.yaw.toFixed(3)}`);
 }
 
-/* --- calibration zeroes a resting offset --------------------------------- */
+/* --- calibration zeroes a resting offset, within reason ------------------
+ *
+ * It used to be handed seventeen degrees of yaw and expected to swallow all of
+ * it. That is not a resting pose — measured on a real session, a head at a
+ * desk rests within a degree or two of square — and swallowing it whole is
+ * what let one bad capture leave the model permanently turned past its own
+ * flip. A baseline is bounded per axis now, so this asks for a pose somebody
+ * could actually be sitting in: a little off square, and well down, because
+ * that is where the screen is.
+ */
 {
   settings.reset();
   const rig = new Rig();
-  const offset = frame({ head: { yaw: 0.30, pitch: 0.12 } });
+  const offset = frame({ head: { yaw: 0.06, pitch: 0.25 } });
   run(rig, 120, offset);
   rig.calibrate();
   const state = run(rig, 400, offset);
@@ -360,6 +369,48 @@ const runPose = (rig, n, f, has = true) => {
   check('a long absence still returns the head to neutral',
     Math.abs(state.head.yaw) < 0.05 && Math.abs(state.head.pitch) < 0.05,
     `yaw ${state.head.yaw.toFixed(3)} pitch ${state.head.pitch.toFixed(3)}`);
+}
+
+/* --- a bad rest pose must not leave the model facing away ----------------
+ *
+ * The failure this is for: a neutral captured while somebody was looking away
+ * put thirty-one degrees of yaw into the baseline, so every frame after it was
+ * read as a head turned that far — permanently past the angle the head-on face
+ * holds to and past the flip, on a person sitting square to their camera. It
+ * looked like the model was broken. It was the setup.
+ *
+ * The measurement that settles what a baseline may claim is a real session:
+ * at a desk, yaw rests within a degree or two of centre, and pitch does not —
+ * it sits about seventeen degrees down, because that is where the screen is.
+ * So yaw has almost nothing to correct and pitch has a lot, and a baseline is
+ * bounded per axis accordingly. Which means a bad capture costs a little
+ * accuracy rather than the whole model, and nobody has to hold still to be
+ * looked at.
+ */
+{
+  settings.reset();
+  settings.set('camera.neutral', JSON.stringify(
+    { yaw: 0.55, pitch: -0.29, roll: 0.4, x: 0, y: 0, z: -45 }));
+  // Read at construction, so the baseline has to be in place first.
+  const loaded = new Rig();
+  check('a rest pose cannot claim the head was turned away',
+    Math.abs(loaded.neutral.yaw) <= 5 * Math.PI / 180 + 1e-6,
+    `yaw ${(loaded.neutral.yaw * 180 / Math.PI).toFixed(1)}° from a saved 31.5°`);
+  check('but a head that rests looking down keeps it',
+    Math.abs(loaded.neutral.pitch + 0.29) < 1e-6,
+    `pitch ${(loaded.neutral.pitch * 180 / Math.PI).toFixed(1)}°`);
+
+  // And with that baseline, a face square to the lens reads square.
+  let state = null;
+  for (let i = 0; i < 200; i++) {
+    state = loaded.update({ shapes: {}, head: { yaw: 0, pitch: -0.29, roll: 0 },
+      position: { x: 0, y: 0, z: -45 } }, true, DT);
+  }
+  check('so facing the camera reads as facing the camera',
+    Math.abs(state.head.yaw) < 8 * Math.PI / 180 && Math.abs(state.head.pitch) < 0.08,
+    `yaw ${(state.head.yaw * 180 / Math.PI).toFixed(1)}° `
+      + `pitch ${(state.head.pitch * 180 / Math.PI).toFixed(1)}°`);
+  settings.set('camera.neutral', '');
 }
 
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);

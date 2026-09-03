@@ -64,14 +64,35 @@ export function emptyRig() {
   };
 }
 
-/** The saved rest pose, or null. Anything malformed is treated as none. */
+/**
+ * What a head can plausibly be resting at, per axis.
+ *
+ * Measured on a real session at a desk: yaw sits at a median of one and a
+ * third degrees, pitch at seventeen down because that is where the screen is,
+ * roll at half a degree. So there is essentially nothing to correct on yaw and
+ * a lot on pitch, and a captured neutral that claims otherwise on yaw is a
+ * capture taken while somebody was looking away.
+ */
+const REST_LIMIT = { yaw: 5 * DEG, pitch: 25 * DEG, roll: 10 * DEG };
+
+/**
+ * The saved rest pose, or null. Anything malformed is treated as none.
+ *
+ * Bounded on the way in as well as on the way out. A neutral saved before
+ * these limits existed is still in the browser that saved it and outlives any
+ * change to how one is captured — and a thirty-one degree yaw in there leaves
+ * the model sitting permanently turned past its own flip, which reads as the
+ * model being broken rather than the setup being wrong.
+ */
 function readNeutral() {
   try {
     const raw = store.get('camera.neutral');
     if (!raw) return null;
     const n = JSON.parse(raw);
     const ok = ['yaw', 'pitch', 'roll', 'x', 'y', 'z'].every((k) => Number.isFinite(n?.[k]));
-    return ok ? n : null;
+    if (!ok) return null;
+    for (const [k, limit] of Object.entries(REST_LIMIT)) n[k] = clamp(n[k], -limit, limit);
+    return n;
   } catch {
     return null;
   }
@@ -388,29 +409,42 @@ export class Rig {
       return Math.max(...v) - Math.min(...v);
     };
 
-    const STILL = 12 * DEG;   // a head at rest, not one on its way somewhere
-    const SQUARE = 20 * DEG;  // near enough to the lens for an unasked capture
+    // A head at rest, not one on its way somewhere. Worth waiting a moment for,
+    // but not worth refusing over — see the clamp below.
+    const STILL = 12 * DEG;
     const steady = spread('yaw') < STILL && spread('pitch') < STILL;
-    const square = Math.abs(mid('yaw')) < SQUARE && Math.abs(mid('pitch')) < SQUARE;
+    if (cal.auto && !steady && this.clock < cal.deadline) { cal.samples = []; return; }
 
-    if (cal.auto && !(steady && square)) {
-      // Not a resting pose. Wait and look again rather than saving this one.
-      if (this.clock < cal.deadline) { cal.samples = []; return; }
-      this.pendingCalibration = null;
-      this.neutralWarning = 'could not find a resting pose — press "Set neutral pose"';
-      return;
-    }
+    /* Bounded to what a resting head can actually be, one axis at a time.
+     *
+     * Measured on a real session rather than assumed. Sitting at a desk, yaw
+     * comes out at a median of one and a third degrees — the tracker reads
+     * square when you are square, and there is nothing there to correct. Pitch
+     * does not: the median is seventeen degrees down, because that is where
+     * the screen is. Roll is half a degree.
+     *
+     * So a captured neutral is worth almost nothing on yaw and a great deal on
+     * pitch, and the failure that was actually reported — a neutral thirty-one
+     * degrees round, taken while the person was looking away, leaving the model
+     * permanently turned past its own flip — is a capture writing over a signal
+     * that was already right.
+     *
+     * Bounding each axis by what that axis plausibly rests at makes a bad
+     * capture harmless instead of ruinous, which is better than demanding a
+     * careful one. Nobody should have to hold still to be looked at.
+     */
+    const held = (k) => clamp(mid(k), -REST_LIMIT[k], REST_LIMIT[k]);
+    const raw = { yaw: mid('yaw'), pitch: mid('pitch'), roll: mid('roll') };
 
     this.neutral = {
-      yaw: mid('yaw'), pitch: mid('pitch'), roll: mid('roll'),
+      yaw: held('yaw'), pitch: held('pitch'), roll: held('roll'),
       x: mid('px'), y: mid('py'), z: mid('pz'),
     };
     this.pendingCalibration = null;
-    // Said plainly, because a neutral this far over is almost always a capture
-    // taken at the wrong moment, and the symptom it produces — a head stuck
-    // facing away — looks like a fault in the model rather than in the setup.
-    this.neutralWarning = square ? ''
-      : 'neutral is well off centre — if the model sits turned, face the camera and set it again';
+    const trimmed = Object.keys(REST_LIMIT).some((k) => Math.abs(raw[k] - this.neutral[k]) > 1e-4);
+    this.neutralWarning = trimmed
+      ? 'that pose read well off centre, so most of it was ignored — set it again facing the lens if the model sits wrong'
+      : '';
     store.set('camera.neutral', JSON.stringify(this.neutral));
   }
 
