@@ -170,6 +170,10 @@ export class Parts2D {
     this.tuft = { x: 0, y: 0, vx: 0, vy: 0 };
     this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
     this.glowPulse = 1;
+    // Which face is showing, and how far through changing hands it is. Latched
+    // rather than derived from the angle every frame — see the note in render.
+    this.squareOn = true;
+    this.headOnMix = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
     this.unsubscribe = store.subscribe((key) => {
@@ -727,11 +731,23 @@ export class Parts2D {
      * fully restored before the mirror ever swaps it, or the two would fight
      * over the same few degrees.
      */
+    /* Which face, latched — then how fast it changes hands, separately.
+     *
+     * Hysteresis, for the same reason the flip has it: sitting near the
+     * threshold, the smallest wobble in the tracker would hand the face back
+     * and forth several times a second. Once it has committed to the drawn
+     * view it stays there until the turn comes well back, which is also how a
+     * real turn behaves.
+     *
+     * The handover is then a time rather than a distance, so how fast you turn
+     * your head changes when it happens and never how abrupt it looks.
+     */
     const hold = store.get('parts.headOnHold');
-    const fade = Math.max(store.get('parts.headOnFade'), 1e-3);
+    this.squareOn = this.squareOn ? Math.abs(yaw) < hold : Math.abs(yaw) < hold * 0.55;
+    const rate = 4 / clamp(store.get('parts.headOnTime'), 0.02, 2);
+    this.headOnMix = damp(this.headOnMix, this.squareOn ? 1 : 0, rate, dt);
     const headOnT = this.headOn
-      ? smoothstep(clamp(1 - (Math.abs(yaw) - hold) / fade, 0, 1))
-        * clamp(store.get('parts.headOn'), 0, 1)
+      ? this.headOnMix * clamp(store.get('parts.headOn'), 0, 1)
       : 0;
     /* The far shard leaves before its replacement is fully there.
      *

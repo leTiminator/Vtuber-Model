@@ -168,10 +168,20 @@ export const DEFAULTS = {
    * outlives a change of default, and the old number in the new meaning would
    * put the handover on top of the flip again.
    */
-  'parts.headOnHold': 0.14,
-  // Radians of turn the handover itself takes, once the hold is past. Short:
-  // it is a change of view, and a long one reads as the eyes wandering.
-  'parts.headOnFade': 0.07,
+  'parts.headOnHold': 0.17,
+  /* How long the handover takes, in seconds — a time, not an angle.
+   *
+   * Tying it to the angle cannot win. Narrow, and the eyes cross the visor in
+   * a couple of degrees and it reads as a jump: measured, sixteen pixels in a
+   * single degree. Wide, and it is back to the eyes drifting across the face
+   * the whole time somebody is talking. Both were tried and both were wrong.
+   *
+   * A latch decides which face to show and this decides how fast it changes
+   * hands, which are two different questions and were being answered by one
+   * number. Turning your head slowly no longer walks the eyes anywhere: the
+   * face holds, and then it changes, in the same fifth of a second every time.
+   */
+  'parts.headOnTime': 0.18,
   /* How big the mirrored far eye is against the near one.
    *
    * Equal, if the hood were redrawn head-on. It is not — the hood stays the

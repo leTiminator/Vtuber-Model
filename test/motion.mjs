@@ -938,17 +938,42 @@ try {
     const gl = a.gl;
     const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
 
-    const shot = (yaw, blink) => {
-      a.parts = all.filter((p) => p.name === 'eyeNear' || p.name === 'eyeFar');
+    const shot = (yaw, blink, names, settle = 40) => {
+      a.parts = all.filter((p) => names.includes(p.name));
       const rig = emptyRig();
       rig.head.yaw = yaw;
       rig.eyes.blinkL = blink;
       rig.eyes.blinkR = blink;
-      for (let f = 0; f < 40; f++) a.render(rig, 1 / 60);
+      for (let f = 0; f < settle; f++) a.render(rig, 1 / 60);
       const d = new Uint8Array(w * h * 4);
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
       a.parts = all;
       return d;
+    };
+    const EYES = ['eyeNear', 'eyeFar'];
+
+    /* Where the head is, to measure the eyes against.
+     *
+     * Turning slides the whole head across the shoulders, so the eyes move
+     * across the screen whether or not they have moved on the face — and the
+     * first version of the check below read that as the eyes drifting and
+     * failed on the model doing exactly what it should. What was reported, and
+     * what matters, is the eyes moving relative to the face they are painted
+     * on. The head's own box carries its padding and so is not the head's true
+     * middle, but the bias is the same at every angle, and every question here
+     * is about change.
+     */
+    const headMid = (yaw, settle = 40) => {
+      const d = shot(yaw, 0, ['head'], settle);
+      let lo = w;
+      let hi = -1;
+      for (let k = 0, p = 0; k < d.length; k += 4, p++) {
+        if (d[k + 3] <= 200) continue;
+        const x = p % w;
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+      }
+      return (lo + hi) / 2;
     };
 
     /* The eyes, isolated by shutting them.
@@ -964,9 +989,9 @@ try {
      * by whether it has crossed a threshold, and one of these eyes spends the
      * whole transition fading in.
      */
-    const spread = (yaw) => {
-      const open = shot(yaw, 0);
-      const shut = shot(yaw, 1);
+    const spread = (yaw, settle = 40) => {
+      const open = shot(yaw, 0, EYES, settle);
+      const shut = shot(yaw, 1, EYES, settle);
       const col = new Float64Array(w);
       let total = 0;
       for (let k = 0, p = 0; k < open.length; k += 4, p++) {
@@ -1015,8 +1040,11 @@ try {
     let prev = null;
     let chatLo = Infinity;
     let chatHi = -Infinity;
-    for (let deg = -15; deg <= 15; deg++) {
-      const edge = spread(deg * Math.PI / 180).lo;
+    for (let deg = -16; deg <= 16; deg++) {
+      const yaw = deg * Math.PI / 180;
+      // On the face, not on the screen. Nothing here is settling, so a short
+      // settle is enough and the sweep stays affordable at two renders a step.
+      const edge = spread(yaw, 8).lo - headMid(yaw, 8);
       if (prev != null && Math.abs(edge - prev) > worst) {
         worst = Math.abs(edge - prev);
         worstAt = deg;

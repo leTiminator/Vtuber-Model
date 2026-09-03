@@ -162,11 +162,11 @@ export function buildPanel(root, ctx) {
           hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
             + 'the eyes slide onto the middle of the head and the far one is replaced by a '
             + 'mirrored copy of the near one. Same ink, so nothing drifts in style.' },
-        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0, max: 0.4, step: 0.005, format: (v) => `${Math.round(v * 57)}°`,
-          hint: 'How far you can turn before the head-on face starts giving way. Talking is a '
-            + 'constant ten or fifteen degrees, so this wants to be past that or the eyes '
-            + 'drift across the visor while you speak.' },
-        { type: 'slider', key: 'parts.headOnFade', label: '— handover over', min: 0.02, max: 0.3, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°`,
+          hint: 'How far you can turn before the face gives way to the drawn three-quarter '
+            + 'one. It holds until then and changes once, rather than sliding the whole way, '
+            + 'so talking does not walk the eyes across the visor.' },
+        { type: 'slider', key: 'parts.headOnTime', label: '— handover takes', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
         { type: 'slider', key: 'parts.headOnTwin', label: '— far eye size', min: 0.5, max: 1.2, step: 0.01, format: x },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
