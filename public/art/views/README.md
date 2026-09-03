@@ -1,20 +1,18 @@
 # Alternate views
 
-Drop new drawings of the character here. Anything in this folder is source
-art — nothing reads it automatically yet; each view gets wired into the rig
-deliberately, because each one changes what the model can do.
+Drop new drawings of the character here. Nothing reads this folder
+automatically; each view gets wired into the rig deliberately, because each one
+changes what the model can do.
 
-**Filenames do not matter on the way in.** Upload whatever your camera roll or
-image tool called them; they get identified, checked against the requirements
-below and renamed on arrival. The names in the table are what they end up as,
-not what you have to type.
+**Filenames do not matter.** Upload whatever they are called; they get
+identified and renamed on arrival.
 
-## What to draw, most valuable first
+## What is worth drawing, most valuable first
 
-| File | What it is | Why it matters |
+| Ends up as | What it is | Why it matters |
 | --- | --- | --- |
 | `head-front.png` | The head looking straight at the camera | The biggest gap. The rig has one three-quarter view, and mirroring it gives the opposite three-quarter for free — so the pose it cannot show is the one in between, which is the one you sit in most of the time. |
-| `eyes-closed.png` | The eye shard closed | Blinks happen every few seconds and are currently faked by erasing the eye layer. Highest quality per hour of drawing. |
+| `eyes-closed.png` | The eye shard closed | Blinks happen every few seconds and are currently faked by erasing the eye layer. Most quality per drawing. |
 | `eyes-half.png` | Half closed | Makes a blink a movement rather than a switch. |
 | `head-up.png` | Looking up about 25° | A nod is currently a rigid rotation of the cutout, which is a cheat: a real one shows more jaw. |
 | `head-down.png` | Looking down about 25° | The same, showing more crown. |
@@ -22,26 +20,34 @@ not what you have to type.
 | `eyes-left.png` `eyes-right.png` | Gaze | Only worth it after the above. |
 | `head-profile.png` | About 70° | For turning fully away. Lowest priority. |
 
-## Requirements
+## Do not fight the file format
 
-These are not style preferences. A drawing can be beautiful and still be
-unusable if it misses them.
+Upload what comes out. The mechanical problems are cheap to fix in code and
+get fixed on arrival rather than sent back:
 
-- **630 × 630 canvas**, matching `../BA_Ninja_TPBG.png`, with the character in
-  the same place. Do not crop, re-centre or resize — the rig aligns views by
-  the canvas, so a re-centred drawing lands in the wrong place.
-- **Transparent background**, PNG with a real alpha channel.
-- **One connected shape.** The original is a single blob of 151,305 opaque
-  pixels; several of the model's checks assume that, and a detached piece
-  renders as debris floating beside the character.
-- **The same neck and shoulder position** in every head view, so views can be
-  swapped without re-registering them.
-- **Eyes on their own layer**, exported as a separate file aligned to the head
-  view it belongs to — the lid needs to erase the eye without touching the
-  visor behind it.
-- Match the original's line weight, flat cel shading and palette. The flip
-  swaps two drawings within a single frame, so any drift in line weight, visor
-  shape or the red reads as a glitch exactly when someone is looking at it.
+- **Wrong canvas size, or the character sitting in the wrong place.** Padded,
+  cropped and aligned against the original by its own silhouette.
+- **A background instead of transparency.** Keyed out, if it is a flat one.
+- **Stray specks and detached fragments.** Dropped — the original is a single
+  connected shape and the model's checks assume that.
+- **Eyes not on their own layer.** The cut already finds the eye shards by
+  brightness and lifts them onto their own layer at load time, so a head with
+  its eyes attached is fine.
+
+## What cannot be fixed after the fact
+
+These are about the drawing itself, and no amount of code repairs them:
+
+- **Style drift.** Line weight, the flatness of the shading, the exact red. The
+  flip swaps two drawings inside a single frame, so a visor rim that is a
+  little thicker or a red that is a little warmer reads as a glitch at the
+  precise moment somebody is looking at the head.
+- **A different design.** A hood that is a slightly different shape, a visor
+  with a different silhouette, extra detail that was not there before.
+- **The wrong view.** A three-quarter view when what was needed was head-on.
+
+So: generate freely, upload whatever comes out, and expect an honest answer
+about which of those three the result has landed in.
 
 For reference, in the original the head occupies roughly x 329–562, y 196–440,
-centred near (0.71, 0.50) of the canvas.
+centred near (0.71, 0.50) of a 630 × 630 canvas.
