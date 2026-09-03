@@ -1032,8 +1032,19 @@ try {
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
     store.reset();
+    /* With the margin left alone, because this is about the transform.
+     *
+     * A flipped part drops the invented paint around its edge, which is right
+     * — the paint was only ever correct while it sat hidden under a neighbour
+     * — but it changes the drawn area in the same frame as the swap, and this
+     * check reads the drawn area. Measured together the two came to twelve
+     * pixels and it was impossible to say which had moved; held apart, the
+     * head turns out not to move at all. The haze is checked on its own, just
+     * below.
+     */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
-      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.5 });
+      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
+      'stage.zoom': 1.5, 'parts.flipMargin': 32 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const all = a.parts;
@@ -1070,9 +1081,58 @@ try {
   });
 
   check('the head flips without jumping across the screen',
-    lurch.flipAt !== null && lurch.worst < 10,
+    lurch.flipAt !== null && lurch.worst < 4,
     `worst ${lurch.worst.toFixed(1)}px in one degree at ${lurch.worstAt}°`
       + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`));
+
+  /* --- and drops the paint it can no longer justify -----------------------
+   *
+   * Every part is grown outward with invented paint so the piece in front has
+   * something to move off. It is only ever right while it stays hidden, and
+   * the swap carries the head clear across everything behind it — which is
+   * what put a dark haze off the hood and the hair the moment the head
+   * turned, drawn against the empty background.
+   *
+   * Two things have to hold, and they pull against each other. Flipped, the
+   * paint has to actually go: three per cent of the figure's area is what
+   * comes off. At rest it has to be untouched, because that is the pose the
+   * whole reassembly guard is built on and the margin is doing its job there.
+   */
+  const haze = await page.evaluate(async () => {
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
+      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.5 });
+    a.resize(320, 320, 2);
+    for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+    const gl = a.gl;
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    const area = (deg, margin) => {
+      store.set('parts.flipMargin', margin);
+      const rig = emptyRig();
+      rig.head.yaw = (deg * Math.PI) / 180;
+      for (let f = 0; f < 40; f++) a.render(rig, 1 / 60);
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 40) n++;
+      return n;
+    };
+    const flipCut = area(-30, 3);
+    const flipKept = area(-30, 32);
+    const restCut = area(0, 3);
+    const restKept = area(0, 32);
+    store.reset();
+    return { flipCut, flipKept, restCut, restKept };
+  });
+  check('flipping the head drops the paint that was hiding under it',
+    haze.flipKept - haze.flipCut > haze.flipCut * 0.015,
+    `${haze.flipKept - haze.flipCut}px of haze off a ${haze.flipCut}px figure `
+      + `(${(100 * (haze.flipKept - haze.flipCut) / haze.flipCut).toFixed(1)}%)`);
+  check('and changes nothing at all when nothing has flipped',
+    haze.restCut === haze.restKept,
+    `${haze.restCut}px either way`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
