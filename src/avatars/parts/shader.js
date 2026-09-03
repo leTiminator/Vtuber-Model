@@ -70,6 +70,23 @@ uniform float u_flipAxis;  // in image space, 0..1 across the artwork
  */
 uniform vec4 u_place;      // x scale, x offset, y scale, y offset
 
+/* How far the swap carries the head, for everything that is not swapping.
+ *
+ * The mirror reflects the head about the axis its group balances on, which
+ * turns the group without moving it — but the head itself is not that group,
+ * and its own middle lands about forty pixels to the side. The neck wrap does
+ * not swap with it, and must not: it is cloth that runs on into the scarf, and
+ * mirroring half a scarf tears it off the shoulders. So the wrap stayed put
+ * while the face slid out from under it, which is the glitch at the neck.
+ *
+ * It travels instead. The same distance the head's middle moved, taken per
+ * vertex through the weight that already says how much of the head's turn a
+ * point takes — full where the cloth crosses the face, nothing at the
+ * shoulders. Nothing is reversed, so no drawing ends up back to front, and
+ * every seam holds because both sides of it answer this same question.
+ */
+uniform float u_flipSlide;
+
 uniform float u_warp;      // 0 disables the whole block
 uniform vec2 u_headCenter;
 uniform float u_cylR;
@@ -103,6 +120,7 @@ void main() {
    */
   vec2 p = vec2(a_pos.x * u_place.x + u_place.y, a_pos.y * u_place.z + u_place.w);
   if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
+  else p.x += u_flipSlide * a_follow;
 
   /* The head's turn, taken per vertex rather than per part.
    *
@@ -198,7 +216,11 @@ uniform float u_marginMax;
 
 float marginCut(vec2 uv) {
   float d = texture(u_margin, uv).r * 255.0;
-  return 1.0 - smoothstep(u_marginMax - 1.5, u_marginMax + 1.5, d);
+  // The fade starts at the limit and runs outward, never inward. Centring it
+  // on the limit put half the band below zero, so at a limit of zero the
+  // drawing itself came out at half alpha — the whole character went
+  // translucent the first time a check asked for the art without its padding.
+  return 1.0 - smoothstep(u_marginMax, u_marginMax + 2.0, d);
 }
 
 vec2 toEye(vec2 uv, vec4 e) {

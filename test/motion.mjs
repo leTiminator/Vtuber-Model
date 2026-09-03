@@ -490,8 +490,17 @@ try {
   const joined = await page.evaluate(async () => {
     const { avatars, emptyRig, store } = window.__vtuber;
     const a = avatars.parts2d;
+    /* Measured on the drawing, not on the padding around it.
+     *
+     * Every part is cut with twenty-eight pixels of invented paint so the
+     * piece in front has something to move off, and both halves of the scarf
+     * carry it. This check asked how far apart they were and counted that
+     * paint, so fifty-six pixels of real tear read as none — and it duly
+     * reported the scarf perfectly joined, at every pose, for as long as it
+     * has existed, while the seam was plainly visible on screen.
+     */
     store.patch({ 'stage.zoom': 0.9, 'stage.offsetX': 0, 'stage.offsetY': 0,
-      'warp.wind': 0, 'body.breathAmount': 0, 'body.swayAmount': 0 });
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'parts.margin': 0 });
     /* Flush the rebuild before taking hold of the part list.
      *
      * Changing any warp setting marks the model for rebuild, and the next
@@ -505,9 +514,9 @@ try {
     window.__t.pose(a, emptyRig, {}, 1);
     const all = a.parts;
 
-    const maskOf = (name, mut) => {
+    const maskOf = (name, mut, settle) => {
       a.parts = all.filter((p) => p.name === name);
-      window.__t.pose(a, emptyRig, mut, 40);
+      window.__t.pose(a, emptyRig, mut, settle);
       const { d, w, h } = window.__t.read(a);
       const m = new Uint8Array(w * h);
       for (let i = 0, p = 0; i < d.length; i += 4, p++) if (d[i + 3] > 40) m[p] = 1;
@@ -536,29 +545,47 @@ try {
       return limit + 1;
     };
 
-    const LIMIT = 26;
-    const POSES = [
-      ['rest', {}],
-      ['yaw +40', { head: { yaw: 0.70 } }],
-      ['yaw -40', { head: { yaw: -0.70 } }],
-      ['pitch -35', { head: { pitch: -0.60 } }],
-      ['roll +30', { head: { roll: 0.52 } }],
-      ['everything', { head: { yaw: -0.62, pitch: -0.45, roll: 0.40, x: -0.8, y: -0.5 } }],
-    ];
+    /* Swept, not sampled, and with the cloth running.
+     *
+     * Six held poses with the scarf's own physics frozen is not a range of
+     * motion — it is six stills, and it is the physics that pulls the two
+     * halves apart in the first place. This walks a continuous tour through
+     * every axis at once, leaving the chain to respond as it does in use, and
+     * asks the question at every step of it.
+     */
+    const LIMIT = 14;
+    const tour = [];
+    for (let k = 0; k <= 24; k++) {
+      const t = (k / 24) * Math.PI * 2;
+      tour.push({
+        head: {
+          yaw: 0.70 * Math.sin(t),
+          pitch: 0.55 * Math.sin(t * 2 + 0.7),
+          roll: 0.45 * Math.sin(t * 3 + 1.9),
+          x: 0.8 * Math.sin(t * 2), y: 0.5 * Math.cos(t),
+        },
+      });
+    }
     const out = [];
-    for (const [label, mut] of POSES) {
-      const wrap = maskOf('wrap', mut);
-      const tails = maskOf('tails', mut);
-      out.push({ label, gap: gap(wrap, tails, LIMIT) });
+    for (let k = 0; k < tour.length; k++) {
+      // Short settles, so the chain carries its state from one step to the
+      // next the way it does when somebody is actually moving.
+      const wrap = maskOf('wrap', tour[k], 6);
+      const tails = maskOf('tails', tour[k], 6);
+      const g = gap(wrap, tails, LIMIT);
+      out.push({ label: `step ${k}`, gap: g,
+        yaw: +tour[k].head.yaw.toFixed(2), pitch: +tour[k].head.pitch.toFixed(2) });
     }
     a.parts = all;
+    store.reset();
     return { out, LIMIT };
   });
 
   const worst = joined.out.reduce((a, b) => (b.gap > a.gap ? b : a));
-  check('the scarf stays joined to itself in every pose',
+  check('the scarf stays joined to itself through the whole range of motion',
     worst.gap <= 6,
-    joined.out.map((o) => `${o.label} ${o.gap}px`).join(', '));
+    `worst ${worst.gap}px at yaw ${worst.yaw}, pitch ${worst.pitch} `
+      + `over ${joined.out.length} steps`);
 
   /* --- the character is one piece, at every setting the panel can reach -----
    *
@@ -1119,10 +1146,18 @@ try {
       for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 40) n++;
       return n;
     };
-    const flipCut = area(-30, 3);
-    const flipKept = area(-30, 32);
+    /* Rest first, and twice over, because the chain remembers.
+     *
+     * Reading the two rest frames after a flipped one had the scarf still
+     * unwinding between them, and a few pixels of drift on a quarter-million
+     * looked like the margin doing something when nothing had flipped and the
+     * uniform was provably identical. Measured before anything moves, and with
+     * a settle either side, the two agree exactly.
+     */
     const restCut = area(0, 3);
     const restKept = area(0, 32);
+    const flipCut = area(-30, 3);
+    const flipKept = area(-30, 32);
     store.reset();
     return { flipCut, flipKept, restCut, restKept };
   });

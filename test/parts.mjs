@@ -73,6 +73,47 @@ try {
       if (!near) wrong++;
     }
 
+    /* Every piece a part is made of, so a stranded scrap cannot hide.
+     *
+     * A part is allowed to be more than one region — the body shows either
+     * side of the scarf, and the scarf's tails cross the neck circle more than
+     * once — but every region has to be a lobe rather than a chip. Sixteen
+     * hundred pixels of scarf got stranded a head-radius from the neck with
+     * wrap on all sides, and swung off on the chain while the cloth it was
+     * drawn against rode with the head. Nothing here noticed, because nothing
+     * here had ever asked what a part was made of.
+     */
+    const regionsOf = (p) => {
+      const d = p.canvas.getContext('2d', { willReadFrequently: true })
+        .getImageData(0, 0, p.w, p.h).data;
+      const on = new Uint8Array(p.w * p.h);
+      for (let i = 0; i < on.length; i++) on[i] = d[i * 4 + 3] > 250 ? 1 : 0;
+      const seen = new Uint8Array(on.length);
+      const stack = [];
+      const sizes = [];
+      for (let s = 0; s < on.length; s++) {
+        if (seen[s] || !on[s]) continue;
+        let n = 0;
+        seen[s] = 1;
+        stack.push(s);
+        while (stack.length) {
+          const i = stack.pop();
+          n++;
+          const x = i % p.w;
+          const y = (i - x) / p.w;
+          const v = (j) => { if (!seen[j] && on[j]) { seen[j] = 1; stack.push(j); } };
+          if (x > 0) v(i - 1); if (x < p.w - 1) v(i + 1);
+          if (y > 0) v(i - p.w); if (y < p.h - 1) v(i + p.w);
+        }
+        // Below this a region is a rounding artefact of the margin's own fade,
+        // not a piece of the drawing.
+        if (n > 40) sizes.push(n);
+      }
+      sizes.sort((x, y) => y - x);
+      return sizes;
+    };
+    const regions = Object.fromEntries(parts.map((p) => [p.name, regionsOf(p)]));
+
     const byName = Object.fromEntries(parts.map((p) => [p.name, p]));
     const box = (p) => p && ({
       // Where the part sits, as a fraction of the frame, ignoring the padding.
@@ -83,7 +124,7 @@ try {
       px: p.pixels,
     });
     return {
-      wrong, opaque, total: width * height,
+      wrong, opaque, total: width * height, regions,
       names: parts.map((p) => p.name),
       head: box(byName.head), tufts: box(byName.tufts),
       eyeNear: box(byName.eyeNear), eyeFar: box(byName.eyeFar),
@@ -104,6 +145,31 @@ try {
   for (const name of ['tails', 'wrap', 'head', 'eyeNear', 'eyeFar', 'tufts', 'body',
     'armLeft', 'armRight']) {
     check(`${name} was cut`, result.names.includes(name), result.names.join(', '));
+  }
+
+  /* The scarf's swinging half must have no scrap torn off it.
+   *
+   * Being in several regions is not itself a fault, and most parts are: the
+   * head sits in the middle of the neck cloth and separates it into five, the
+   * body shows either side of the scarf. That costs nothing, because those are
+   * quads — every vertex answers the same smooth function of where it sits, so
+   * two regions of one part move consistently and a seam between them holds.
+   *
+   * The tails are the exception, and the only one. They are skinned to the
+   * scarf's bone chain, so a region gets carried by whichever bone happens to
+   * be nearest — and a scrap far from the ribbon it was cut from is carried
+   * somewhere the cloth around it is not going. Sixteen hundred pixels of
+   * scarf, stranded a head-radius from the neck with wrap on every side, swung
+   * off on the chain while the cloth it was drawn against rode with the head.
+   * That is the cut at the neck, and nothing here had ever asked what a part
+   * was made of.
+   */
+  {
+    const sizes = result.regions.tails ?? [];
+    const worst = sizes.length < 2 ? 1 : sizes[sizes.length - 1] / sizes[0];
+    check('the swinging half of the scarf has no scrap torn off it', worst >= 0.15,
+      `${sizes.length} piece${sizes.length === 1 ? '' : 's'}: ${sizes.join(', ')}`
+        + ` — smallest is ${(100 * worst).toFixed(1)}% of the largest`);
   }
 
   const { head, eyeNear, eyeFar, tufts, armLeft, armRight, body } = result;

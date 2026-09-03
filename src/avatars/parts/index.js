@@ -15,7 +15,7 @@ import { clamp, damp, lerp, makeSpring, smoothstep, spring } from '../../core/ma
 import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
-import { cutParts, DILATE } from './cut.js';
+import { cutParts } from './cut.js';
 
 /**
  * The two eye shards, each its own part.
@@ -103,7 +103,7 @@ const UNIFORMS = [
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax',
-  'u_flip', 'u_flipAxis', 'u_place',
+  'u_flip', 'u_flipAxis', 'u_place', 'u_flipSlide',
   'u_shell', 'u_depth',
 ];
 
@@ -694,6 +694,16 @@ export class Parts2D {
     const twinIn = smoothstep(clamp((headOnT - 0.10) / 0.45, 0, 1));
     const farOut = 1 - smoothstep(clamp((headOnT - 0.06) / 0.36, 0, 1));
 
+    /* How far the swap moves the head, for everything left behind to follow.
+     *
+     * The mirror is about the group's balance point, so the group does not
+     * move — but the head's own middle does, by twice its offset from that
+     * axis. Anything holding on to the head has to go the same distance or the
+     * seam opens, which is what the neck wrap was doing.
+     */
+    const slide = this.mirrored && this.headSpan
+      ? 2 * (this.flipAxis - this.headSpan.cx) : 0;
+
     const shadowStrength = store.get('parts.contactShadow');
 
     /* Depth is measured against the head's own radius, so the shell is as
@@ -819,7 +829,8 @@ export class Parts2D {
        * which is precisely what it did, the first time this was tried on
        * everything at once.
        */
-      gl.uniform1f(L.u_marginMax, flips ? store.get('parts.flipMargin') : DILATE + 4);
+      gl.uniform1f(L.u_marginMax,
+        flips ? store.get('parts.flipMargin') : store.get('parts.margin'));
 
       /* This part's geometry, bound before anything is drawn with it.
        *
@@ -848,6 +859,7 @@ export class Parts2D {
         gl.uniform1f(L.u_shadow, shadowStrength);
         gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
         gl.uniform1f(L.u_flip, flips ? 1 : 0);
+        gl.uniform1f(L.u_flipSlide, flips ? 0 : slide);
         gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
         gl.uniform1f(L.u_shadow, 0);
@@ -871,6 +883,7 @@ export class Parts2D {
        * except the drawing changing hands.
        */
       gl.uniform1f(L.u_flip, flips ? 1 : 0);
+      gl.uniform1f(L.u_flipSlide, flips ? 0 : slide);
       gl.uniform1f(L.u_opacity, part.name === 'eyeFar' ? farOut : 1);
       gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
 
