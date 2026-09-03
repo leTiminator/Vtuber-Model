@@ -4,6 +4,11 @@ Drop new drawings of the character here. Anything in this folder is source
 art — nothing reads it automatically yet; each view gets wired into the rig
 deliberately, because each one changes what the model can do.
 
+**Filenames do not matter on the way in.** Upload whatever your camera roll or
+image tool called them; they get identified, checked against the requirements
+below and renamed on arrival. The names in the table are what they end up as,
+not what you have to type.
+
 ## What to draw, most valuable first
 
 | File | What it is | Why it matters |
