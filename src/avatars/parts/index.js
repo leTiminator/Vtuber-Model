@@ -89,6 +89,37 @@ const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'armRight
  */
 const FLIP_AXIS = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
 
+/**
+ * The rig as it reads for a character facing the other way.
+ *
+ * Mirroring the picture is half the job. Do only that and the motion comes out
+ * backwards — turn your head right and the avatar turns left, raise your left
+ * hand and the wrong arm goes up — because every horizontal quantity in the
+ * rig is stated in the old character's frame. Read through the same mirror,
+ * they land the right way round: signs flip on anything sideways, and the
+ * paired channels swap sides, exactly as the tracker's own mirroring already
+ * does when it decides whether you get a reflection or a copy.
+ *
+ * Left alone otherwise. Nodding, blinking, breathing and the scarf have no
+ * side to them and must not be touched.
+ */
+function facedRig(rig) {
+  const { head, body, eyes, arms } = rig;
+  return {
+    ...rig,
+    head: { ...head, yaw: -head.yaw, roll: -head.roll, x: -head.x },
+    body: { ...body, leanX: -body.leanX, twist: -body.twist },
+    eyes: {
+      ...eyes,
+      gazeX: -eyes.gazeX,
+      blinkL: eyes.blinkR, blinkR: eyes.blinkL,
+      squintL: eyes.squintR, squintR: eyes.squintL,
+      wideL: eyes.wideR, wideR: eyes.wideL,
+    },
+    arms: { ...arms, left: arms.right, right: arms.left },
+  };
+}
+
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
 import { ChainField, HeadInertia } from '../warp2d/cloth.js';
@@ -558,11 +589,23 @@ export class Parts2D {
     const m = this.markers();
     gl.useProgram(this.program);
 
+    /* Facing the other way: the picture through a mirror, the tracking too.
+     *
+     * Done here rather than per part, because it is the whole character that
+     * turns round — parts, joints, cloth, shadows and all — and anything left
+     * out of it would be the one piece still facing the old way.
+     */
+    const faced = store.get('stage.faceFlip');
+    if (faced) rig = facedRig(rig);
+
     // --- framing ---------------------------------------------------------
     const frame = computeFrame(this.aspect, this.canvas.width, this.canvas.height,
       store.get('stage.zoom'), store.get('stage.offsetX'), store.get('stage.offsetY'));
-    gl.uniform2f(L.u_viewScale, frame.sx, frame.sy);
-    gl.uniform2f(L.u_viewOffset, frame.ox, frame.oy);
+    // Mirrored inside the same box, so turning the character round does not
+    // also move it: what was at the left edge of the frame ends up at the
+    // right edge of the same frame.
+    gl.uniform2f(L.u_viewScale, faced ? -frame.sx : frame.sx, frame.sy);
+    gl.uniform2f(L.u_viewOffset, faced ? frame.ox + frame.sx : frame.ox, frame.oy);
     gl.uniform1f(L.u_aspect, this.aspect);
 
     // --- head angles, with overshoot -------------------------------------
@@ -684,9 +727,11 @@ export class Parts2D {
      * fully restored before the mirror ever swaps it, or the two would fight
      * over the same few degrees.
      */
-    const span = Math.max(store.get('parts.headOnSpan'), 1e-3);
+    const hold = store.get('parts.headOnHold');
+    const fade = Math.max(store.get('parts.headOnFade'), 1e-3);
     const headOnT = this.headOn
-      ? smoothstep(clamp(1 - Math.abs(yaw) / span, 0, 1)) * clamp(store.get('parts.headOn'), 0, 1)
+      ? smoothstep(clamp(1 - (Math.abs(yaw) - hold) / fade, 0, 1))
+        * clamp(store.get('parts.headOn'), 0, 1)
       : 0;
     /* The far shard leaves before its replacement is fully there.
      *

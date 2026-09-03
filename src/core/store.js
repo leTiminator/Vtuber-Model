@@ -150,9 +150,28 @@ export const DEFAULTS = {
    * far one's place assembles it, entirely out of pixels the artist drew.
    */
   'parts.headOn': 1.0,
-  // Radians of turn over which the head-on face gives way to the drawn one.
-  // Reached before the flip, so the two never overlap.
-  'parts.headOnSpan': 0.28,
+  /* How far the head can turn before the head-on face starts giving way.
+   *
+   * Nobody streaming holds their head still. Talking is a constant ten or
+   * fifteen degrees either side of centre, and the first version of this faded
+   * the head-on face out across that entire range — so the eyes were sliding
+   * back and forth over the visor the whole time somebody was speaking, and
+   * the fade finished exactly where the flip starts, which put a drift and a
+   * snap back to back. Both were read, correctly, as the eyes coming off the
+   * face.
+   *
+   * A dead zone fixes it. Inside this the head-on face is simply held, so
+   * ordinary talking does not move the eyes at all, and what is left is a
+   * short handover well clear of the flip.
+   *
+   * Renamed from parts.headOnSpan, which meant something else — a saved value
+   * outlives a change of default, and the old number in the new meaning would
+   * put the handover on top of the flip again.
+   */
+  'parts.headOnHold': 0.14,
+  // Radians of turn the handover itself takes, once the hold is past. Short:
+  // it is a change of view, and a long one reads as the eyes wandering.
+  'parts.headOnFade': 0.07,
   /* How big the mirrored far eye is against the near one.
    *
    * Equal, if the hood were redrawn head-on. It is not — the hood stays the
@@ -160,6 +179,17 @@ export const DEFAULTS = {
    * at full size there runs off the visor and onto the rim.
    */
   'parts.headOnTwin': 0.9,
+
+  /* Face the other way.
+   *
+   * The drawing faces one way and that is the character's default, which is
+   * fine until it is not the way you want to sit. Mirroring the picture alone
+   * would leave the motion backwards — turn right and the avatar turns left —
+   * so the tracking is read through the mirror too: sides swap, and everything
+   * horizontal changes sign. The result is the same character facing the other
+   * way and still copying you, rather than a reflection of a reflection.
+   */
+  'stage.faceFlip': false,
 
   /* How much of a part's invented margin survives the flip, in pixels.
    *

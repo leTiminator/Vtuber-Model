@@ -27,6 +27,10 @@ export function buildPanel(root, ctx) {
       controls: [
         { type: 'cameras' },
         { type: 'toggle', key: 'camera.mirror', label: 'Mirror me', hint: 'The model acts like your reflection. Leave on unless it feels backwards.' },
+        { type: 'toggle', key: 'stage.faceFlip', label: 'Face the other way',
+          hint: 'Turns the whole character round, so its resting pose looks the other way. '
+            + 'The tracking turns with it, so this changes which way it faces and nothing '
+            + 'about how it follows you.' },
         { type: 'toggle', key: 'stage.showPreview', label: 'Show camera preview' },
         { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 4, step: 0.05, format: hz,
           hint: 'Lower is calmer when you hold still, but adds a little lag.' },
@@ -158,7 +162,11 @@ export function buildPanel(root, ctx) {
           hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
             + 'the eyes slide onto the middle of the head and the far one is replaced by a '
             + 'mirrored copy of the near one. Same ink, so nothing drifts in style.' },
-        { type: 'slider', key: 'parts.headOnSpan', label: '— over', min: 0.08, max: 0.6, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0, max: 0.4, step: 0.005, format: (v) => `${Math.round(v * 57)}°`,
+          hint: 'How far you can turn before the head-on face starts giving way. Talking is a '
+            + 'constant ten or fifteen degrees, so this wants to be past that or the eyes '
+            + 'drift across the visor while you speak.' },
+        { type: 'slider', key: 'parts.headOnFade', label: '— handover over', min: 0.02, max: 0.3, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
         { type: 'slider', key: 'parts.headOnTwin', label: '— far eye size', min: 0.5, max: 1.2, step: 0.01, format: x },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 

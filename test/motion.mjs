@@ -1013,16 +1013,24 @@ try {
     let worst = 0;
     let worstAt = 0;
     let prev = null;
+    let chatLo = Infinity;
+    let chatHi = -Infinity;
     for (let deg = -15; deg <= 15; deg++) {
       const edge = spread(deg * Math.PI / 180).lo;
       if (prev != null && Math.abs(edge - prev) > worst) {
         worst = Math.abs(edge - prev);
         worstAt = deg;
       }
+      // How far the eyes wander across the angles a talking head actually uses.
+      if (Math.abs(deg) <= 8) {
+        chatLo = Math.min(chatLo, edge);
+        chatHi = Math.max(chatHi, edge);
+      }
       prev = edge;
     }
     store.reset();
-    return { facing, turned, without, worst, worstAt, headMiddle };
+    return { facing, turned, without, worst, worstAt, headMiddle,
+      chat: chatHi - chatLo };
   });
 
   const offCentre = (s) => s.mid - headOn.headMiddle;
@@ -1043,6 +1051,21 @@ try {
   check('the eyes travel to the centre without a lurch',
     headOn.worst < 8,
     `worst ${headOn.worst.toFixed(1)}px in one degree at ${headOn.worstAt}°`);
+  /* And do not move at all while somebody is talking.
+   *
+   * Nobody holds their head still. Speaking is a constant ten or fifteen
+   * degrees either side of centre, and the first version of the head-on face
+   * faded out across that whole range — so the eyes slid back and forth over
+   * the visor the entire time somebody spoke, which is exactly what it looked
+   * like: eyes coming off the face. The fade also finished where the flip
+   * begins, putting a drift and a snap back to back.
+   *
+   * Measured over the band an ordinary talking head lives in, not the band
+   * where the handover is allowed to happen.
+   */
+  check('and hold still through the range an ordinary head keeps to',
+    headOn.chat < 3,
+    `${headOn.chat.toFixed(1)}px of travel between -8 and +8 degrees`);
   /* --- the flip turns the head without moving it -------------------------
    *
    * A swap changes which way the head faces. It must not also change where the
