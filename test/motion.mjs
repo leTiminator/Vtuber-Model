@@ -1129,8 +1129,18 @@ try {
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
     store.reset();
+    /* The glow off, or there is nothing to compare.
+     *
+     * It breathes off the clock, which never stops, so its halo spills onto
+     * the visor at a slightly different strength every frame — and the halo's
+     * outer edge sits right on the alpha this counts from. Four hundred pixels
+     * of a quarter-million moved between two reads that were meant to be
+     * identical, which read as the trim doing something when the uniform
+     * driving it was provably the same in both.
+     */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
-      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0, 'stage.zoom': 1.5 });
+      'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
+      'warp.eyeGlow': 0, 'stage.zoom': 1.5 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const gl = a.gl;
