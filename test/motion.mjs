@@ -957,24 +957,19 @@ try {
      * Turning slides the whole head across the shoulders, so the eyes move
      * across the screen whether or not they have moved on the face — and the
      * first version of the check below read that as the eyes drifting and
-     * failed on the model doing exactly what it should. What was reported, and
-     * what matters, is the eyes moving relative to the face they are painted
-     * on. The head's own box carries its padding and so is not the head's true
-     * middle, but the bias is the same at every angle, and every question here
-     * is about change.
+     * failed on the model doing exactly what it should. What matters, and what
+     * was reported, is the eyes moving relative to the face they are drawn on.
+     *
+     * Taken from the number the renderer turns, not from the pixels. Reading
+     * the head's box back off the screen means reading it clipped whenever the
+     * framing crops the head — which this check's framing does — so the
+     * reference under-reported the head's own travel by half a pixel a degree
+     * and left eight pixels of phantom drift across the talking range. This is
+     * the one line of solveJoints that moves the head sideways at rest, and it
+     * cannot clip.
      */
-    const headMid = (yaw, settle = 40) => {
-      const d = shot(yaw, 0, ['head'], settle);
-      let lo = w;
-      let hi = -1;
-      for (let k = 0, p = 0; k < d.length; k += 4, p++) {
-        if (d[k + 3] <= 200) continue;
-        const x = p % w;
-        if (x < lo) lo = x;
-        if (x > hi) hi = x;
-      }
-      return (lo + hi) / 2;
-    };
+    const headMid = (yaw) =>
+      Math.max(-1.2, Math.min(1.2, yaw)) * 0.05 * store.get('warp.turn') * frame.sx * w;
 
     /* The eyes, isolated by shutting them.
      *
@@ -1048,30 +1043,37 @@ try {
      * second, and asks how far the eyes move on the face between one frame and
      * the next. That is the thing an eye can see.
      */
-    const turn = (from, to, frames) => {
+    /* Two renders a step, so a step is two frames of the model's own time.
+     *
+     * The handover is a duration, so how much of it lands between two samples
+     * depends on how much time those samples are apart — and a step that
+     * quietly advanced the model three frames while being reported as one
+     * inflated the worst frame threefold. Reported per frame at sixty, which
+     * is the rate an eye is actually watching at.
+     */
+    const FRAMES_PER_STEP = 2;
+    const turn = (fromDeg, toDeg, degPerSec) => {
+      const dtStep = FRAMES_PER_STEP / 60;
+      const steps = Math.max(1,
+        Math.ceil(Math.abs(toDeg - fromDeg) / Math.max(degPerSec * dtStep, 1e-6)));
       let worstStep = 0;
-      let travel = 0;
       let lo = Infinity;
       let hi = -Infinity;
       let prev = null;
-      for (let f = 0; f <= frames; f++) {
-        const yaw = (from + (to - from) * (f / frames)) * Math.PI / 180;
-        // One frame per step: the model is being driven, not settled.
-        const edge = spread(yaw, 1).lo - headMid(yaw, 1);
-        if (prev != null) {
-          worstStep = Math.max(worstStep, Math.abs(edge - prev));
-          travel += Math.abs(edge - prev);
-        }
+      for (let f = 0; f <= steps; f++) {
+        const yaw = (fromDeg + (toDeg - fromDeg) * (f / steps)) * Math.PI / 180;
+        const edge = spread(yaw, 1).lo - headMid(yaw);
+        if (prev != null) worstStep = Math.max(worstStep, Math.abs(edge - prev));
         lo = Math.min(lo, edge);
         hi = Math.max(hi, edge);
         prev = edge;
       }
-      return { worstStep, travel, span: hi - lo };
+      return { worstStep: worstStep / FRAMES_PER_STEP, span: hi - lo };
     };
 
-    // A committed turn, at a speed a person turns at: nought to twenty-five
-    // degrees in a third of a second.
-    const swing = turn(0, 25, 20);
+    // A committed turn, at a speed a person turns at: seventy-five degrees a
+    // second is nought to twenty-five in a third of one.
+    const swing = turn(0, 25, 75);
     /* And an ordinary talking head, wandering inside its own range.
      *
      * Brought back to centre first, and started from there. Which face is
@@ -1080,10 +1082,10 @@ try {
      * — which is the latch working, not the eyes drifting, and reading it as
      * drift is a mistake about the test rather than about the model.
      */
-    turn(25, 0, 20);
-    turn(0, 0, 30);
-    const chatter = turn(0, 8, 12);
-    const back = turn(8, -8, 24);
+    turn(25, 0, 75);
+    turn(0, 0, 75);
+    const chatter = turn(0, 8, 40);
+    const back = turn(8, -8, 40);
     const worst = swing.worstStep;
     const worstAt = 0;
     const chatLo = 0;
@@ -1110,7 +1112,7 @@ try {
     `${headOn.facing.width}px across facing, ${headOn.turned.width}px turned`);
   check('the eyes change over without a jump when the head turns',
     headOn.worst < 10,
-    `worst ${headOn.worst.toFixed(1)}px in one frame of a 25° turn`);
+    `worst ${headOn.worst.toFixed(1)}px in a frame of a 25° turn`);
   /* And do not move at all while somebody is talking.
    *
    * Nobody holds their head still. Speaking is a constant ten or fifteen
