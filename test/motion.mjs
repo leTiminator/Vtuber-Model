@@ -1140,6 +1140,19 @@ try {
    * Crept through one degree at a time, because that is the only way to see a
    * jump that happens between two adjacent frames.
    */
+  /* Five pixels, not four, because the swap moved on purpose.
+   *
+   * It happens at twenty-seven degrees now rather than eighteen, to leave the
+   * head-on handover somewhere of its own — and by then the head has slid
+   * further across the shoulders, so the reflection carries a little more
+   * asymmetry. Measured: four point four pixels where it used to be three
+   * point seven.
+   *
+   * Both are the same thing in proportion. The head is three hundred and
+   * fifty-five pixels wide in this render, so that is one per cent of it,
+   * against the thirteen per cent this check was written for. It is here to
+   * catch the face lurching mid-turn, and it still does.
+   */
   const lurch = await page.evaluate(async () => {
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
@@ -1193,7 +1206,7 @@ try {
   });
 
   check('the head flips without jumping across the screen',
-    lurch.flipAt !== null && lurch.worst < 4,
+    lurch.flipAt !== null && lurch.worst < 5,
     `worst ${lurch.worst.toFixed(1)}px in one degree at ${lurch.worstAt}°`
       + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`));
 
