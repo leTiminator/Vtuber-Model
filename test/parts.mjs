@@ -78,12 +78,15 @@ try {
       // Where the part sits, as a fraction of the frame, ignoring the padding.
       cx: (p.x + p.inset + (p.w - 2 * p.inset) / 2) / width,
       cy: (p.y + p.inset + (p.h - 2 * p.inset) / 2) / height,
+      hx: (p.w - 2 * p.inset) / 2 / width,
+      hy: (p.h - 2 * p.inset) / 2 / height,
       px: p.pixels,
     });
     return {
       wrong, opaque, total: width * height,
       names: parts.map((p) => p.name),
-      head: box(byName.head), eyes: box(byName.eyes), tufts: box(byName.tufts),
+      head: box(byName.head), tufts: box(byName.tufts),
+      eyeNear: box(byName.eyeNear), eyeFar: box(byName.eyeFar),
       armLeft: box(byName.armLeft), armRight: box(byName.armRight),
       body: box(byName.body), tails: box(byName.tails), wrap: box(byName.wrap),
     };
@@ -98,16 +101,41 @@ try {
    * a part swapping identity with another — the failure the diff above cannot
    * see — without pinning the cut to exact pixels.
    */
-  for (const name of ['tails', 'wrap', 'head', 'eyes', 'tufts', 'body', 'armLeft', 'armRight']) {
+  for (const name of ['tails', 'wrap', 'head', 'eyeNear', 'eyeFar', 'tufts', 'body',
+    'armLeft', 'armRight']) {
     check(`${name} was cut`, result.names.includes(name), result.names.join(', '));
   }
 
-  const { head, eyes, tufts, armLeft, armRight, body } = result;
+  const { head, eyeNear, eyeFar, tufts, armLeft, armRight, body } = result;
   check('the head is the helmet, not just the visor', head && head.px > 12000,
     `${head?.px}px`);
-  check('the eyes sit inside the head',
-    eyes && Math.hypot(eyes.cx - head.cx, eyes.cy - head.cy) < 0.12,
-    `eyes ${eyes?.cx.toFixed(2)},${eyes?.cy.toFixed(2)} head ${head?.cx.toFixed(2)},${head?.cy.toFixed(2)}`);
+  /* Inside the head's own box, not within a fixed radius of its centre.
+   *
+   * A radius was fine while the eyes were one part, because the pair averages
+   * out near the middle of the face. Split, the far shard of a three-quarter
+   * view sits out by the edge of the hood — that is what makes it the far one
+   * — and any radius loose enough to admit it would also admit a shard that
+   * had escaped onto the shoulder. The head's own extent is the honest bound.
+   */
+  for (const [name, eye] of [['eyeNear', eyeNear], ['eyeFar', eyeFar]]) {
+    check(`${name} sits inside the head`,
+      eye && Math.abs(eye.cx - head.cx) < head.hx && Math.abs(eye.cy - head.cy) < head.hy,
+      `${name} ${eye?.cx.toFixed(2)},${eye?.cy.toFixed(2)} `
+        + `head ${head?.cx.toFixed(2)},${head?.cy.toFixed(2)} `
+        + `±${head?.hx.toFixed(2)},${head?.hy.toFixed(2)}`);
+  }
+
+  /* The split is only worth having if it split the right thing: two shards,
+   * apart from each other, with the near one the bigger. A cut that put both
+   * shards in one part and left the other empty would still pass every check
+   * above, because both centroids would land on the head.
+   */
+  check('the eyes were cut apart, not halved',
+    eyeNear && eyeFar && Math.abs(eyeNear.cx - eyeFar.cx) > 0.02,
+    `near ${eyeNear?.cx.toFixed(3)} far ${eyeFar?.cx.toFixed(3)}`);
+  check('the near eye is the bigger of the two',
+    eyeNear && eyeFar && eyeNear.px > eyeFar.px,
+    `near ${eyeNear?.px}px far ${eyeFar?.px}px`);
   check('the tufts sit above and behind the head',
     tufts && tufts.cy < head.cy && tufts.cx < head.cx,
     `tufts ${tufts?.cx.toFixed(2)},${tufts?.cy.toFixed(2)}`);

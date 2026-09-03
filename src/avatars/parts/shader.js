@@ -52,6 +52,24 @@ uniform float u_aspect;    // image width / height
 uniform float u_flip;      // 1 mirrors this part about u_flipAxis
 uniform float u_flipAxis;  // in image space, 0..1 across the artwork
 
+/* Where this drawing of the part goes, before anything else moves it.
+ *
+ * Scale and offset per axis — (1, 0, 1, 0) leaves the part exactly where it
+ * was cut from, which is what every part but the eyes uses.
+ *
+ * The eyes need it because the artwork is one three-quarter view and the pose
+ * missing from it is the one people sit in: looking straight at the camera.
+ * There is no head-on drawing to switch to, but there is a head-on face
+ * hiding inside this one — the near eye is drawn almost square-on already,
+ * so sliding the pair onto the head's centre and standing a mirrored copy of
+ * that eye opposite it builds the missing view out of the artist's own ink.
+ * Nothing is invented, nothing is stretched, and the line weight and colour
+ * match because they are the same pixels.
+ *
+ * A negative x scale is what makes that copy a mirror image.
+ */
+uniform vec4 u_place;      // x scale, x offset, y scale, y offset
+
 uniform float u_warp;      // 0 disables the whole block
 uniform vec2 u_headCenter;
 uniform float u_cylR;
@@ -83,7 +101,7 @@ void main() {
    * scarf was the only part breaking on a phone that matched this machine in
    * every other respect.
    */
-  vec2 p = a_pos;
+  vec2 p = vec2(a_pos.x * u_place.x + u_place.y, a_pos.y * u_place.z + u_place.w);
   if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
 
   /* The head's turn, taken per vertex rather than per part.
@@ -163,6 +181,26 @@ uniform float u_glow;
 uniform float u_glowPulse;
 uniform vec2 u_texel;     // one texel of this part, for the glow's blur
 
+/* How much invented margin to draw, in pixels of this part's texture.
+ *
+ * Every part is grown outward past its own art so that when the part covering
+ * it moves, something is revealed rather than a hole. That paint is a guess,
+ * and it is only ever right while it stays under its neighbour. The head's
+ * mirror swap takes it forty pixels clear of everything behind it, and what
+ * had been hidden shows up as a dark haze off the hood and the raised fist —
+ * a guess about a seam, drawn against the empty background.
+ *
+ * u_margin says how far from real art each pixel is, so the guess can be cut
+ * back to the few pixels that are still doing their job.
+ */
+uniform sampler2D u_margin;
+uniform float u_marginMax;
+
+float marginCut(vec2 uv) {
+  float d = texture(u_margin, uv).r * 255.0;
+  return 1.0 - smoothstep(u_marginMax - 1.5, u_marginMax + 1.5, d);
+}
+
 vec2 toEye(vec2 uv, vec4 e) {
   vec2 d = uv - e.xy;
   float c = cos(-u_eyeAngle);
@@ -222,7 +260,7 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
  */
 float alphaAt(vec2 uv) {
   vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
-  return texture(u_tex, uv).a * inside.x * inside.y;
+  return texture(u_tex, uv).a * marginCut(uv) * inside.x * inside.y;
 }
 
 /**
@@ -310,6 +348,7 @@ void main() {
   }
 
   vec4 c = texture(u_tex, uv);
+  c.a *= marginCut(uv);
 
   if (u_eyesEnabled > 0.5) {
     c = lidded(v_uv, u_eyeL, u_blink.x, u_squint.x, c);

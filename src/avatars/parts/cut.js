@@ -38,7 +38,17 @@ export const PART_SPECS = [
   // eye above every contact shadow. It is the one thing on the model that
   // emits light rather than receiving it, and the scarf's shadow reaching
   // across the visor greyed it out.
-  { name: 'eyes', parent: 'head', joint: 'eyes', z: 7 },
+  /* One shard each, not one layer holding both.
+   *
+   * They were a single piece because a single piece is all a lid needs. But
+   * the difference between this drawing's three-quarter face and a head-on one
+   * is almost entirely where the two shards sit and how big the far one is —
+   * so being able to move them independently is what lets the model turn
+   * toward the camera using nothing but its own pixels. It also makes a wink
+   * and a per-eye glance possible, which one shared quad could never do.
+   */
+  { name: 'eyeNear', parent: 'head', joint: 'eyes', z: 7 },
+  { name: 'eyeFar', parent: 'head', joint: 'eyes', z: 8 },
 ];
 
 /**
@@ -77,7 +87,7 @@ export function cutParts(image, markers) {
 
 const LABEL = {
   none: 0, tails: 1, wrap: 2, head: 3, eyes: 4, tufts: 5, body: 6,
-  armLeft: 7, armRight: 8,
+  armLeft: 7, armRight: 8, eyeNear: 9, eyeFar: 10,
 };
 
 /**
@@ -208,6 +218,7 @@ function labelPixels(src, m, w, h, sockets) {
    * a marker that was derived from the other eye in the first place.
    */
   const eyeMask = new Uint8Array(n);
+  const shardCentres = [];
   {
     const BRIGHT = 0.58;
     const bright = new Uint8Array(n);
@@ -238,8 +249,20 @@ function labelPixels(src, m, w, h, sockets) {
       }
       shards.push(pixels);
     }
+    // Biggest first: on a three-quarter face the near shard is several times
+    // the far one, which is exactly the asymmetry that reads as a turned head.
     shards.sort((p, q) => q.length - p.length);
     for (const pixels of shards.slice(0, 2)) for (const i of pixels) eyeMask[i] = 1;
+    // Centres, to split the grown mask between them further down. The mask is
+    // dilated to take the ink around each shard with it, and that margin has
+    // to go to the shard it belongs to rather than all to one of them.
+    const centre = (pixels) => {
+      let sx = 0, sy = 0;
+      for (const i of pixels) { const x = i % w; sx += x; sy += (i - x) / w; }
+      return [sx / pixels.length, sy / pixels.length];
+    };
+    if (shards[0]) shardCentres.push(centre(shards[0]));
+    if (shards[1]) shardCentres.push(centre(shards[1]));
   }
   fillEnclosed(eyeMask, w, h);
 
@@ -395,7 +418,19 @@ function labelPixels(src, m, w, h, sockets) {
   for (let i = 0; i < n; i++) {
     if (!opaque(i)) continue;
 
-    if (eyeMask[i]) { out[i] = LABEL.eyes; continue; }
+    if (eyeMask[i]) {
+      // Nearest shard wins. The mask covers both shards and the ink around
+      // them, and a pixel belongs to whichever eye it is part of.
+      out[i] = LABEL.eyeNear;
+      if (shardCentres.length === 2) {
+        const x = i % w;
+        const y = (i - x) / w;
+        const [nx, ny] = shardCentres[0];
+        const [fx, fy] = shardCentres[1];
+        if ((x - fx) ** 2 + (y - fy) ** 2 < (x - nx) ** 2 + (y - ny) ** 2) out[i] = LABEL.eyeFar;
+      }
+      continue;
+    }
     if (hsl(i).lum < OUTLINE_LUM) continue; // line art: decided in pass 2
 
     if (headMask[i]) {
@@ -781,7 +816,7 @@ function pivotFor(name, labels, m, w, h) {
 
 /* ---------------------------------------------------------------- extract */
 
-const DILATE = 28; // px of painted margin under neighbouring parts
+export const DILATE = 28; // px of painted margin under neighbouring parts
 
 /**
  * Pull one part out as its own image, grown outward so the parts that used to
@@ -931,8 +966,24 @@ function extract(src, labels, name, w, h, zByLabel) {
   canvas.height = ph;
   canvas.getContext('2d').putImageData(out, 0, 0);
 
+  /* How far each pixel is from real art, kept rather than thrown away.
+   *
+   * The margin is invented paint, and the renderer has no way to tell it from
+   * the drawing once both are in the same texture — alpha cannot say, because
+   * an anti-aliased edge of real art is translucent too. Which means the only
+   * choice available was to draw all of it or none of it, and drawing all of
+   * it is what puts a soft dark slab beside the head when the head flips
+   * across and stops covering its neighbours.
+   *
+   * One byte a pixel says how invented each one is, and then the renderer can
+   * keep the few pixels that hide a seam and drop the rest.
+   */
+  const margin = new Uint8Array(pw * ph);
+  for (let i = 0; i < margin.length; i++) margin[i] = dist[i] > 0 ? dist[i] : 0;
+
   return {
     canvas,
+    margin,
     x: x0, y: y0, w: pw, h: ph,
     // Where the visible art sits inside the padded box, for anchoring.
     inset: DILATE,

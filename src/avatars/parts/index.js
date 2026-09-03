@@ -11,11 +11,22 @@
  * as the artist drew it. Any drift there means a transform is wrong, which is
  * why the reassembly diff is the regression guard for this file.
  */
-import { clamp, damp, lerp, makeSpring, spring } from '../../core/math.js';
+import { clamp, damp, lerp, makeSpring, smoothstep, spring } from '../../core/math.js';
 import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
-import { cutParts } from './cut.js';
+import { cutParts, DILATE } from './cut.js';
+
+/**
+ * The two eye shards, each its own part.
+ *
+ * They were one part with one quad until now, which meant the near eye and the
+ * far eye could only ever move together — and on a three-quarter face they are
+ * not the same size, not the same distance from the centre, and do not travel
+ * the same way as the head comes round. Cut apart they can, and a wink stops
+ * being a shape the renderer has no way to draw.
+ */
+const EYES = new Set(['eyeNear', 'eyeFar']);
 
 /**
  * The parts that take the head's cylindrical bend. They have to share one
@@ -27,7 +38,8 @@ import { cutParts } from './cut.js';
  * hanging off the chin and the other was in open space beside the glove. They
  * are not a separate object from the face; they are the face.
  */
-const BENDS_WITH_HEAD = new Set(['head', 'tufts', 'wrap', 'tails', 'eyes', 'armLeft', 'armRight']);
+const BENDS_WITH_HEAD = new Set(
+  ['head', 'tufts', 'wrap', 'tails', 'eyeNear', 'eyeFar', 'armLeft', 'armRight']);
 
 /**
  * Where the head's turn stops being the head's, as multiples of the head's own
@@ -52,7 +64,7 @@ const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']
  * it. The hair is part of the head; the neck wrap is cloth that continues into
  * the scarf, and mirroring half a scarf would tear it off the shoulders.
  */
-const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyes']);
+const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'armRight']);
 
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
@@ -67,8 +79,8 @@ const UNIFORMS = [
   'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
-  'u_shadow', 'u_shadowOffset',
-  'u_flip', 'u_flipAxis',
+  'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax',
+  'u_flip', 'u_flipAxis', 'u_place',
   'u_shell', 'u_depth',
 ];
 
@@ -205,6 +217,7 @@ export class Parts2D {
      */
     for (const old of this.owned ?? this.parts) {
       gl.deleteTexture(old.texture);
+      gl.deleteTexture(old.marginTex);
       gl.deleteVertexArray(old.vao);
     }
 
@@ -259,6 +272,8 @@ export class Parts2D {
     }
     this.headCylR = headCylR || 1;
 
+    this.headOn = this.solveHeadOn(this.parts, width, height);
+
     this.owned = this.parts;
     this.ready = this.parts.length > 0;
     this.rebuild = false;
@@ -273,7 +288,7 @@ export class Parts2D {
    * agree at the seam no matter where the cut fell.
    */
   followAt(name, px, py) {
-    if (name === 'head' || name === 'tufts' || name === 'eyes') return 1;
+    if (name === 'head' || name === 'tufts' || EYES.has(name)) return 1;
     if (name === 'body') return 0;
     const h = this.headSpan;
     const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
@@ -283,6 +298,22 @@ export class Parts2D {
 
   upload(part, width, height, m, sockets) {
     const gl = this.gl;
+
+    /* The distance field beside the colour, so the invented margin can be cut
+     * back per draw. One byte a pixel, nearest-sampled — it is a measurement,
+     * not a picture, and interpolating it across the boundary between two
+     * parts would blur the very thing it is there to tell apart.
+     */
+    const marginTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, marginTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, part.w, part.h, 0, gl.RED,
+      gl.UNSIGNED_BYTE, part.margin ?? new Uint8Array(part.w * part.h));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
 
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -383,14 +414,94 @@ export class Parts2D {
 
     return {
       ...part,
-      texture, vao, indexCount: idx.length, skinned, cylR,
+      texture, marginTex, vao, indexCount: idx.length, skinned, cylR,
       // Skinning happens on the CPU — see skinCloth. The bind stays here
       // because that is where it is now used.
       posBuffer,
       binds: skinned ? new Float32Array(bindData) : null,
       live: skinned ? new Float32Array(pos) : null,
-      eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
-      eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
+      ...this.socketOf(part, sockets, width, height, fromBox, fromMarker, m),
+    };
+  }
+
+  /**
+   * Which socket belongs to a part, and where the other lid goes.
+   *
+   * Each eye is now its own part, so each carries one lid. Matching is by
+   * position rather than by order: both the cut and the socket measurement
+   * sort their shards biggest-first, but they sort at different stages — the
+   * cut before its mask is filled, the sockets after — and two shards close in
+   * size could come back swapped. Asking which socket lands inside this part's
+   * own box cannot be wrong.
+   *
+   * The unused lid is parked far outside the quad, where `lidded` returns
+   * early. Pointing it at the same socket instead would apply the sweep twice
+   * and square its soft edge.
+   */
+  socketOf(part, sockets, width, height, fromBox, fromMarker, m) {
+    const AWAY = [-9, -9, 1, 1];
+    if (!EYES.has(part.name)) {
+      return {
+        eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
+        eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
+      };
+    }
+    const cx = part.x + part.w / 2;
+    const cy = part.y + part.h / 2;
+    let best = null;
+    let bestD = Infinity;
+    for (const b of sockets ?? []) {
+      const d = Math.hypot(b.cx * width - cx, b.cy * height - cy);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    const own = best ? fromBox(best)
+      : fromMarker(part.name === 'eyeNear' ? m.eyeL : m.eyeR);
+    // Kept in image space too: the head-on view is assembled from where these
+    // two shards sit relative to each other and to the head.
+    return { eyeL: own, eyeR: AWAY, socket: best ?? null };
+  }
+
+  /**
+   * Where the eyes go when the head comes round to face the camera.
+   *
+   * Everything here is measured off the two shards the cut found and the head
+   * cutout's own centre of mass. Nothing is a number typed in for this one
+   * drawing, so a different character with two eye shards gets a head-on view
+   * out of the same code.
+   *
+   * The rules, and why each one:
+   *
+   * - **Centred on the head.** What reads as facing you is the eyes sitting in
+   *   the middle of the head, not their spacing. In the artwork the pair sits
+   *   eleven per cent of a head-width off to one side; head-on it sits on the
+   *   centre line.
+   * - **The drawn spacing, kept.** Two points on a turned head separate as
+   *   `2R sin(theta) cos(yaw)`, so head-on they should be about a fifth wider
+   *   than drawn — but that is only true of a head-on hood, and the hood here
+   *   stays the three-quarter cutout. Spread to the true head-on spacing on a
+   *   foreshortened visor and the far eye climbs over the rim; rendered and
+   *   looked at, that is exactly what it did.
+   * - **The far eye is the near one, mirrored.** The far shard is thirteen
+   *   pixels of sliver at the edge of the visor. Stretched five times to fill
+   *   a socket it would be a smear. The near shard is a whole crescent that
+   *   solves to seven degrees off square-on, so its mirror image is the far
+   *   eye, in the artist's own line.
+   */
+  solveHeadOn(parts, width, height) {
+    const near = parts.find((p) => p.name === 'eyeNear')?.socket;
+    const far = parts.find((p) => p.name === 'eyeFar')?.socket;
+    if (!near || !far || !this.headSpan) return null;
+    const half = (far.cx - near.cx) / 2;
+    return {
+      // Where each eye ends up, straddling the head's own centre.
+      nearX: this.headSpan.cx - half,
+      farX: this.headSpan.cx + half,
+      farY: near.cy,
+      near, far,
+      // What the far shard is, as a fraction of the near one, so the mirrored
+      // copy can start out sitting exactly on it and grow into its place.
+      startX: Math.max(far.hx / Math.max(near.hx, 1e-6), 1e-3),
+      startY: Math.max(far.hy / Math.max(near.hy, 1e-6), 1e-3),
     };
   }
 
@@ -538,6 +649,28 @@ export class Parts2D {
     this.mirrored = this.mirrored ? yaw < -start * 0.55 : yaw < -start;
     const mirror = this.mirrored ? store.get('parts.flipTurn') : 0;
 
+    /* How far round to the camera the head has come.
+     *
+     * Off the size of the turn rather than its direction, so it is the same
+     * coming back from either side, and clear of the flip: the drawn view is
+     * fully restored before the mirror ever swaps it, or the two would fight
+     * over the same few degrees.
+     */
+    const span = Math.max(store.get('parts.headOnSpan'), 1e-3);
+    const headOnT = this.headOn
+      ? smoothstep(clamp(1 - Math.abs(yaw) / span, 0, 1)) * clamp(store.get('parts.headOn'), 0, 1)
+      : 0;
+    /* The far shard leaves before its replacement is fully there.
+     *
+     * Two copies of hard-edged line art at half opacity read as two, which is
+     * the fault the head's own cross-fade was replaced for. They get away with
+     * it here because they overlap: the mirrored copy starts out sitting on
+     * the sliver at the sliver's own size and grows out of it, so through the
+     * hand-over there is one shape in one place, not two side by side.
+     */
+    const twinIn = smoothstep(clamp((headOnT - 0.10) / 0.45, 0, 1));
+    const farOut = 1 - smoothstep(clamp((headOnT - 0.06) / 0.36, 0, 1));
+
     const shadowStrength = store.get('parts.contactShadow');
 
     /* Depth is measured against the head's own radius, so the shell is as
@@ -600,18 +733,35 @@ export class Parts2D {
         gl.uniform1f(L.u_depth, shellDepth);
       }
 
-      const carriesEyes = part.name === 'eyes';
+      /* The near eye slides onto the head's centre line as the face comes
+       * round; every other part stays exactly where it was cut from.
+       */
+      const slide = this.headOn && part.name === 'eyeNear'
+        ? headOnT * (this.headOn.nearX - this.headOn.near.cx) : 0;
+      gl.uniform4f(L.u_place, 1, slide, 1, 0);
+
+      const carriesEyes = EYES.has(part.name);
       gl.uniform1f(L.u_eyesEnabled, carriesEyes && store.get('warp.eyesEnabled') ? 1 : 0);
       if (carriesEyes) {
+        /* One part, one eye.
+         *
+         * The near shard takes the left channel and the far shard the right,
+         * the same pairing the single eye layer used. Both lids are still
+         * declared, because the shader has two; the second is parked outside
+         * the quad by `socketOf` and its blink is zero, so it does nothing.
+         */
+        const far = part.name === 'eyeFar';
         gl.uniform4fv(L.u_eyeL, part.eyeL);
         gl.uniform4fv(L.u_eyeR, part.eyeR);
         gl.uniform1f(L.u_eyeAngle, m.eyeAngle);
         // No lid colour: the lid erases this layer and the visor behind shows
         // through, so there is nothing to match a sampled tone against.
-        gl.uniform2f(L.u_blink, rig.eyes.blinkL, rig.eyes.blinkR);
+        gl.uniform2f(L.u_blink, far ? rig.eyes.blinkR : rig.eyes.blinkL, 0);
         const sq = store.get('warp.squint');
-        gl.uniform2f(L.u_squint, clamp(rig.eyes.squintL * sq, 0, 1), clamp(rig.eyes.squintR * sq, 0, 1));
-        gl.uniform2f(L.u_wide, rig.eyes.wideL, rig.eyes.wideR);
+        const squint = clamp((far ? rig.eyes.squintR : rig.eyes.squintL) * sq, 0, 1);
+        gl.uniform2f(L.u_squint, squint, 0);
+        const wide = far ? rig.eyes.wideR : rig.eyes.wideL;
+        gl.uniform2f(L.u_wide, wide, wide);
         const gz = store.get('eyes.gazeGain');
         gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * gz, -1, 1), clamp(rig.eyes.gazeY * gz, -1, 1));
         gl.uniform1f(L.u_glow, store.get('warp.eyeGlow'));
@@ -625,6 +775,38 @@ export class Parts2D {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, part.texture);
       gl.uniform1i(L.u_tex, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, part.marginTex);
+      gl.uniform1i(L.u_margin, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      /* How much of the invented margin this part gets to draw.
+       *
+       * All of it where the parts sit as they were cut and move a little
+       * against each other, which is the case it was built for. Almost none of
+       * it for a part that has just swapped for its mirror image: that takes
+       * it clear across everything behind it, so nothing the margin was
+       * painted to hide is where it was, and every pixel of the guess lands
+       * somewhere wrong — which is the dark haze that came off the hood and
+       * the hair the moment the head turned.
+       *
+       * Only the parts that moved. The raised fist stays where it was, and its
+       * margin is the sleeve: the drawing tucks the arm behind the hood and
+       * never draws it, so the margin is the only thing joining the glove to
+       * the character. Cut that and the flip leaves a fist floating in space —
+       * which is precisely what it did, the first time this was tried on
+       * everything at once.
+       */
+      gl.uniform1f(L.u_marginMax, flips ? store.get('parts.flipMargin') : DILATE + 4);
+
+      /* This part's geometry, bound before anything is drawn with it.
+       *
+       * The shadow pass below used to run before this line, so it drew with
+       * whatever the previous part had left bound — its shape, in its place,
+       * wearing this part's texture — and for the first part of the frame
+       * with nothing bound at all. Every layer's contact shadow was the wrong
+       * shadow, which is why the depth it was added for never quite read.
+       */
+      gl.bindVertexArray(part.vao);
 
       /* Contact shadow, laid down before the part itself.
        *
@@ -648,7 +830,6 @@ export class Parts2D {
         gl.uniform1f(L.u_shadow, 0);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       }
-      gl.bindVertexArray(part.vao);
 
       /* Turning past a threshold swaps the head for its mirror image.
        *
@@ -667,8 +848,38 @@ export class Parts2D {
        * except the drawing changing hands.
        */
       gl.uniform1f(L.u_flip, flips ? 1 : 0);
-      gl.uniform1f(L.u_opacity, 1);
+      gl.uniform1f(L.u_opacity, part.name === 'eyeFar' ? farOut : 1);
       gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      /* The far eye, built from the near one.
+       *
+       * Same buffers, same texture, drawn a second time through a mirrored
+       * transform — so it costs one more draw call and not one more part, and
+       * it cannot drift out of step with the eye it is a copy of.
+       *
+       * It starts life at the far shard's own position and size and grows into
+       * the socket as the head comes round, which is what the far eye actually
+       * does: it opens out of the rim rather than appearing beside it.
+       */
+      if (part.name === 'eyeNear' && this.headOn && twinIn > 0.001) {
+        const g = this.headOn;
+        const t = headOnT;
+        const sx = lerp(g.startX, store.get('parts.headOnTwin'), t);
+        const sy = lerp(g.startY, store.get('parts.headOnTwin'), t);
+        const cx = lerp(g.far.cx, g.farX, t);
+        const cy = lerp(g.far.cy, g.farY, t);
+        // Mirror about the shard's own centre, then land that centre on cx.
+        gl.uniform4f(L.u_place, -sx, cx + sx * g.near.cx, sy, cy - sy * g.near.cy);
+        gl.uniform1f(L.u_opacity, twinIn);
+        // Its lid is the near eye's socket in the near eye's texture, driven
+        // by the far eye's blink. Mirrored, so the lid's slant mirrors too.
+        gl.uniform2f(L.u_blink, rig.eyes.blinkR, 0);
+        gl.uniform1f(L.u_eyeAngle, -m.eyeAngle);
+        const sq = store.get('warp.squint');
+        gl.uniform2f(L.u_squint, clamp(rig.eyes.squintR * sq, 0, 1), 0);
+        gl.uniform2f(L.u_wide, rig.eyes.wideR, rig.eyes.wideR);
+        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
     }
     gl.bindVertexArray(null);
   }

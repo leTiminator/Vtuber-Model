@@ -131,7 +131,7 @@ try {
   });
   check('a clean profile mounts the parts model', boot.mounted === 'parts2d' &&
     boot.setting === 'parts2d', `setting ${boot.setting}, mounted ${boot.mounted}`);
-  check('it boots with the bundled artwork already cut', boot.hasImage && boot.parts.length === 8,
+  check('it boots with the bundled artwork already cut', boot.hasImage && boot.parts.length === 9,
     boot.parts.join(', '));
 
   /* --- the good path was taken -------------------------------------------
@@ -145,7 +145,7 @@ try {
     const t = performance.now();
     const { sockets, parts } = cutParts(a.image, a.markers());
     const ms = performance.now() - t;
-    const eyes = a.parts.find((p) => p.name === 'eyes');
+    const eyes = a.parts.find((p) => p.name === 'eyeNear');
     const marker = a.markers();
     return {
       ms: Math.round(ms),
@@ -181,10 +181,20 @@ try {
     const saved = {
       glow: store.get('warp.eyeGlow'), wind: store.get('warp.wind'),
       breath: store.get('body.breathAmount'), sway: store.get('body.swayAmount'),
+      headOn: store.get('parts.headOn'),
     };
+    /* And with the head-on face off.
+     *
+     * At rest the model now deliberately does not match the drawing: the eyes
+     * are moved onto the middle of the head, because rest is where somebody
+     * sits looking at their camera. That is the feature, not a regression, and
+     * leaving it on here would spend this check's whole budget on it and leave
+     * nothing to catch an actual drift.
+     */
     store.patch({
       'stage.zoom': 1, 'stage.offsetX': 0, 'stage.offsetY': 0,
       'warp.eyeGlow': 0, 'warp.wind': 0, 'body.breathAmount': 0, 'body.swayAmount': 0,
+      'parts.headOn': 0,
     });
     window.__t.pose(a, emptyRig, {}, 120);
     const shot = window.__t.read(a);
@@ -214,10 +224,11 @@ try {
     store.patch({
       'warp.eyeGlow': saved.glow, 'warp.wind': saved.wind,
       'body.breathAmount': saved.breath, 'body.swayAmount': saved.sway,
+      'parts.headOn': saved.headOn,
     });
     return { pct: (100 * wrong) / Math.max(solid, 1), solid, wrong };
   });
-  check('the rendered rest pose matches the artwork', rest.pct < 4,
+  check('the rendered rest pose matches the artwork', rest.pct < 3.2,
     `${rest.wrong} of ${rest.solid} differ (${rest.pct.toFixed(2)}%)`);
 
   /* --- invariants across the whole range of motion -----------------------
@@ -660,7 +671,7 @@ try {
      */
     const all = a.parts;
     const centreY = () => {
-      a.parts = all.filter((p) => ['head', 'eyes', 'tufts'].includes(p.name));
+      a.parts = all.filter((p) => ['head', 'eyeNear', 'eyeFar', 'tufts'].includes(p.name));
       a.render(rig.state, 1 / 60);
       const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
       const d = new Uint8Array(w * h * 4);
@@ -772,7 +783,7 @@ try {
     const out = [];
     for (const [label, yaw] of [['facing as drawn', 0.70], ['mirrored', -0.70]]) {
       const head = centroid(draw(['head'], yaw));
-      const eyes = centroid(draw(['eyes'], yaw));
+      const eyes = centroid(draw(['eyeNear', 'eyeFar'], yaw));
       // Where the eye sits across the head, as a signed offset from its middle.
       out.push({ label, eye: eyes.n, offset: eyes.cx - head.cx });
     }
@@ -793,6 +804,204 @@ try {
     `eye sits ${drawn.offset.toFixed(0)}px from the middle of the head as drawn, `
       + `${flipped.offset.toFixed(0)}px mirrored`);
 
+
+
+  /* --- a part casts its own shadow, not the one before it -----------------
+   *
+   * The shadow pass ran before the part's geometry was bound, so it drew with
+   * whatever the previous part had left there. Nothing in the suite noticed:
+   * a shadow of the wrong shape still darkens the character and still stays
+   * off the background, which is all the two existing checks ask.
+   *
+   * Rendering a single part alone is what makes it visible. With one part
+   * there is no previous VAO to borrow, so a shadow that depends on one
+   * disappears entirely — and this check is the difference between the frame
+   * with the shadow turned up and the same frame with it off.
+   */
+  const lone = await page.evaluate(async () => {
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0 });
+    a.resize(300, 300, 2);
+    for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+    const all = a.parts;
+    const gl = a.gl;
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    const shot = (shadow) => {
+      store.patch({ 'parts.contactShadow': shadow });
+      a.parts = all.filter((p) => p.name === 'head');
+      for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      a.parts = all;
+      return d;
+    };
+    const off = shot(0);
+    const on = shot(1);
+    let changed = 0;
+    for (let i = 0; i < off.length; i += 4) {
+      if (Math.abs(off[i] - on[i]) > 3 || Math.abs(off[i + 3] - on[i + 3]) > 3) changed++;
+    }
+    store.reset();
+    return changed;
+  });
+  check('a part drawn on its own still casts its shadow', lone > 200,
+    `${lone}px differ between shadow off and full`);
+
+  /* --- the head-on view, assembled out of the three-quarter one -----------
+   *
+   * The artwork is one three-quarter drawing, and the pose it does not contain
+   * is the one anybody streaming actually sits in: square to the camera. Left
+   * alone, the avatar looked off to one side the whole time somebody was
+   * looking straight at it.
+   *
+   * The fix moves the eyes: onto the middle of the head, with the far shard
+   * replaced by a mirrored copy of the near one. So what has to be true is
+   * both halves of that — the pair is centred when the head faces you and off
+   * to one side when it does not, and there really are two comparable eyes
+   * rather than one eye and a sliver.
+   *
+   * Checked against the same code with the feature turned off, in the same
+   * run, because a centred pair proves nothing unless an uncentred one is what
+   * you get without it. That is the check this file has been burned by before.
+   */
+  const headOn = await page.evaluate(async () => {
+    const { computeFrame } = await import('/src/core/framing.js');
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0,
+      'warp.eyeGlow': 0, 'stage.zoom': 1.9, 'stage.offsetX': -0.10,
+      'stage.offsetY': 0.22 });
+    a.resize(300, 300, 2);
+    for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
+    const all = a.parts;
+    const gl = a.gl;
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+
+    const shot = (yaw, blink) => {
+      a.parts = all.filter((p) => p.name === 'eyeNear' || p.name === 'eyeFar');
+      const rig = emptyRig();
+      rig.head.yaw = yaw;
+      rig.eyes.blinkL = blink;
+      rig.eyes.blinkR = blink;
+      for (let f = 0; f < 40; f++) a.render(rig, 1 / 60);
+      const d = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      a.parts = all;
+      return d;
+    };
+
+    /* The shards, isolated by shutting them.
+     *
+     * Counting opaque pixels measures the wrong thing here: each part is cut
+     * with a wide margin of invented paint so the pieces in front have
+     * something to move off, and on something this small the margin is several
+     * times the art — an eye of sixteen hundred pixels inside a patch of
+     * twelve thousand. The first run of this check duly reported the eyes
+     * travelling a third as far as they visibly do.
+     *
+     * A lid erases the shard and leaves the margin, so the same frame drawn
+     * shut is the packaging on its own, and the difference is the eye. Which
+     * also weights a half-faded copy by exactly how far faded it is, rather
+     * than by whether it has crossed some threshold — and one of these eyes
+     * spends the transition fading in.
+     */
+    const eyeOnly = (open, shut) => {
+      const m = new Float32Array(w * h);
+      for (let k = 0, p = 0; k < open.length; k += 4, p++) {
+        m[p] = Math.max(0, (Math.abs(open[k] - shut[k]) + Math.abs(open[k + 1] - shut[k + 1])
+          + Math.abs(open[k + 2] - shut[k + 2])) / 3);
+      }
+      return m;
+    };
+    const cx = (m) => { let n = 0, s = 0;
+      for (let p = 0; p < m.length; p++) { n += m[p]; s += (p % w) * m[p]; }
+      return { n, cx: n ? s / n : NaN }; };
+    // Split into blobs, so "two eyes" is measured rather than assumed.
+    const blobs = (m) => {
+      const on = new Uint8Array(w * h);
+      for (let p = 0; p < m.length; p++) if (m[p] > 40) on[p] = 1;
+      const seen = new Uint8Array(w * h), stack = [], sizes = [];
+      for (let s = 0; s < w * h; s++) {
+        if (seen[s] || !on[s]) continue;
+        let count = 0; seen[s] = 1; stack.push(s);
+        while (stack.length) {
+          const i = stack.pop(); count++;
+          const x = i % w, y = (i - x) / w;
+          const v = (j) => { if (!seen[j] && on[j]) { seen[j] = 1; stack.push(j); } };
+          if (x > 0) v(i - 1); if (x < w - 1) v(i + 1);
+          if (y > 0) v(i - w); if (y < h - 1) v(i + w);
+        }
+        if (count > 30) sizes.push(count);
+      }
+      sizes.sort((p, q) => q - p);
+      return sizes;
+    };
+
+    /* The head's middle, taken from the cut rather than off the screen.
+     *
+     * Reading it back from pixels means reading the head part's padding too,
+     * and that padding is grown only where another part sits in front — so it
+     * is not symmetric, and a middle measured from it is not the head's. The
+     * renderer already holds the head's centre of mass; running it through the
+     * same framing the shader uses puts it on the screen exactly.
+     */
+    const frame = computeFrame(a.aspect, w, h, store.get('stage.zoom'),
+      store.get('stage.offsetX'), store.get('stage.offsetY'));
+    const headMiddle = (a.headSpan.cx * frame.sx + frame.ox) * w;
+
+    const at = (yaw) => {
+      const m = eyeOnly(shot(yaw, 0), shot(yaw, 1));
+      const c = cx(m);
+      return { offset: c.cx - headMiddle, ink: Math.round(c.n / 255),
+        sizes: blobs(m).slice(0, 2) };
+    };
+
+    const on = { centre: at(0), turned: at(0.70) };
+    store.patch({ 'parts.headOn': 0 });
+    const off = { centre: at(0) };
+    store.patch({ 'parts.headOn': 1 });
+
+    /* Nothing may lurch as the face comes round.
+     *
+     * The eyes travel across the visor here and a copy of one of them fades in
+     * on the way, which is exactly the kind of thing that reads fine in stills
+     * and jumps in motion. Crept a degree at a time, inside the band where this
+     * happens and clear of the flip, which is a snap on purpose.
+     */
+    let worst = 0, worstAt = 0, prev = null;
+    for (let deg = -15; deg <= 15; deg++) {
+      const yaw = deg * Math.PI / 180;
+      const c = cx(eyeOnly(shot(yaw, 0), shot(yaw, 1)));
+      if (prev != null && Math.abs(c.cx - prev) > worst) {
+        worst = Math.abs(c.cx - prev); worstAt = deg;
+      }
+      prev = c.cx;
+    }
+    store.reset();
+    return { on, off, worst, worstAt, headMiddle };
+  });
+
+  check('the eyes sit on the middle of the head when it faces the camera',
+    Math.abs(headOn.on.centre.offset) < 12 && Math.abs(headOn.off.centre.offset) > 18,
+    `${headOn.on.centre.offset.toFixed(0)}px off centre, `
+      + `${headOn.off.centre.offset.toFixed(0)}px with it switched off`);
+  check('and go back off to one side as the head turns away',
+    Math.abs(headOn.on.turned.offset) > Math.abs(headOn.on.centre.offset) + 20,
+    `${headOn.on.turned.offset.toFixed(0)}px at 40 degrees, `
+      + `${headOn.on.centre.offset.toFixed(0)}px facing`);
+  check('facing the camera there are two eyes, not one and a sliver',
+    headOn.on.centre.sizes.length === 2
+      && headOn.on.centre.sizes[1] / headOn.on.centre.sizes[0] > 0.45,
+    `${headOn.on.centre.sizes.join(' vs ')} facing, `
+      + `${headOn.on.turned.sizes.join(' vs ')} turned`);
+  check('the eyes travel to the centre without a lurch',
+    headOn.worst < 4,
+    `worst ${headOn.worst.toFixed(1)}px in one degree at ${headOn.worstAt}°`);
   /* --- the flip turns the head without moving it -------------------------
    *
    * A swap changes which way the head faces. It must not also change where the
@@ -814,7 +1023,7 @@ try {
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const all = a.parts;
-    a.parts = all.filter((p) => ['head', 'eyes', 'tufts'].includes(p.name));
+    a.parts = all.filter((p) => ['head', 'eyeNear', 'eyeFar', 'tufts'].includes(p.name));
     const gl = a.gl;
     const centre = () => {
       const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;

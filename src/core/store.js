@@ -136,6 +136,40 @@ export const DEFAULTS = {
   // of the face is already hidden by the turn and there is least to see.
   'parts.mirrorStart': 0.30,
 
+  /* The head-on view, built out of the three-quarter one.
+   *
+   * The artwork shows the face from one angle, and it is not the angle anybody
+   * sits at. Looking straight down the camera, the avatar looked off to the
+   * side — the single largest thing wrong with it, and the one no amount of
+   * warping fixed, because a warp cannot put an eye where no eye was drawn.
+   *
+   * The near eye is drawn nearly square-on: solving the two shards as points
+   * on a turned head puts it about seven degrees off the front, against
+   * seventy-nine for the far one. So the head-on face is already here. Sliding
+   * the pair onto the head's own centre and mirroring that near eye into the
+   * far one's place assembles it, entirely out of pixels the artist drew.
+   */
+  'parts.headOn': 1.0,
+  // Radians of turn over which the head-on face gives way to the drawn one.
+  // Reached before the flip, so the two never overlap.
+  'parts.headOnSpan': 0.28,
+  /* How big the mirrored far eye is against the near one.
+   *
+   * Equal, if the hood were redrawn head-on. It is not — the hood stays the
+   * three-quarter cutout, so its far half is still foreshortened, and an eye
+   * at full size there runs off the visor and onto the rim.
+   */
+  'parts.headOnTwin': 0.9,
+
+  /* How much of a part's invented margin survives the flip, in pixels.
+   *
+   * Enough to hide the hairline between two pieces that were one drawing, and
+   * no more. The margin is a guess about what sits under a neighbour, and the
+   * flip moves the head clear of every neighbour it had, so past a couple of
+   * pixels the guess is just paint on the background.
+   */
+  'parts.flipMargin': 3,
+
   /* Turning the head as a rounded surface rather than bending it on a
    * cylinder. See shell.js: the cylinder slides pixels inside an outline that
    * never changes, and has no coherent answer for turning and nodding at once.

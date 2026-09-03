@@ -150,6 +150,12 @@ export function buildPanel(root, ctx) {
           hint: 'Swaps the head for its mirror image once you turn far enough. For a character '
             + 'drawn at three-quarters, the mirror is the opposite three-quarter view.' },
         { type: 'slider', key: 'parts.mirrorStart', label: 'Flip at', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.headOn', label: 'Face the camera', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
+            + 'the eyes slide onto the middle of the head and the far one is replaced by a '
+            + 'mirrored copy of the near one. Same ink, so nothing drifts in style.' },
+        { type: 'slider', key: 'parts.headOnSpan', label: '— over', min: 0.08, max: 0.6, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.headOnTwin', label: '— far eye size', min: 0.5, max: 1.2, step: 0.01, format: x },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },
