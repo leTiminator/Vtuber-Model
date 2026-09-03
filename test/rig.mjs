@@ -371,45 +371,48 @@ const runPose = (rig, n, f, has = true) => {
     `yaw ${state.head.yaw.toFixed(3)} pitch ${state.head.pitch.toFixed(3)}`);
 }
 
-/* --- a bad rest pose must not leave the model facing away ----------------
+/* --- an off-axis camera is a normal setup, not a bad capture --------------
  *
- * The failure this is for: a neutral captured while somebody was looking away
- * put thirty-one degrees of yaw into the baseline, so every frame after it was
- * read as a head turned that far — permanently past the angle the head-on face
- * holds to and past the flip, on a person sitting square to their camera. It
- * looked like the model was broken. It was the setup.
+ * This check used to say the opposite, and was wrong. It was written off one
+ * recorded session that sat square to its lens — resting yaw a degree and a
+ * third — which made any large baseline look like a capture taken mid-glance,
+ * and it asserted that a thirty-one degree one must be thrown away.
  *
- * The measurement that settles what a baseline may claim is a real session:
- * at a desk, yaw rests within a degree or two of centre, and pitch does not —
- * it sits about seventeen degrees down, because that is where the screen is.
- * So yaw has almost nothing to correct and pitch has a lot, and a baseline is
- * bounded per axis accordingly. Which means a bad capture costs a little
- * accuracy rather than the whole model, and nobody has to hold still to be
- * looked at.
+ * A second session, at the camera position its owner actually uses, rests at
+ * twenty-six degrees round: the lens is beside the screen, so looking at the
+ * screen is looking that far off it. Throwing that away leaves twenty-one
+ * degrees of it standing and parks the model permanently past its own flip —
+ * the very fault the clamp was added to prevent, caused by the clamp.
+ *
+ * What separates a resting pose from a glance is not how far round it is. It
+ * is whether it holds still, which a glance cannot.
  */
 {
   settings.reset();
-  settings.set('camera.neutral', JSON.stringify(
-    { yaw: 0.55, pitch: -0.29, roll: 0.4, x: 0, y: 0, z: -45 }));
-  // Read at construction, so the baseline has to be in place first.
-  const loaded = new Rig();
-  check('a rest pose cannot claim the head was turned away',
-    Math.abs(loaded.neutral.yaw) <= 5 * Math.PI / 180 + 1e-6,
-    `yaw ${(loaded.neutral.yaw * 180 / Math.PI).toFixed(1)}° from a saved 31.5°`);
-  check('but a head that rests looking down keeps it',
-    Math.abs(loaded.neutral.pitch + 0.29) < 1e-6,
-    `pitch ${(loaded.neutral.pitch * 180 / Math.PI).toFixed(1)}°`);
-
-  // And with that baseline, a face square to the lens reads square.
-  let state = null;
-  for (let i = 0; i < 200; i++) {
-    state = loaded.update({ shapes: {}, head: { yaw: 0, pitch: -0.29, roll: 0 },
-      position: { x: 0, y: 0, z: -45 } }, true, DT);
-  }
-  check('so facing the camera reads as facing the camera',
-    Math.abs(state.head.yaw) < 8 * Math.PI / 180 && Math.abs(state.head.pitch) < 0.08,
+  const offAxis = new Rig();
+  // The resting pose from a real session: twenty-six degrees off the lens,
+  // twenty-two down at the screen. Driven through the real path rather than
+  // written straight into storage, because a captured baseline is recorded
+  // after the tracker's own mirroring and a hand-written one gets that wrong.
+  const working = frame({ head: { yaw: -0.457, pitch: -0.39, roll: 0.11 } });
+  run(offAxis, 120, working);
+  offAxis.calibrate();
+  const state = run(offAxis, 400, working);
+  check('a camera off to one side keeps its whole baseline',
+    Math.abs(offAxis.neutral.yaw) > 0.4,
+    `baseline yaw ${(offAxis.neutral.yaw * 180 / Math.PI).toFixed(1)}°`);
+  check('so sitting at that camera reads as facing it',
+    Math.abs(state.head.yaw) < 0.05 && Math.abs(state.head.pitch) < 0.05,
     `yaw ${(state.head.yaw * 180 / Math.PI).toFixed(1)}° `
       + `pitch ${(state.head.pitch * 180 / Math.PI).toFixed(1)}°`);
+
+  // A figure no camera placement explains is still refused.
+  settings.set('camera.neutral', JSON.stringify(
+    { yaw: 1.4, pitch: 0, roll: 0, x: 0, y: 0, z: -45 }));
+  const absurd = new Rig();
+  check('but a baseline no camera placement explains is still cut back',
+    Math.abs(absurd.neutral.yaw) < 1.4 - 1e-6,
+    `yaw ${(absurd.neutral.yaw * 180 / Math.PI).toFixed(1)}° from a saved 80.2°`);
   settings.set('camera.neutral', '');
 }
 
