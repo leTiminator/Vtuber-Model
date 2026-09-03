@@ -63,8 +63,31 @@ const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']
  * What the mirrored view takes with it: the head cutout and what is drawn on
  * it. The hair is part of the head; the neck wrap is cloth that continues into
  * the scarf, and mirroring half a scarf would tear it off the shoulders.
+ *
+ * The raised fist goes too, and has to. It is drawn against the cheek, and the
+ * drawing tucks the rest of that arm behind the hood and never draws it — so
+ * once the head swaps sides there is nothing joining the glove to anything,
+ * and it hangs in mid-air beside a face turned the other way. Mirrored, it
+ * lands where the opposite three-quarter view puts it: on the far side of the
+ * head, behind the scarf. The other arm reaches down across the body and stays
+ * where it is.
  */
 const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'armRight']);
+
+/**
+ * Whose weight decides where the mirror's axis falls.
+ *
+ * The head, the hair and the eyes — the thing a viewer watches. Reflecting a
+ * group about its own centre of mass turns it without moving it, and that is
+ * the whole reason the axis is measured rather than taken as the head's own
+ * middle: measured wrong, the swap slides the face sideways mid-turn.
+ *
+ * The fist rides along but does not get a vote. It is a small piece far off to
+ * one side, and letting it pull the axis moved the head sixteen pixels in the
+ * single degree where the swap happens — a lurch on the part of the model
+ * people are looking at, to keep a glove company.
+ */
+const FLIP_AXIS = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
 
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
@@ -245,7 +268,7 @@ export class Parts2D {
      */
     this.shell = headPart ? shellFrom(headPart, width, height) : null;
     // The axis a mirror pivots on: the weight of everything that mirrors.
-    this.flipAxis = flipAxisOf(parts.filter((p) => FLIPS_WITH_HEAD.has(p.name)), width)
+    this.flipAxis = flipAxisOf(parts.filter((p) => FLIP_AXIS.has(p.name)), width)
       ?? this.headSpan.cx;
 
     this.parts = parts
@@ -272,7 +295,7 @@ export class Parts2D {
     }
     this.headCylR = headCylR || 1;
 
-    this.headOn = this.solveHeadOn(this.parts, width, height);
+    this.headOn = this.solveHeadOn(this.parts);
 
     this.owned = this.parts;
     this.ready = this.parts.length > 0;
@@ -487,7 +510,7 @@ export class Parts2D {
    *   solves to seven degrees off square-on, so its mirror image is the far
    *   eye, in the artist's own line.
    */
-  solveHeadOn(parts, width, height) {
+  solveHeadOn(parts) {
     const near = parts.find((p) => p.name === 'eyeNear')?.socket;
     const far = parts.find((p) => p.name === 'eyeFar')?.socket;
     if (!near || !far || !this.headSpan) return null;

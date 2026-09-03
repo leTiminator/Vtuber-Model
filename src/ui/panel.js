@@ -150,6 +150,10 @@ export function buildPanel(root, ctx) {
           hint: 'Swaps the head for its mirror image once you turn far enough. For a character '
             + 'drawn at three-quarters, the mirror is the opposite three-quarter view.' },
         { type: 'slider', key: 'parts.mirrorStart', label: 'Flip at', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
+        { type: 'slider', key: 'parts.flipMargin', label: '— trim after flipping', min: 0, max: 32, step: 1, format: (v) => `${Math.round(v)}px`,
+          hint: 'Each piece is painted a little past its own edge so the piece in front has '
+            + 'something to move off. After a flip that paint is in the wrong place, and shows '
+            + 'as a haze; this is how much of it survives.' },
         { type: 'slider', key: 'parts.headOn', label: 'Face the camera', min: 0, max: 1, step: 0.01, format: x,
           hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
             + 'the eyes slide onto the middle of the head and the far one is replaced by a '
