@@ -331,12 +331,23 @@ const BUILDERS = {
    */
   record(spec, ctx) {
     if (!ctx.recorder || !ctx.startRecording) return null;
+    /* A minute, not twenty seconds.
+     *
+     * Twenty seconds is long enough to prove the recorder works and short
+     * enough to miss what it is for. The faults that have actually reached the
+     * screen came from the gap between a synthetic sweep and a person: holding
+     * still badly, glancing away and back, the tracker dropping out for a
+     * frame. Those live in the awkward middle of a session, and twenty seconds
+     * is nearly all beginning and end.
+     */
+    const SECONDS = 60;
     const field = el('div', 'field');
-    const button = el('button', 'btn', 'Record 20 seconds');
+    const button = el('button', 'btn', `Record ${SECONDS} seconds`);
     button.type = 'button';
     const hint = el('div', 'field__hint',
       'Saves the tracking numbers — blendshapes, head angles, body points — as a file. '
-      + 'No video is recorded and no image data is saved.');
+      + 'No video is recorded and no image data is saved, and nothing leaves this '
+      + 'machine except the file you choose to keep.');
     field.append(button, hint);
 
     const paint = () => {
@@ -346,17 +357,19 @@ const BUILDERS = {
         button.textContent = `Recording… ${(r.seconds - r.elapsed).toFixed(1)}s (${r.frames.length} frames)`;
       } else {
         button.disabled = false;
-        button.textContent = 'Record 20 seconds';
+        button.textContent = `Record ${SECONDS} seconds`;
       }
     };
 
     button.addEventListener('click', () => {
-      if (!ctx.startRecording(20)) {
+      if (!ctx.startRecording(SECONDS)) {
         hint.textContent = 'Start the camera first — there is nothing to record yet.';
         return;
       }
-      hint.textContent = 'Move the way you normally would: turn, nod, tilt, blink, '
-        + 'raise your hands. The awkward moments are the useful ones.';
+      hint.textContent = 'Talk, and move the way you actually would on stream: turn '
+        + 'right round and back, look up and down, tilt, blink, glance away, raise '
+        + 'your hands, then sit still for a while. The dull and the awkward parts '
+        + 'are the ones worth having — a tidy sweep is what the tests already guess.';
     });
 
     let saved = false;
@@ -367,7 +380,8 @@ const BUILDERS = {
       saved = true;
       r.save();
       hint.textContent = `Saved ${r.frames.length} frames as tracker-session.json. `
-        + 'Put it in the repo under test/fixtures/ and the suite will replay it.';
+        + 'Upload it to the repo under test/fixtures/, replacing what is there, and '
+        + 'every check in the suite replays your session instead of a guess at one.';
     };
     setInterval(paint, 120);
     paint();

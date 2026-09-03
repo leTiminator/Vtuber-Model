@@ -82,8 +82,11 @@ try {
   const stamp = await page.locator('#build-stamp').textContent();
   check('the page says which build it is', /^build \S+/.test(stamp ?? ''), stamp ?? 'missing');
 
+  // Matched on the verb, not the length. How long a session is worth recording
+  // is a judgement that has already changed once; that the control exists at
+  // all is the thing this is here to notice.
   check('the session recorder is offered',
-    await page.locator('button', { hasText: 'Record 20 seconds' }).count() === 1);
+    await page.locator('button', { hasText: /^Record \d+ seconds$/ }).count() === 1);
 
   // The HUD lives inside the stage, so its buttons compete with the drag-to-pan
   // handler. Capturing the pointer there once swallowed the click outright.
