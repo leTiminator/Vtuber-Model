@@ -314,6 +314,17 @@ export const DEFAULTS = {
    * available here, and the only one that has ever read unambiguously.
    */
   'parts.nodTurn': 0.55,
+  /* How much of the chin's travel the neck scarf follows, 0..1.
+   *
+   * The scarf round the neck is one rigid piece now — it used to be blended
+   * toward the head per vertex, and that blend is what stretched it. Rigid, it
+   * has to choose: go with the chin and open a gap against the chest, or stay
+   * on the chest and open one under the chin. Both seams carry twenty-eight
+   * pixels of paint for exactly this, so half puts each gap at half the travel
+   * and inside what was painted. Raise it if the chin lifts out of the scarf;
+   * lower it if the scarf lifts off the chest.
+   */
+  'parts.wrapFollow': 0.5,
   // The old bending, off. Kept so the two can be compared rather than argued
   // about; at zero the head is a rigid cutout.
   'parts.bendHead': 0,
@@ -343,6 +354,11 @@ export const DEFAULTS = {
    * against a hundred and five for the hip drape — so two links separates
    * cloth that is on the chain from cloth merely tied to it, with room to
    * spare either side. Raise it to give the loose ends their swing back.
+   *
+   * The sash is now kept off the chain by connectivity as well — it is not the
+   * same piece of cloth as the ribbon — so at the default this only trims the
+   * ribbon's own far corners. Kept because a drawing whose sash touches its
+   * ribbon has nothing else.
    */
   'parts.clothReach': 2.0,
 

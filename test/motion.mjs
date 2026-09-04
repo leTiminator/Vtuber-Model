@@ -279,6 +279,8 @@ try {
     ];
 
     let prev = null;
+    let prevMirrored = null;
+    out.swapJump = 0;
     // Past the rig's own clamp, so the extremes really are exercised.
     for (const [axis, make] of AXES) {
     for (let deg = -46; deg <= 46; deg += 4) {
@@ -286,6 +288,7 @@ try {
       window.__t.pose(a, emptyRig, { head: make(v) }, 24);
       const shot = window.__t.read(a);
       const s = window.__t.stats(shot);
+      const mirrored = a.mirrored;
 
       const partial = s.partial / Math.max(s.opaque, 1);
       if (partial > out.worstPartial) { out.worstPartial = partial; out.worstPartialAt = `${axis} ${deg}`; }
@@ -298,13 +301,23 @@ try {
 
       // Only within an axis: the jump between the end of one sweep and the
       // start of the next is a cut, not a pop.
+      /* And not across the mirror. The swap is a cut by design — the head
+       * changes hands and the neck scarf and the ribbon's root go with it, so
+       * the chin is never left behind — and it has its own check below that
+       * measures exactly how far the head moves in that frame. Counted here it
+       * read as an eleven-pixel pop, which is the whole scarf moving fifteen
+       * pixels with the head, on purpose.
+       */
       if (prev && deg > -46) {
         const jump = Math.hypot(s.cx - prev.cx, s.cy - prev.cy);
-        if (jump > out.maxJump) { out.maxJump = jump; out.maxJumpAt = `${axis} ${deg}`; }
+        if (mirrored !== prevMirrored) out.swapJump = Math.max(out.swapJump, jump);
+        else if (jump > out.maxJump) { out.maxJump = jump; out.maxJumpAt = `${axis} ${deg}`; }
       }
       prev = s;
+      prevMirrored = mirrored;
     }
     prev = null;
+    prevMirrored = null;
     }
     for (const k of held) store.set(k, before[k]);
     return out;
@@ -336,7 +349,8 @@ try {
     `${sweep.maxBlobs} pieces at ${sweep.maxBlobsAt}, ${sweep.baseBlobs} at rest`);
 
   check('the pose moves smoothly, with no pops',
-    sweep.maxJump < 8, `largest step ${sweep.maxJump.toFixed(1)}px at ${sweep.maxJumpAt}`);
+    sweep.maxJump < 8, `largest step ${sweep.maxJump.toFixed(1)}px at ${sweep.maxJumpAt}`
+      + ` (the mirror's own swap moves the picture ${sweep.swapJump.toFixed(1)}px, by design)`);
 
   /* --- features by what you would see ------------------------------------
    * Measured by differencing renders rather than by hunting for a colour that
@@ -347,8 +361,15 @@ try {
   const looks = await page.evaluate(async () => {
     const { avatars, emptyRig, store } = window.__vtuber;
     const a = avatars.parts2d;
+    /* With the scarf calm. These renders are differenced against each other
+     * pixel by pixel, and a ribbon settling by a fraction of a pixel across
+     * its own ink lines differs in thousands of them — which was read as the
+     * glow staying lit under a shut lid. The eyes are the subject here.
+     */
     store.patch({ 'stage.zoom': 1.6, 'stage.offsetX': -0.18, 'stage.offsetY': 0.02,
-      'warp.wind': 0, 'body.breathAmount': 0, 'body.swayAmount': 0 });
+      'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0, 'body.swayAmount': 0,
+      // One face, so the eye being measured is the same eye in every shot.
+      'parts.headOn': 0 });
 
     const shot = (mut, over) => {
       const undo = {};
@@ -389,9 +410,22 @@ try {
 
     const glowOff = shot({}, { 'warp.eyeGlow': 0 });
     const glowDiff = diff(open, glowOff);
-    // The shard itself, so spill can be told apart from a brighter shard.
+    /* The shard itself, so spill can be told apart from a brighter shard.
+     *
+     * The lit shard: the near-white core of what a blink changes. This used
+     * to take everything a blink changes, which includes the halo the lid
+     * closes over, so by construction the halo could never count as spill —
+     * and the check still passed, on the thousands of pixels a scarf settling
+     * between two shots differs by. With the cloth held still the truth came
+     * out at forty-eight.
+     */
     const shardSet = new Set();
-    for (const p of region) shardSet.add(p);
+    for (const p of region) {
+      const i = p * 4;
+      if (open.d[i + 3] > 200 && open.d[i] > 216 && open.d[i + 1] > 216 && open.d[i + 2] > 216) {
+        shardSet.add(p);
+      }
+    }
     const spill = glowDiff.filter((p) => !shardSet.has(p)).length;
 
     const shutGlowOff = shot({ eyes: { blinkL: 1, blinkR: 1 } }, { 'warp.eyeGlow': 0 });
@@ -1234,50 +1268,37 @@ try {
    * blend between two matrices differing by a rotation is not a rotation —
    * it shears — so the ribbon nearest the head was welded to the head's turn
    * and the band beyond it was dragged. Measured here at the time: an edge in
-   * the cloth grew to more than twice its drawn length on a roll.
+   * the cloth grew to more than twice its drawn length on a roll — 116%.
    *
-   * Measured exactly, because "it looks like cloth" is not a claim anyone can
-   * check. The chain is frozen so the only thing left that can move the cloth
-   * is the head, and then the question is simply whether the distance between
-   * neighbouring cloth vertices is the distance they were drawn at.
+   * The cloth is not blended any more. The ribbon is skinned to a chain of
+   * rigid links whose root is pinned to the neck scarf, and the neck scarf is
+   * one rigid piece. What is left to measure is whether the distance between
+   * neighbouring cloth vertices is the distance they were drawn at, with the
+   * chain running: held at each pose until it settles, and also on the way
+   * there, because a ribbon that bends has an outside edge and the outside of
+   * a bend is longer. That much is cloth; twice its length is not.
    *
-   * The old wiring is measured alongside, from the same rig state. Without it
-   * this check cannot tell "nothing stretches" from "the ruler is broken",
-   * and that exact mistake has been made in this project more than once.
+   * Measured live rather than frozen. The old version froze the chain and
+   * read the matrix blend on its own, which is no longer a thing that exists.
    */
   const stretch = await page.evaluate(async () => {
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
     store.reset();
-    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+    store.patch({ 'warp.wind': 0, 'warp.overshoot': 0,
       'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0 });
     a.resize(400, 400, 1);
+    // Flush the rebuild the warp.* patch scheduled before taking references.
+    window.__t.pose(a, emptyRig, {}, 2);
     const H = a.imageSize.height;
     const W = a.imageSize.width;
     const tails = a.parts.find((p) => p.name === 'tails');
     if (!tails?.live) return { edges: 0 };
     const N = Math.round(Math.sqrt(tails.live.length / 2)) - 1;
 
-    const placed = (rig, near, far) => {
-      for (let f = 0; f < 3; f++) a.render(rig, 1 / 60);
-      const j = a.solveJoints(rig, rig.head.roll, rig.head.pitch, rig.head.yaw, a.markers());
-      const m = j[near ?? tails.joint];
-      const mf = j[far ?? tails.farJoint ?? tails.joint];
-      const out = new Float64Array(tails.live.length);
-      for (let v = 0, k = 0; v < tails.live.length; v += 2, k++) {
-        const x = tails.live[v];
-        const y = tails.live[v + 1];
-        const w = tails.follows[k];
-        out[v] = ((m[0] * x + m[3] * y + m[6]) * w
-          + (mf[0] * x + mf[3] * y + mf[6]) * (1 - w)) * W;
-        out[v + 1] = ((m[1] * x + m[4] * y + m[7]) * w
-          + (mf[1] * x + mf[4] * y + mf[7]) * (1 - w)) * H;
-      }
-      return out;
-    };
-
     // Only edges joining two vertices that both sit on painted cloth: the
-    // mesh is a grid over the part's whole box and most of it is empty.
+    // mesh is a grid over the part's whole box and most of it is empty, and
+    // the invented margin is not cloth either.
     const ink = [];
     const ctx = tails.canvas.getContext('2d', { willReadFrequently: true });
     const px = ctx.getImageData(0, 0, tails.w, tails.h).data;
@@ -1285,7 +1306,8 @@ try {
       for (let col = 0; col <= N; col++) {
         const sx = Math.min(tails.w - 1, Math.round((col / N) * tails.w));
         const sy = Math.min(tails.h - 1, Math.round((row / N) * tails.h));
-        ink.push(px[(sy * tails.w + sx) * 4 + 3] > 200);
+        const i = sy * tails.w + sx;
+        ink.push(px[i * 4 + 3] > 200 && !(tails.margin && tails.margin[i] > 0));
       }
     }
     const edges = [];
@@ -1297,55 +1319,68 @@ try {
       }
     }
     const lens = (p) => edges.map(([i, k]) =>
-      Math.hypot(p[i * 2] - p[k * 2], p[i * 2 + 1] - p[k * 2 + 1]));
-
-    const sweep = (near, far) => {
-      const rest = lens(placed(emptyRig(), near, far));
+      Math.hypot((p[i * 2] - p[k * 2]) * W, (p[i * 2 + 1] - p[k * 2 + 1]) * H));
+    const rest = lens(tails.rest);
+    const worstNow = () => {
+      const now = lens(tails.live);
       let worst = 0;
-      let worstAt = '';
-      for (const [label, set] of [
-        ['tilt down', (r) => { r.head.pitch = -0.6; }],
-        ['tilt up', (r) => { r.head.pitch = 0.6; }],
-        ['roll', (r) => { r.head.roll = 0.5; }],
-        ['turn', (r) => { r.head.yaw = 0.6; }],
-      ]) {
-        const rig = emptyRig();
-        set(rig);
-        const now = lens(placed(rig, near, far));
-        for (let i = 0; i < now.length; i++) {
-          if (rest[i] < 1) continue;
-          const d = Math.abs(now[i] - rest[i]) / rest[i];
-          if (d > worst) { worst = d; worstAt = label; }
-        }
+      for (let i = 0; i < now.length; i++) {
+        if (rest[i] < 1) continue;
+        worst = Math.max(worst, Math.abs(now[i] - rest[i]) / rest[i]);
       }
-      return { worst, worstAt };
+      return worst;
     };
-    const now = sweep();
-    const was = sweep('neck', 'hips');
+
+    // At rest the chain must sit exactly on the drawing, or nothing below
+    // means anything.
+    a.scarf.reset(); a.inertia.reset();
+    window.__t.pose(a, emptyRig, {}, 60);
+    let restDev = 0;
+    for (let v = 0; v < tails.live.length; v += 2) {
+      restDev = Math.max(restDev, Math.hypot((tails.live[v] - tails.rest[v]) * W,
+        (tails.live[v + 1] - tails.rest[v + 1]) * H));
+    }
+
+    let settled = 0;
+    let settledAt = '';
+    let moving = 0;
+    let movingAt = '';
+    for (const [label, set] of [
+      ['tilt down', (r) => { r.head.pitch = -0.6; }],
+      ['tilt up', (r) => { r.head.pitch = 0.6; }],
+      ['roll', (r) => { r.head.roll = 0.5; }],
+      ['turn', (r) => { r.head.yaw = 0.6; }],
+      ['turn away', (r) => { r.head.yaw = -0.6; }],
+      ['all at once', (r) => { r.head.yaw = -0.5; r.head.pitch = -0.5; r.head.roll = 0.4; }],
+    ]) {
+      a.scarf.reset(); a.inertia.reset();
+      window.__t.pose(a, emptyRig, {}, 30);
+      const rig = emptyRig();
+      set(rig);
+      for (let f = 0; f < 150; f++) {
+        a.render(rig, 1 / 60);
+        const w = worstNow();
+        if (f < 40 && w > moving) { moving = w; movingAt = label; }
+      }
+      const w = worstNow();
+      if (w > settled) { settled = w; settledAt = label; }
+    }
     store.reset();
-    return { edges: edges.length, now, was };
+    return { edges: edges.length, restDev, settled, settledAt, moving, movingAt };
   });
-  /* Pinned rather than passed.
-   *
-   * As it ships, the scarf IS stretched by the head — this reads about 116%,
-   * an edge in the cloth growing to more than twice its drawn length on a
-   * roll. That is the fault, not the target, and it is here so that the number
-   * is on the record and cannot quietly get worse while somebody works on it.
-   *
-   * Hanging the cloth from the neck's position instead of blending it toward
-   * the neck's rotation takes this to 0.0%, measured. It is not shipping
-   * because it also detaches the scarf from the head at thirty degrees of nod:
-   * the neck wrap is cut inside the head's own radius, so it has no room to
-   * taper the rotation into cloth that is not taking one, and the shear is
-   * currently the only thing holding that seam shut. The fix is to blend the
-   * head's turn as an ANGLE per vertex rather than as a matrix — a rotation
-   * scaled per vertex is still a rotation, and does not shear.
+  check('the chain sits exactly on the drawing at rest',
+    stretch.edges > 100 && stretch.restDev < 0.5,
+    `${stretch.restDev.toFixed(2)}px off over ${stretch.edges} cloth edges`);
+  /* Bounds with room, against what was measured when this landed: 5% held and
+   * 34% mid-swing, the latter on the outside of a bend in a ribbon sixty pixels
+   * wide. The number this replaces was 116%, held.
    */
-  check('the scarf is not stretched by the head any worse than it was',
-    stretch.edges > 100 && stretch.now.worst <= stretch.was.worst + 0.01
-      && stretch.was.worst > 0.2,
-    `${(stretch.now.worst * 100).toFixed(1)}% over ${stretch.edges} cloth edges`
-      + ` — the fault, not the target; 0.0% with the cloth hung off the neck`);
+  check('the head does not stretch the scarf',
+    stretch.settled < 0.12,
+    `${(stretch.settled * 100).toFixed(1)}% at worst once settled (${stretch.settledAt}); was 116%`);
+  check('the ribbon bends rather than stretches on its way there',
+    stretch.moving < 0.55,
+    `${(stretch.moving * 100).toFixed(1)}% at worst mid-swing (${stretch.movingAt})`);
 
   /* --- the flip turns the head without moving it -------------------------
    *

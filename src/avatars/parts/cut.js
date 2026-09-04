@@ -26,21 +26,22 @@ const ALPHA_FLOOR = 40;
  * the head cannot drift off the neck because the neck carries it.
  */
 export const PART_SPECS = [
-  /* Held back: the ribbon should hang from the neck and be moved only by its
-   * chain, and wiring it that way is measured elsewhere as taking the head's
-   * stretch of the cloth from 116% to 0%. It also detaches the scarf from the
-   * head at thirty degrees of nod, because the neck wrap has no way to taper
-   * a rotation into cloth that is not taking one — a matrix blend shears, and
-   * the shear is the only thing currently holding that seam shut. Landing it
-   * needs the head's turn blended as an ANGLE per vertex rather than as a
-   * matrix, which is a change to the vertex shader. See test/motion.mjs. */
-  { name: 'tails', parent: 'root', joint: 'neck', farJoint: 'hips', z: 0 },
+  /* The cloth is held at one joint each, and never blended between two.
+   *
+   * The ribbon hangs off the body and is moved by its chain, whose root is
+   * pinned to the neck scarf; the neck scarf has a rigid transform of its own
+   * that follows the chin by a share. Both used to be blended between the neck
+   * and the hips per vertex, and a blend of two transforms that differ by a
+   * rotation shears — measured at more than twice an edge's drawn length on a
+   * roll. See followAt and solveJoints in index.js.
+   */
+  { name: 'tails', parent: 'root', joint: 'hips', z: 0 },
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
   { name: 'armLeft', parent: 'root', joint: 'neck', farJoint: 'shoulderLeft', z: 2 },
   { name: 'armRight', parent: 'root', joint: 'neck', farJoint: 'shoulderRight', z: 3 },
   { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
   { name: 'head', parent: 'neck', joint: 'neck', z: 5 },
-  { name: 'wrap', parent: 'neck', joint: 'neck', farJoint: 'hips', z: 6 },
+  { name: 'wrap', parent: 'neck', joint: 'wrap', z: 6 },
   // Drawn last, above the scarf. The slit and the scarf do not overlap in the
   // drawing, so this changes nothing about the composition — but it puts the
   // eye above every contact shadow. It is the one thing on the model that

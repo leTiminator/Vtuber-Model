@@ -188,6 +188,9 @@ export function buildPanel(root, ctx) {
         { type: 'heading', label: 'Cloth & hair' },
         { type: 'slider', key: 'warp.clothWeight', label: 'Scarf travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.clothStiffness', label: 'Scarf stiffness', min: 0.1, max: 4, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.wrapFollow', label: 'Neck scarf follows the chin', min: 0, max: 1, step: 0.05, format: x,
+          hint: 'Half by default. Higher keeps the chin buried in the scarf and lifts the '
+            + 'scarf off the chest; lower does the opposite.' },
         { type: 'slider', key: 'parts.clothReach', label: '— loose ends swing', min: 0.6, max: 20, step: 0.1, format: x },
         { type: 'slider', key: 'warp.tuftWeight', label: 'Tuft travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.tuftStiffness', label: 'Tuft stiffness', min: 0.1, max: 4, step: 0.01, format: x },
