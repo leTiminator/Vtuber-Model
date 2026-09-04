@@ -59,6 +59,10 @@ export function emptyRig() {
       left: { upper: 0, fore: 0, raise: 0, seen: 0 },
       right: { upper: 0, fore: 0, raise: 0, seen: 0 },
     },
+    /* The body's own pose, measured from the shoulders rather than inferred
+     * from the head. `seen` is how much the pose model is currently supplying
+     * it; where that falls to zero the head takes over again. */
+    torso: { turn: 0, lean: 0, rise: 0, seen: 0 },
     expression: { blush: 0, anger: 0, sparkle: 0, sweat: 0, shock: 0 },
     viseme: 'rest',
   };
@@ -220,6 +224,11 @@ export class Rig {
   updatePose(frame, hasPose, dt) {
     const arms = this.state.arms;
     if (!hasPose || !frame) {
+      const t = this.state.torso;
+      t.seen = damp(t.seen, 0, 3, dt);
+      t.turn = damp(t.turn, 0, 3, dt);
+      t.lean = damp(t.lean, 0, 3, dt);
+      t.rise = damp(t.rise, 0, 3, dt);
       for (const side of ['left', 'right']) {
         const a = arms[side];
         a.seen = damp(a.seen, 0, 4, dt);
@@ -266,6 +275,56 @@ export class Rig {
       const cross = ax * by - ay * bx;
       return Math.atan2(cross, dot);
     };
+
+    /* The body, from the shoulders — not from the head.
+     *
+     * Until now `body.leanX/leanY/twist` were the head's own angles scaled
+     * down, so the body could only ever be a smaller copy of wherever the head
+     * was pointing. It could not sit square while the head looked away, or sit
+     * turned while the head came back to the camera, because it had nothing of
+     * its own to be turned by. The pose model has returned both shoulders on
+     * every stride the whole time; nothing read them.
+     *
+     * Three numbers, each from what a shoulder line actually does:
+     *
+     *  - **turn** from foreshortening. Face on, the shoulders are their full
+     *    width apart; turn, and they close up. Signed by which one is nearer
+     *    the camera, which the landmarks' own depth says.
+     *  - **lean** from where the middle of that line sits across the frame.
+     *  - **rise** from where it sits up and down — leaning in and out.
+     *
+     * All three are measured against a shoulder line captured at rest, for the
+     * same reason the head is: a camera off to one side, or shoulders that are
+     * not level, is a pose to measure from rather than one to correct.
+     */
+    const width = Math.hypot(shoulderL.x - shoulderR.x, shoulderL.y - shoulderR.y);
+    const depth = (shoulderL.z ?? 0) - (shoulderR.z ?? 0);
+    const torsoNow = {
+      // Widest seen so far is "square on", which is what foreshortening is
+      // measured against. It only ever grows, so a turn cannot redefine it.
+      width,
+      turn: 0,
+      lean: shoulders.x - 0.5,
+      rise: shoulders.y - 0.5,
+      depth,
+    };
+    this.shoulderSpan = Math.max(this.shoulderSpan ?? 0, width);
+    if (this.shoulderSpan > 0.02) {
+      // cos of the turn, near enough, and the sign from which shoulder is nearer.
+      const closed = clamp(width / this.shoulderSpan, 0, 1);
+      torsoNow.turn = Math.acos(closed) * Math.sign(depth || 1) * flip;
+    }
+    if (!this.torsoNeutral) this.torsoNeutral = { ...torsoNow };
+    const tn = this.torsoNeutral;
+    const tg = store.get('body.shoulderGain');
+    const t = this.state.torso;
+    t.seen = damp(t.seen, 1, 6, dt);
+    t.turn = this.arms.filter('torsoTurn',
+      clamp((torsoNow.turn - tn.turn) * tg, -1.4, 1.4), dt);
+    t.lean = this.arms.filter('torsoLean',
+      clamp((torsoNow.lean - tn.lean) * 4 * tg * flip, -1.5, 1.5), dt);
+    t.rise = this.arms.filter('torsoRise',
+      clamp((torsoNow.rise - tn.rise) * 4 * tg, -1.5, 1.5), dt);
 
     const gain = store.get('arms.gain');
     const measured = {};
@@ -703,9 +762,24 @@ export class Rig {
     const swayX = Math.sin(this.clock * 0.37) * 0.05 + Math.sin(this.clock * 0.19) * 0.03;
     const swayY = Math.sin(this.clock * 0.29 + 1.1) * 0.035;
 
-    spring(this.springs.leanX, s.head.yaw * follow + swayX * swayAmt, 90, 13, dt);
-    spring(this.springs.leanY, s.head.pitch * follow * 0.7 + swayY * swayAmt, 90, 13, dt);
-    spring(this.springs.twist, s.head.roll * follow * 0.8, 80, 12, dt);
+    /* The shoulders drive the body where they are seen; the head does where
+     * they are not.
+     *
+     * Blended by how confidently the pose model has them rather than switched,
+     * so losing the pose for a moment does not throw the body across the
+     * screen. Where it is seen, the head's own contribution goes away
+     * completely — that is the point: the body is meant to be able to sit at
+     * an angle the head is not at, and a head term left in would keep dragging
+     * it back to wherever the face is pointing.
+     */
+    const t = s.torso;
+    const fromBody = clamp(t.seen, 0, 1);
+    const leanTarget = lerp(s.head.yaw * follow, t.lean, fromBody) + swayX * swayAmt;
+    const riseTarget = lerp(s.head.pitch * follow * 0.7, t.rise, fromBody) + swayY * swayAmt;
+    const twistTarget = lerp(s.head.roll * follow * 0.8, t.turn, fromBody);
+    spring(this.springs.leanX, leanTarget, 90, 13, dt);
+    spring(this.springs.leanY, riseTarget, 90, 13, dt);
+    spring(this.springs.twist, twistTarget, 80, 12, dt);
 
     s.body.leanX = this.springs.leanX.value;
     s.body.leanY = this.springs.leanY.value;

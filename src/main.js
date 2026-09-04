@@ -119,22 +119,20 @@ function frame(now) {
     });
   }
 
-  /* The readout is for setting up, not for streaming.
+  /* The readout stays up while the camera runs, which is the whole point.
    *
-   * It exists because a phone has no console, and it has already earned its
-   * place twice. But whatever is on this canvas is what goes out to OBS, so it
-   * hides itself the moment the camera starts and comes back when it stops —
-   * which is also when it is worth reading, since it describes a model nobody
-   * is looking at yet.
+   * It used to hide itself the instant tracking started, because everything on
+   * this canvas went out to OBS. OBS reads its own page now, so that reason is
+   * gone — and the time it was hidden was exactly the time it had anything to
+   * say. A day went into arguing about a head that sat turned, with the line
+   * naming the neutral pose sitting one keypress away and switched off.
+   *
+   * Refreshed a few times a second while live, so the numbers move; and in the
+   * same turn as the draw, because reading pixels from a timer returns
+   * whatever survived compositing. Press D to put it away.
    */
-  if (tracker.running !== selfcheckHidden) {
-    selfcheckHidden = tracker.running;
-    if (tracker.running) { if (selfcheckEl) selfcheckEl.hidden = true; }
-    else scheduleSelfCheck();
-  }
-
-  // Same turn as the draw it is asking about — see scheduleSelfCheck.
-  if (selfcheckDue && now >= selfcheckDue && !tracker.running) {
+  if (!selfcheckDue) selfcheckDue = now + (tracker.running ? 250 : 700);
+  if (now >= selfcheckDue) {
     selfcheckDue = 0;
     runSelfCheck();
   }
@@ -398,10 +396,69 @@ showStamp();
  * it coming apart. Tap to dismiss.
  */
 const selfcheckEl = document.getElementById('selfcheck');
+{
+  // On the stage, not in the panel. Set once: it cannot change while running.
+  const el = document.getElementById('hud-build');
+  if (el) el.textContent = typeof __BUILD__ === 'string' ? __BUILD__.slice(0, 7) : 'dev';
+}
 let selfcheckDue = 0;
 let selfcheckOff = false;
-let selfcheckHidden = false;
 const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}\u00b0`;
+
+/* What the tracker is reading, right now, while it is reading it.
+ *
+ * Everything above this line describes a still model. None of it can answer
+ * the questions that actually cost days: why the head sits turned when you are
+ * square, whether a neutral was captured or quietly refused, whether the pose
+ * model is running at all, whether it can see both arms. Those are properties
+ * of a live session, and a live session was the one thing there was no way to
+ * look at — this readout used to switch itself off the moment the camera
+ * started.
+ *
+ * Raw and corrected are both here on purpose. Raw is what your camera sees;
+ * corrected is what the model is driven by; the neutral is the difference. If
+ * corrected is large while you are looking down the lens, the neutral is
+ * wrong, and that one line says so in a way no amount of describing the
+ * symptom over chat can.
+ */
+function liveLines() {
+  if (!tracker.running) return [];
+  const out = [];
+  const head = tracker.frame?.head;
+  const n = rig.neutral;
+  if (head) {
+    const raw = `raw yaw ${deg(head.yaw)} pitch ${deg(head.pitch)} roll ${deg(head.roll)}`;
+    const s = rig.state.head;
+    out.push(`${raw}  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`);
+  } else {
+    out.push('no face in frame');
+  }
+  out.push(n
+    ? `neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
+      + (rig.pendingCalibration ? ' · capturing…' : '')
+    : rig.pendingCalibration
+      ? 'neutral: capturing… hold still and look at the lens'
+      : 'NEUTRAL NOT SET — press C sitting how you stream');
+  if (rig.neutralWarning) out.push(`  ⚠ ${rig.neutralWarning}`);
+
+  // The pose model is a separate model on a separate stride, and "the arms do
+  // not move" has three different causes that look identical from outside:
+  // not running, running too rarely, or running and not seeing a wrist.
+  const a = rig.state.arms;
+  const z = tracker.crop;
+  out.push(z
+    ? `face zoom ${(1 / Math.max(z.w, 1e-3)).toFixed(1)}× on the camera`
+    : `face zoom off — whole frame${store.get('camera.faceZoom') === 'off' ? '' : ' (looking for a face)'}`);
+  out.push(store.get('arms.track')
+    ? `pose ${pose.enabled ? `${pose.rate.toFixed(0)}/s stride ${pose.stride}` : 'loading…'}`
+      + ` · arms L ${a.left.seen.toFixed(2)} R ${a.right.seen.toFixed(2)}`
+      + ` · lift L ${a.left.raise.toFixed(2)} R ${a.right.raise.toFixed(2)}`
+      + `\nbody from shoulders ${rig.state.torso.seen.toFixed(2)}`
+      + ` · turn ${rig.state.torso.turn.toFixed(2)}`
+      + ` lean ${rig.state.torso.lean.toFixed(2)}`
+    : 'arm tracking off');
+  return out;
+}
 
 function runSelfCheck() {
   if (!selfcheckEl || selfcheckOff) return;
@@ -430,6 +487,7 @@ function runSelfCheck() {
     r.drawn,
     // Which face is showing, and whether the head-on drawing loaded at all.
     r.headOn ? `head-on: ${r.headOn}` : null,
+    ...liveLines(),
     changed.length
       ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`
       : 'all settings default',
@@ -458,6 +516,14 @@ installHotkeys({
   onCalibrate: () => rig.calibrate(),
   onToggleUI: toggleUI,
   onToggleMirror: () => store.set('camera.mirror', !store.get('camera.mirror')),
+  // Put the readout away, or bring it back. It is the only place a live
+  // session says anything about itself, so it has to be recoverable — tapping
+  // it used to switch it off for good.
+  onToggleReadout: () => {
+    selfcheckOff = !selfcheckOff;
+    if (selfcheckOff) selfcheckEl.hidden = true;
+    else scheduleSelfCheck();
+  },
 });
 
 store.subscribe((key) => {

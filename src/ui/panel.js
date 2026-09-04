@@ -31,6 +31,12 @@ export function buildPanel(root, ctx) {
           hint: 'Turns the whole character round, so its resting pose looks the other way. '
             + 'The tracking turns with it, so this changes which way it faces and nothing '
             + 'about how it follows you.' },
+        { type: 'select', key: 'camera.faceZoom', label: 'Face zoom', options: [
+          ['auto', 'Follow my face (better tracking)'],
+          ['off', 'Off — use the whole frame'],
+        ], hint: 'Crops the camera to your face before the tracker sees it. '
+          + 'Sitting back from the camera, this is the single biggest thing '
+          + 'you can do for tracking quality.' },
         { type: 'toggle', key: 'stage.showPreview', label: 'Show camera preview' },
         { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 4, step: 0.05, format: hz,
           hint: 'Lower is calmer when you hold still, but adds a little lag.' },
@@ -100,6 +106,10 @@ export function buildPanel(root, ctx) {
       title: 'Body & scarf',
       controls: [
         { type: 'slider', key: 'body.followGain', label: 'Body follows head', min: 0, max: 2, step: 0.05, format: x },
+        { type: 'slider', key: 'body.shoulderGain', label: 'Body follows my shoulders', min: 0, max: 3, step: 0.05, format: x,
+          hint: 'Where the pose model can see your shoulders, they set the body '
+            + 'instead of the head — so the body can sit turned while you look '
+            + 'back at the camera. Needs arm tracking on.' },
         { type: 'slider', key: 'body.breathAmount', label: 'Breathing', min: 0, max: 2.5, step: 0.05, format: x },
         { type: 'slider', key: 'body.breathRate', label: 'Breath rate', min: 0.05, max: 0.8, step: 0.01, format: hz },
         { type: 'slider', key: 'body.swayAmount', label: 'Idle sway', min: 0, max: 2.5, step: 0.05, format: x },

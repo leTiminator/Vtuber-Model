@@ -6,7 +6,8 @@
  * matrix. Everything downstream reads that object and never touches MediaPipe.
  */
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
-import { eulerFromMatrix, translationFromMatrix } from '../core/math.js';
+import { clamp, eulerFromMatrix, translationFromMatrix } from '../core/math.js';
+import * as store from '../core/store.js';
 
 const WASM_PATH = `${import.meta.env.BASE_URL}mediapipe/wasm`;
 const MODEL_PATH = `${import.meta.env.BASE_URL}models/face_landmarker.task`;
@@ -177,9 +178,26 @@ export class FaceTracker {
     if (ts <= this.lastTimestamp) ts = this.lastTimestamp + 1;
     this.lastTimestamp = ts;
 
+    /* Give the model a close-up, not the whole room.
+     *
+     * MediaPipe finds a face by looking over a downscaled copy of whatever it
+     * is handed. Sitting back from the camera, a face is a small patch of a
+     * wide frame, so what the detector actually gets to work with is a face a
+     * few dozen pixels across — and everything downstream, the blendshapes
+     * especially, is only as good as that. It reads as a model that will not
+     * quite track, and no amount of tuning at this end fixes it, because the
+     * information was thrown away before the tuning.
+     *
+     * So the frame is cropped to a box around the face and the crop is handed
+     * over instead. The box comes from where the face was last seen, padded
+     * and eased, and it opens out to the whole frame whenever the face is lost
+     * so it can be found again.
+     */
+    const source = this.zoomed(now) ?? this.video;
+
     let result;
     try {
-      result = this.landmarker.detectForVideo(this.video, ts);
+      result = this.landmarker.detectForVideo(source, ts);
     } catch (err) {
       console.error('detection failed', err);
       return this.loop();
@@ -206,16 +224,131 @@ export class FaceTracker {
         position = translationFromMatrix(matrix);
       }
 
+      // Where the face is in the WHOLE frame, whatever was handed over — so
+      // the next crop follows it and the position below can be put back.
+      const marks = result.faceLandmarks?.[0];
+      this.aimCrop(marks, now);
+      if (this.crop) position = this.uncrop(position);
+
       this.hasFace = true;
-      this.frame = { shapes: raw, head, position, landmarks: result.faceLandmarks?.[0], time: now };
+      this.frame = { shapes: raw, head, position, landmarks: marks, time: now };
       this.onFrame(this.frame);
     } else {
       if (this.hasFace) this.lostSince = now;
       this.hasFace = false;
+      // Lost. Open the crop back out, or it hunts inside a box the face has
+      // already left and never finds it again.
+      this.missed = (this.missed ?? 0) + 1;
+      if (this.missed > 8) this.crop = null;
     }
 
     this.loop();
   };
+
+  /**
+   * The cropped frame to hand the model, or null for the whole thing.
+   *
+   * Drawn into a canvas the size of the crop rather than a fixed one, so no
+   * resampling happens beyond what the crop itself is: the pixels the model
+   * sees are the camera's own.
+   */
+  zoomed() {
+    const mode = store.get('camera.faceZoom');
+    if (mode === 'off' || !this.crop) return null;
+    const vw = this.video.videoWidth;
+    const vh = this.video.videoHeight;
+    if (!vw || !vh) return null;
+    const c = this.crop;
+    const sx = Math.round(c.x * vw);
+    const sy = Math.round(c.y * vh);
+    const sw = Math.max(64, Math.round(c.w * vw));
+    const sh = Math.max(64, Math.round(c.h * vh));
+    const canvas = this.cropCanvas ?? (this.cropCanvas = document.createElement('canvas'));
+    if (canvas.width !== sw || canvas.height !== sh) {
+      canvas.width = sw;
+      canvas.height = sh;
+      this.cropCtx = canvas.getContext('2d', { willReadFrequently: false });
+    }
+    this.cropCtx.drawImage(this.video, sx, sy, sw, sh, 0, 0, sw, sh);
+    return canvas;
+  }
+
+  /** Move the crop box onto where the face actually is, smoothly. */
+  aimCrop(marks, now) {
+    if (!marks?.length) return;
+    this.missed = 0;
+    if (store.get('camera.faceZoom') === 'off') { this.crop = null; return; }
+
+    let x0 = 1; let y0 = 1; let x1 = 0; let y1 = 0;
+    for (const p of marks) {
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
+    }
+    // Landmarks come back in the coordinates of whatever was handed over, so
+    // a box measured inside a crop has to be put back into the whole frame
+    // before it can say where to crop next.
+    const c = this.crop;
+    if (c) {
+      x0 = c.x + x0 * c.w; x1 = c.x + x1 * c.w;
+      y0 = c.y + y0 * c.h; y1 = c.y + y1 * c.h;
+    }
+
+    /* Padded well past the face. The model wants room around it, a head turns
+     * out of a tight box faster than the box can follow, and a crop that
+     * clips an ear costs more than one that includes some wall. */
+    const PAD = 1.9;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const half = Math.max((x1 - x0) * PAD, (y1 - y0) * PAD, 0.22) / 2;
+    const want = {
+      x: clamp(cx - half, 0, 1), y: clamp(cy - half, 0, 1),
+      w: Math.min(half * 2, 1), h: Math.min(half * 2, 1),
+    };
+    want.x = Math.min(want.x, 1 - want.w);
+    want.y = Math.min(want.y, 1 - want.h);
+
+    /* Eased, and never faster than the face moves.
+     *
+     * A crop that snaps is worse than no crop: the model sees a different
+     * framing every frame and the landmarks jitter against it, which is read
+     * downstream as the head shaking. */
+    const k = this.crop ? 1 - Math.exp(-6 * Math.max((now - (this.cropAt ?? now)) / 1000, 0)) : 1;
+    this.cropAt = now;
+    this.crop = this.crop ? {
+      x: this.crop.x + (want.x - this.crop.x) * k,
+      y: this.crop.y + (want.y - this.crop.y) * k,
+      w: this.crop.w + (want.w - this.crop.w) * k,
+      h: this.crop.h + (want.h - this.crop.h) * k,
+    } : want;
+  }
+
+  /**
+   * Put the head's position back into the whole frame's terms.
+   *
+   * Without this, zooming would quietly switch off leaning altogether: the
+   * crop follows the face, so inside it the face is always in the middle, and
+   * a head that is always in the middle has not moved. The model would sit
+   * dead centre however far you leaned.
+   *
+   * Two corrections. Cropping to a fraction of the width makes the model
+   * believe in a longer lens, which scales what it reports; and the crop's own
+   * offset from the middle of the frame is displacement the model can no
+   * longer see. The second needs centimetres per unit of frame, which is depth
+   * times the lens's half-angle — a webcam is around fifty degrees, so half a
+   * unit of frame is about half the distance to the face.
+   */
+  uncrop(position) {
+    const c = this.crop;
+    if (!c) return position;
+    const depth = Math.abs(position.z) || 45;
+    return {
+      x: position.x * c.w + (c.x + c.w / 2 - 0.5) * depth,
+      y: position.y * c.h + (c.y + c.h / 2 - 0.5) * depth,
+      z: position.z,
+    };
+  }
 }
 
 function describeCameraError(err) {

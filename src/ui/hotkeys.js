@@ -10,7 +10,7 @@ const EXPRESSIONS = {
   Digit5: 'shock',
 };
 
-export function installHotkeys({ rig, onCalibrate, onToggleUI, onToggleMirror }) {
+export function installHotkeys({ rig, onCalibrate, onToggleUI, onToggleMirror, onToggleReadout }) {
   const held = new Set();
 
   const isTyping = (target) =>
@@ -32,6 +32,7 @@ export function installHotkeys({ rig, onCalibrate, onToggleUI, onToggleMirror })
       case 'KeyC': onCalibrate(); break;
       case 'KeyH': onToggleUI(); break;
       case 'KeyM': onToggleMirror(); break;
+      case 'KeyD': onToggleReadout?.(); break;
       default: return;
     }
     event.preventDefault();

@@ -27,6 +27,20 @@ export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
   'camera.deviceId': '',
   'camera.mirror': true,
+
+  /* Crop the camera to your face before the tracker sees it.
+   *
+   * The tracking model finds a face by looking over a downscaled copy of the
+   * whole frame. Sitting back from the camera, that leaves it a face a few
+   * dozen pixels across, and everything after — the head angles, and the
+   * blendshapes especially — is only as good as what it had to look at. It
+   * reads as a model that will not quite track, and nothing at the far end
+   * fixes it, because the detail was gone before any of that ran.
+   *
+   * 'auto' follows the face and crops to it; 'off' hands over the whole frame,
+   * which is what this always did.
+   */
+  'camera.faceZoom': 'auto',
   /* The calibrated rest pose, as JSON; empty means none.
    *
    * Kept here rather than in memory because a camera off to one side is not a
@@ -88,6 +102,17 @@ export const DEFAULTS = {
   'arms.smooth': 1.0,
 
   // --- body / idle -----------------------------------------------------
+  /* How much of the body's pose comes from your shoulders.
+   *
+   * The body used to be the head's own angles scaled down, so it could only be
+   * a smaller copy of wherever the face was pointing — it could not sit turned
+   * while the head looked back at the camera, which is most of what a person
+   * does at a desk. The pose model has returned both shoulders on every stride
+   * all along; nothing read them.
+   *
+   * Needs arm tracking on, since that is what runs the pose model.
+   */
+  'body.shoulderGain': 1.0,
   'body.followGain': 0.55, // how much the torso trails the head
   'body.breathAmount': 1.0,
   'body.breathRate': 0.22, // Hz
@@ -151,7 +176,27 @@ export const DEFAULTS = {
    * swapped sides in almost the same movement, which reads as one lurching
    * event rather than two decisions.
    */
-  'parts.mirrorStart': 0.46,
+  /* Raised well past where a person sits, because the swap costs more than it
+   * pays inside that range.
+   *
+   * At twenty-three degrees it fired constantly — "it just flips between left
+   * and right even if I'm looking directly at the camera" — and every firing
+   * takes the chin off the scarf, because the head reflects and the neck cloth
+   * only slides. There is a real drawing of the head-on face now and a drawn
+   * three-quarter either side of it, so the range a person actually works in
+   * is covered without ever reflecting anything. The mirror is left for a
+   * genuine turn away, where a bad seam matters far less than a face pointing
+   * the wrong way would.
+   *
+   * Reachable, which the first number chosen was not. The rig clamps the head
+   * at head.limitDeg and scales it by head.yawGain, so the most yaw the
+   * renderer ever sees is about 0.84 at the defaults — a threshold above that
+   * is a mirror that never fires, and three checks that only pass by feeding
+   * the renderer an angle the rig would have refused. This fires at about
+   * thirty-five degrees of real head, which nobody talks at and anybody turning
+   * away passes through.
+   */
+  'parts.mirrorStart': 0.70,
 
   /* How much of the head-on face shows when the head is square to the camera.
    *

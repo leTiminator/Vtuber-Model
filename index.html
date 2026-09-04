@@ -26,14 +26,24 @@
         <button id="toggle-panel" type="button" title="Show or hide the controls (H)">☰</button>
         <span id="status" class="status status--idle">Camera off</span>
         <span id="fps" class="fps" hidden></span>
+        <!-- Which build this is, on the stage rather than buried in the panel.
+             "Am I even looking at the new one?" should not be a question that
+             takes opening a drawer to answer. -->
+        <span id="hud-build" class="hud-build"></span>
       </div>
 
-      <!-- What this device actually drew. There is no console on a phone, and
-           the faults that reached the user were visible there and nowhere
-           else, so the answer goes on the screen where a screenshot catches
-           it. Tap to dismiss. -->
+      <!-- What this device actually drew, and what the tracker is reading.
+           There is no console on a phone, and the faults that reached the user
+           were visible here and nowhere else, so the answer goes on the screen
+           where a screenshot catches it.
+
+           It used to hide itself the instant the camera started, because
+           whatever was on this page went out to OBS. OBS reads a separate page
+           now, so that reason is gone — and the whole time it was hidden was
+           exactly the time it had something to say. Tap it, or press D, to put
+           it away. -->
       <button id="selfcheck" class="selfcheck" type="button" hidden
-        title="What this device drew — tap to hide"></button>
+        title="What this device is drawing and reading — tap to hide (D)"></button>
 
       <div id="camera-preview" hidden>
         <span>camera</span>

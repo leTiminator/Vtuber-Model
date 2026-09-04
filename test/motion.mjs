@@ -822,7 +822,15 @@ try {
       return { n, cx: n ? sx / n : NaN };
     };
     const out = [];
-    for (const [label, yaw] of [['facing as drawn', 0.70], ['mirrored', -0.70]]) {
+    /* Far enough round to actually reach the mirror.
+     *
+     * It fires at parts.mirrorStart, which was moved well past where anybody
+     * sits — at twenty-three degrees it was firing constantly during ordinary
+     * talking, and every firing takes the chin off the scarf. A sweep that
+     * stops short of it measures the un-mirrored view twice and calls the
+     * result a pass.
+     */
+    for (const [label, yaw] of [['facing as drawn', 1.15], ['mirrored', -1.15]]) {
       const head = centroid(draw(['head', 'headOn'], yaw));
       const eyes = centroid(draw(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn'], yaw));
       // Where the eye sits across the head, as a signed offset from its middle.
@@ -1216,6 +1224,129 @@ try {
     Math.abs(headOn.chat - headOn.chatWithout) < 2,
     `${headOn.chat.toFixed(1)}px across ±8°, `
       + `${headOn.chatWithout.toFixed(1)}px with it switched off`);
+  /* --- the head does not stretch the scarf --------------------------------
+   *
+   * Reported every day for a week, in the same words each time: the scarf is
+   * attached to the head and morphs and stretches when it tilts. It was, and
+   * the cause was arithmetic rather than cloth. Every part is placed by
+   * blending two matrices per vertex; the scarf's two were the neck, which
+   * carries the head's roll and nod, and the hips, which do not. A linear
+   * blend between two matrices differing by a rotation is not a rotation —
+   * it shears — so the ribbon nearest the head was welded to the head's turn
+   * and the band beyond it was dragged. Measured here at the time: an edge in
+   * the cloth grew to more than twice its drawn length on a roll.
+   *
+   * Measured exactly, because "it looks like cloth" is not a claim anyone can
+   * check. The chain is frozen so the only thing left that can move the cloth
+   * is the head, and then the question is simply whether the distance between
+   * neighbouring cloth vertices is the distance they were drawn at.
+   *
+   * The old wiring is measured alongside, from the same rig state. Without it
+   * this check cannot tell "nothing stretches" from "the ruler is broken",
+   * and that exact mistake has been made in this project more than once.
+   */
+  const stretch = await page.evaluate(async () => {
+    const { avatars, store, emptyRig } = window.__vtuber;
+    const a = avatars.parts2d;
+    store.reset();
+    store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
+      'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0 });
+    a.resize(400, 400, 1);
+    const H = a.imageSize.height;
+    const W = a.imageSize.width;
+    const tails = a.parts.find((p) => p.name === 'tails');
+    if (!tails?.live) return { edges: 0 };
+    const N = Math.round(Math.sqrt(tails.live.length / 2)) - 1;
+
+    const placed = (rig, near, far) => {
+      for (let f = 0; f < 3; f++) a.render(rig, 1 / 60);
+      const j = a.solveJoints(rig, rig.head.roll, rig.head.pitch, rig.head.yaw, a.markers());
+      const m = j[near ?? tails.joint];
+      const mf = j[far ?? tails.farJoint ?? tails.joint];
+      const out = new Float64Array(tails.live.length);
+      for (let v = 0, k = 0; v < tails.live.length; v += 2, k++) {
+        const x = tails.live[v];
+        const y = tails.live[v + 1];
+        const w = tails.follows[k];
+        out[v] = ((m[0] * x + m[3] * y + m[6]) * w
+          + (mf[0] * x + mf[3] * y + mf[6]) * (1 - w)) * W;
+        out[v + 1] = ((m[1] * x + m[4] * y + m[7]) * w
+          + (mf[1] * x + mf[4] * y + mf[7]) * (1 - w)) * H;
+      }
+      return out;
+    };
+
+    // Only edges joining two vertices that both sit on painted cloth: the
+    // mesh is a grid over the part's whole box and most of it is empty.
+    const ink = [];
+    const ctx = tails.canvas.getContext('2d', { willReadFrequently: true });
+    const px = ctx.getImageData(0, 0, tails.w, tails.h).data;
+    for (let row = 0; row <= N; row++) {
+      for (let col = 0; col <= N; col++) {
+        const sx = Math.min(tails.w - 1, Math.round((col / N) * tails.w));
+        const sy = Math.min(tails.h - 1, Math.round((row / N) * tails.h));
+        ink.push(px[(sy * tails.w + sx) * 4 + 3] > 200);
+      }
+    }
+    const edges = [];
+    for (let row = 0; row <= N; row++) {
+      for (let col = 0; col <= N; col++) {
+        const i = row * (N + 1) + col;
+        if (col < N && ink[i] && ink[i + 1]) edges.push([i, i + 1]);
+        if (row < N && ink[i] && ink[i + N + 1]) edges.push([i, i + N + 1]);
+      }
+    }
+    const lens = (p) => edges.map(([i, k]) =>
+      Math.hypot(p[i * 2] - p[k * 2], p[i * 2 + 1] - p[k * 2 + 1]));
+
+    const sweep = (near, far) => {
+      const rest = lens(placed(emptyRig(), near, far));
+      let worst = 0;
+      let worstAt = '';
+      for (const [label, set] of [
+        ['tilt down', (r) => { r.head.pitch = -0.6; }],
+        ['tilt up', (r) => { r.head.pitch = 0.6; }],
+        ['roll', (r) => { r.head.roll = 0.5; }],
+        ['turn', (r) => { r.head.yaw = 0.6; }],
+      ]) {
+        const rig = emptyRig();
+        set(rig);
+        const now = lens(placed(rig, near, far));
+        for (let i = 0; i < now.length; i++) {
+          if (rest[i] < 1) continue;
+          const d = Math.abs(now[i] - rest[i]) / rest[i];
+          if (d > worst) { worst = d; worstAt = label; }
+        }
+      }
+      return { worst, worstAt };
+    };
+    const now = sweep();
+    const was = sweep('neck', 'hips');
+    store.reset();
+    return { edges: edges.length, now, was };
+  });
+  /* Pinned rather than passed.
+   *
+   * As it ships, the scarf IS stretched by the head — this reads about 116%,
+   * an edge in the cloth growing to more than twice its drawn length on a
+   * roll. That is the fault, not the target, and it is here so that the number
+   * is on the record and cannot quietly get worse while somebody works on it.
+   *
+   * Hanging the cloth from the neck's position instead of blending it toward
+   * the neck's rotation takes this to 0.0%, measured. It is not shipping
+   * because it also detaches the scarf from the head at thirty degrees of nod:
+   * the neck wrap is cut inside the head's own radius, so it has no room to
+   * taper the rotation into cloth that is not taking one, and the shear is
+   * currently the only thing holding that seam shut. The fix is to blend the
+   * head's turn as an ANGLE per vertex rather than as a matrix — a rotation
+   * scaled per vertex is still a rotation, and does not shear.
+   */
+  check('the scarf is not stretched by the head any worse than it was',
+    stretch.edges > 100 && stretch.now.worst <= stretch.was.worst + 0.01
+      && stretch.was.worst > 0.2,
+    `${(stretch.now.worst * 100).toFixed(1)}% over ${stretch.edges} cloth edges`
+      + ` — the fault, not the target; 0.0% with the cloth hung off the neck`);
+
   /* --- the flip turns the head without moving it -------------------------
    *
    * A swap changes which way the head faces. It must not also change where the
@@ -1227,6 +1358,16 @@ try {
    *
    * Crept through one degree at a time, because that is the only way to see a
    * jump that happens between two adjacent frames.
+   */
+  /* Eight pixels now, and five before that, because the swap has moved twice.
+   *
+   * It fires at about forty degrees of the angle this sweep feeds the renderer
+   * rather than twenty-seven, and by then the head has slid further across the
+   * shoulders, so the reflection carries a little more asymmetry: six and a
+   * half pixels in the degree where it swaps. Against a head three hundred and
+   * fifty-five pixels wide that is under two per cent, and the lurch this check
+   * exists to catch was thirteen per cent. Same reasoning as the last move;
+   * written down again so the next move has to write it down too.
    */
   /* Five pixels, not four, because the swap moved on purpose.
    *
@@ -1284,7 +1425,10 @@ try {
     };
     let prev = null, worst = 0, worstAt = 0, flipped = false, flipAt = null;
     let blank = 0;
-    for (let deg = -8; deg >= -30; deg -= 1) {
+    // Out to seventy degrees, because the mirror was moved well past where
+    // anybody sits — see parts.mirrorStart. A sweep that stops short of it
+    // measures the un-mirrored view twice and calls that a pass.
+    for (let deg = -8; deg >= -70; deg -= 1) {
       const rig = emptyRig();
       rig.head.yaw = (deg * Math.PI) / 180;
       for (let f = 0; f < 30; f++) a.render(rig, 1 / 60);
@@ -1303,7 +1447,7 @@ try {
   });
 
   check('the head flips without jumping across the screen',
-    lurch.flipAt !== null && lurch.worst < 5 && lurch.blank === 0,
+    lurch.flipAt !== null && lurch.worst < 8 && lurch.blank === 0,
     `worst ${lurch.worst.toFixed(1)}px in one degree at ${lurch.worstAt}°`
       + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`)
       // A step that drew nothing is a step this never looked at. It happened:
@@ -1336,9 +1480,17 @@ try {
      * identical, which read as the trim doing something when the uniform
      * driving it was provably the same in both.
      */
+    /* And the head-on face off, for the same reason the glow is.
+     *
+     * Two rest frames are read sixty frames apart and asked to agree. The
+     * head-on latch dwells for sixty-six, so with the face left free the second
+     * read can land on the other drawing of the head — six and a half thousand
+     * pixels of difference that has nothing to do with the margin this check
+     * is about. It read as the trim changing the picture with nothing flipped.
+     */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
       'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
-      'warp.eyeGlow': 0, 'stage.zoom': 1.5 });
+      'warp.eyeGlow': 0, 'stage.zoom': 1.5, 'parts.headOn': 0 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const gl = a.gl;
@@ -1376,8 +1528,10 @@ try {
      */
     const restCut = area(0, 3);
     const restKept = area(0, 32);
-    const flipCut = area(-30, 3);
-    const flipKept = area(-30, 32);
+    // Past the mirror, which now sits at about forty degrees of the angle
+    // these checks feed the renderer directly — see parts.mirrorStart.
+    const flipCut = area(-50, 3);
+    const flipKept = area(-50, 32);
     store.reset();
     return { flipCut, flipKept, restCut, restKept };
   });

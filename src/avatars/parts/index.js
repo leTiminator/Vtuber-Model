@@ -108,6 +108,24 @@ const SHADOWS = new Set(
 const FLIPS_WITH_HEAD = new Set(
   ['head', 'tufts', 'eyeNear', 'eyeFar',
     'headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'armRight']);
+/* The neck scarf does NOT flip, and here is what that costs and why.
+ *
+ * The chin tear happens in the frame the mirror fires: the head reflects, the
+ * wrap only slides, and a translation cannot stand in for a reflection — the
+ * jaw that was on one side is now on the other and the cloth shaped for the
+ * old side is left behind. Rendered across the swap it is unmistakable: the
+ * scarf lets go of the chin and hangs beside a bare face.
+ *
+ * Mirroring the wrap with the head fixes that exactly, and was tried. It also
+ * tears the character into two and three separate pieces past forty degrees,
+ * because the rest of the scarf is not mirrored and the two halves end up on
+ * opposite sides of the neck — caught by the checks, not by looking, which is
+ * the only reason it is not shipping.
+ *
+ * So the flip is moved out of the way instead; see parts.mirrorStart. The
+ * proper fix is for the whole scarf to mirror together, which is a change to
+ * how the cloth is bound rather than to which set a part is in.
+ */
 
 /**
  * Whose weight decides where the mirror's axis falls.
@@ -1005,12 +1023,10 @@ export class Parts2D {
      * Mirrored, that cheek is the far one, so the same cloth is now on the far
      * side of the face and belongs behind it — and while it stayed in front it
      * covered the chin, because the head reflects about the mirror axis while
-     * the wrap only slides. The chin sits left of that axis, so it moves some
-     * thirty pixels right while the wrap moves forty left: seventy pixels
-     * apart, with the scarf sitting exactly where the jaw used to be.
+     * the wrap only slides.
      *
-     * Reordering says what is true about the view rather than trying to make
-     * two different transforms agree.
+     * This hides the overlap. It does not close the gap, which is the tear
+     * still reported; that needs the whole scarf mirroring together.
      */
     const headZ = this.parts.find((p) => p.name === 'head')?.z ?? 0;
     const order = mirror > 0.5
@@ -1235,23 +1251,24 @@ export class Parts2D {
         const f = spineFrame(this.boneNodes(), binds[b], skew);
         const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
         const oy = f.ny * binds[b + 1] + f.ty * binds[b + 2];
-        /* The chain lets go at the neck.
+        /* The chain lets go at the neck, for now.
          *
-         * The scarf is one piece of cloth cut in two: what hugs the neck rides
-         * with the head, the rest swings on the chain. Both halves take the
-         * head's turn through the same weight, so the joints agree at the
-         * seam — but only one of them was also being carried by the chain, and
-         * it was being carried all the way up to the cut. So the two halves
-         * sheared along that line every time the cloth moved, and what showed
-         * was a hard straight edge across the scarf beside the neck with the
-         * darker paint underneath laid bare. It is not a gap, which is why the
-         * check for the halves coming apart never saw it.
+         * It used to be scaled by `1 - follow`, so the cloth nearest the head
+         * took none of it — because that cloth was already being carried by
+         * the head's own rotation, and two things moving it would have torn
+         * the seam. It no longer is: the ribbon hangs from a point that moves
+         * with the head and does not turn with it, so the chain is the only
+         * thing that moves it, and it should reach all of it.
          *
-         * The same weight settles it. Where a point takes all of the head's
-         * turn it takes none of the chain, which is exactly what the other
-         * half of the seam does; where it has left the head it takes all of
-         * the chain. In between it is a gradient rather than a cut, and cloth
-         * wrapped round a neck does not flap at the neck anyway.
+         * That taper is why a week of work on the chain changed nothing you
+         * could see. The chain was made longer, given the arc instead of the
+         * hip drape, damped and re-tuned — all of it beyond the head's radius,
+         * which is not the part anyone watches. The part you watch had the
+         * chain scaled to nothing and the head's rotation instead.
+         *
+         * Nothing is needed in its place. Node zero is pinned at the neck, so
+         * the cloth there does not move whatever weight it is given, and the
+         * lag grows along the chain on its own. That is what a chain is.
          */
         const loose = 1 - (follows ? follows[v >> 1] : 0);
         /* Cloth the chain does not run through is not swung by it.
@@ -1353,6 +1370,28 @@ export class Parts2D {
       rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
     );
 
+    /* Where the scarf hangs from: the neck's position, without the head's
+     * rotation.
+     *
+     * This is the whole of "the scarf stretches when the head tilts", and it
+     * was never a cloth-simulation problem. Every part is placed by blending
+     * two matrices per vertex, weighted by how much of the head that vertex
+     * takes. For the scarf those two were `neck` and `hips`, and `neck`
+     * carries the head's roll and its nod-turn — up to thirty-eight degrees of
+     * rotation. A linear blend between two matrices that differ by a rotation
+     * is not a rotation: it shears. So the half of the ribbon nearest the head
+     * was welded to the head's turn, the half beyond it was not, and the band
+     * between them stretched. Exactly the reported symptom, and visible in the
+     * arithmetic long before it was visible on screen.
+     *
+     * Blending two matrices that differ only by a TRANSLATION is a
+     * translation, and translations do not shear. So the cloth hangs from a
+     * point that moves with the head and does not turn with it — which is what
+     * a scarf tied round a neck does — and everything that makes it move is
+     * the chain, which is what was asked for all along.
+     */
+    const cloth = compose(hips, translate(IDENTITY, shift, nod));
+
     /* Arms hang off the hips rather than the neck: lifting a hand should not
      * inherit the head's tilt, and a shoulder that followed the head would
      * shear the sleeve every time you looked sideways.
@@ -1395,7 +1434,7 @@ export class Parts2D {
     );
 
     return {
-      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts,
+      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts, cloth,
       shoulderLeft: armAt('armLeft', 'right'),
       shoulderRight: armAt('armRight', 'left'),
     };

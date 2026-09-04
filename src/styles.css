@@ -217,6 +217,17 @@ body.panel-hidden #first-run { display: none; }
   word-break: break-word;
   cursor: pointer;
 }
+/* The build, always on screen. Small and dim: it is a fact you glance at, not
+   something to read. */
+.hud-build {
+  align-self: center;
+  padding: 0 4px;
+  color: #6f7686;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  user-select: text;
+}
+
 .selfcheck--torn {
   border-color: #d8574e;
   color: #ffd9d5;

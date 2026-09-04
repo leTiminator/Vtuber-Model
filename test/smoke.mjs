@@ -152,8 +152,17 @@ try {
    */
   await page.waitForFunction(() => document.getElementById('selfcheck')?.hidden === true,
     null, { timeout: 5000 }).catch(() => {});
-  check('and gone once the camera is live',
-    (await page.locator('#selfcheck').isVisible()) === false);
+  /* The readout stays up while the camera runs, which is the change.
+   *
+   * It used to hide itself the instant tracking started, because everything on
+   * the page went out to OBS. OBS reads its own page now — and the time it was
+   * hidden was exactly the time it had anything to say. A week went into
+   * arguing about a head that sat turned, with the line naming the neutral
+   * pose one keypress away and switched off.
+   */
+  check('the readout stays up once the camera is live',
+    await page.locator('#selfcheck').isVisible(),
+    'visible while tracking');
 
   // A pose the rigged artwork honours: closing the eyes must move pixels.
   const blinkDelta = await page.evaluate(async () => {
