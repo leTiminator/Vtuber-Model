@@ -681,7 +681,13 @@ try {
     for (const [label, patch] of CASES) {
       for (const [poseName, drive] of POSES) {
         store.reset();
-        store.patch(patch);
+        /* Zoomed out a little, as the sweep above is, so that nothing leaves
+         * the frame. The ribbon's tip is drawn at ninety-two per cent of the
+         * artwork's width, and at the panel's extremes the chain now swings
+         * it by its full ceiling; a tip cut off by the edge of a phone-shaped
+         * canvas reads here as the character in two pieces, and it is not.
+         */
+        store.patch({ 'stage.zoom': 0.72, ...patch });
         a.scarf.reset();
         a.inertia.reset();
         const rig = emptyRig();
