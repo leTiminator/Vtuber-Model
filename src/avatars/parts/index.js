@@ -231,6 +231,9 @@ export class Parts2D {
     this.scarf = new LinkChain({ nodes: SPINE_NODES, pinned: 2, bend: 160, rest: 14,
       damping: 3.0, tipBias: 3.2, carry: 3 });
     this.inertia = new HeadInertia();
+    // What the scarf feels — the head's whole mass, roll included. Its own
+    // tracker rather than the hair's; see the cloth step in render.
+    this.clothInertia = new HeadInertia();
     // Hair lag: a single damped spring per axis, driven by the head's own
     // acceleration. The spikes are short and stiff, so they want a much
     // faster, tighter response than the scarf — a chain here would read as
@@ -871,18 +874,26 @@ export class Parts2D {
     const joints = this.solveJoints(rig, roll, pitch, yaw, m, flipSlide);
 
     // --- cloth -----------------------------------------------------------
+    const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045;
+    const proxyY = m.headY - Math.sin(pitch) * 0.06 - rig.head.y * 0.04 + roll * 0.02;
+    // Reset together: the checks reset the hair's tracker between poses, and a
+    // stale scarf tracker would read the new pose as one enormous jerk.
+    if (!this.inertia.seeded) this.clothInertia.reset();
+    this.inertia.update(proxyX, proxyY, dt);
     /* Where the head's weight is, so the cloth feels it move.
      *
      * A roll turns the head about the chin, and the middle of the head is a
      * hundred pixels above the chin — so a roll of half a radian carries the
-     * head's mass fifty pixels sideways. The proxy had no term for that, so
-     * rolling the head, the one movement that most obviously ought to swing a
-     * scarf, drove the chain with nothing at all.
+     * head's mass fifty pixels sideways. The proxy above has no term for
+     * that, so rolling the head, the one movement that most obviously ought
+     * to swing a scarf, drove the chain with nothing at all.
+     *
+     * The scarf's own tracker, not added to the hair's. The tuft spring was
+     * tuned against the turn alone, and with the roll folded in it took three
+     * times the drive: at the panel's extremes it railed against its clamp and
+     * the hair left the hood, measured as the character in two pieces.
      */
-    const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045
-      + roll * (m.pivotY - this.headSpan.cy);
-    const proxyY = m.headY - Math.sin(pitch) * 0.06 - rig.head.y * 0.04 + roll * 0.02;
-    this.inertia.update(proxyX, proxyY, dt);
+    this.clothInertia.update(proxyX + roll * (m.pivotY - this.headSpan.cy), proxyY, dt);
     const stiff = clamp(store.get('warp.clothStiffness'), 0.1, 4);
     const weight = clamp(store.get('warp.clothWeight'), 0, 3);
     /* Stiffness is the joint spring: how hard each link is pulled back toward
@@ -923,8 +934,8 @@ export class Parts2D {
      * unchanged), and past that the limits hold, so the scarf can be made to
      * move a lot without being made to come apart.
      */
-    const fx = clamp(-this.inertia.ax, -12, 12) * CLOTH_DRIVE * weight;
-    const fy = clamp(-this.inertia.ay, -12, 12) * CLOTH_DRIVE * weight;
+    const fx = clamp(-this.clothInertia.ax, -12, 12) * CLOTH_DRIVE * weight;
+    const fy = clamp(-this.clothInertia.ay, -12, 12) * CLOTH_DRIVE * weight;
     /* Tied at the root to the neck scarf. Whatever the wrap does — leaning
      * with the chin, jumping with the mirror — the first links do exactly, and
      * the rest of the ribbon finds out about it one joint at a time. That lag
