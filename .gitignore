@@ -12,3 +12,7 @@ public/models/
 
 *.log
 .DS_Store
+
+# Evidence written by failing checks
+test/out/
+test/golden/out/

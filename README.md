@@ -68,65 +68,23 @@ Redo the neutral pose whenever you move your chair or camera.
 
 ---
 
-## Trying it on your phone
+## Desktop only
 
-Handy for testing the tracking away from the desk, and for checking how the
-model reads at arm's length. **It still runs on the computer** — the phone is
-just the screen, so the computer has to stay on with this running.
+This runs on a computer, in a desktop browser, next to OBS. It used to have a
+phone route as well — a local HTTPS server, a certificate to accept, a
+bottom-sheet layout — and that has been taken out: it was effort spent on a
+screen this is never streamed from, and every one of its checks was a check
+the desktop did not need.
 
-Double-click **start-phone.bat** (Windows) or run `./start-phone.sh`, or:
-
-```
-npm run phone
-```
-
-That prints one or more addresses. On the phone — **same Wi-Fi as the
-computer** — open the one that looks like your home network:
-
-```
-https://192.168.1.42:5173
-```
-
-**The phone will warn that the certificate is not trusted. That is expected.**
-Browsers only hand out the camera on a secure origin, and `localhost` stops
-counting as one the moment the address is an IP — so the server makes itself a
-certificate. It is your own machine, and nothing leaves it.
-
-- **Chrome:** *Advanced* → *Proceed to 192.168… (unsafe)*
-- **Safari:** *Show Details* → *visit this website*
-
-Then **Start camera** and allow it. The front camera is used by default.
-
-On a phone the controls sit in a sheet at the bottom instead of a side panel;
-tap **☰** to get it out of the way and back again. Drag the model to move it,
-pinch or scroll to resize.
-
-If the address does not load at all, the computer's firewall is usually the
-reason — it has to allow incoming connections on port 5173. Guest Wi-Fi and
-some routers also isolate devices from each other, in which case nothing on the
-phone will reach the computer.
-
-### Or open it from anywhere
-
-Pushing to this branch publishes the app to GitHub Pages:
+The deployed build is at
 
 ```
 https://letiminator.github.io/Vtuber-Model/
 ```
 
-That works on any phone, on mobile data, with the computer switched off — Pages
-serves HTTPS, so the camera is allowed and there is no certificate to accept.
-It runs entirely in the phone's browser; no video leaves the device.
-
-The only prerequisite is that the repository is public — Pages from a private
-repo needs a paid plan. The workflow enables Pages itself on the first run, so
-there is nothing to click in Settings.
-
-**Prefer no certificate warning?** Plug the phone in over USB with developer
-mode on, open `chrome://inspect/#devices` on the computer, and add a port
-forward from `5173` to `localhost:5173`. Then `npm run dev` as usual and open
-`http://localhost:5173` on the phone — a real localhost, so the camera works
-with nothing to accept.
+Pushing to `main` publishes it; the commit it was built from is stamped in
+the corner of the stage, so you can see at a glance that you are on the
+current one.
 
 ---
 
@@ -358,7 +316,6 @@ npm run test:rig     # rig maths, headless, no camera needed
 npm run test:parts   # the cut: reassembly, and each part being the right part
 npm run test:motion  # behaviour, motion invariants, and how it looks
 npm run test:replay  # a recorded tracker session, if one has been added
-npm run test:mobile  # phone layout, on a phone-shaped viewport over HTTPS
 npm run test:warp    # mesh warp: head motion, blink, background key
 ```
 

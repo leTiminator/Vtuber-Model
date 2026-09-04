@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [rig, parts, motion, replay, smoke, mobile, warp, output]
+        suite: [rig, parts, motion, replay, smoke, warp, output]
     name: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v4

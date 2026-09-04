@@ -23,7 +23,7 @@ was not. The rule from here:
    starts another round of guessing.
 3. **The build stamp is on the stage.** The corner shows the commit. If it
    does not match the link, the browser is holding an old build.
-4. **Green is eight suites, locally and in CI**, and nothing ships red. The
+4. **Green is every suite, locally and in CI**, and nothing ships red. The
    suites run on every push; the deployed link always carries the commit.
 
 ## Where we are
@@ -52,9 +52,9 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   transparency and no window to crop; the tracker page feeds it over the dev
   server; settings and pose cross, nothing persists on the OBS side, the last
   pose holds when frames stop.
-- **Testing** — eight suites covering the rig, the cut, motion over the whole
-  range, a replay of a real minute of tracking, boot, a phone-sized run, the
-  warp backend and the OBS link; visual harnesses for the scarf, the faces,
+- **Testing** — seven suites covering the rig, the cut, motion over the whole
+  range, a replay of a real minute of tracking, boot, the warp backend and the
+  OBS link; visual harnesses for the scarf, the faces,
   the dynamics; all of it in CI on push.
 
 ## What is still in the way, in order
@@ -135,6 +135,10 @@ thirty degrees. A frontal head drawn looking up and one looking down would
 make it a swap between real views. Low priority until everything above holds.
 
 ## What is deliberately not on this list
+
+- **Phones.** This is streamed from a desktop, next to OBS. The phone route
+  (a local HTTPS server, a bottom-sheet layout, a phone-sized suite) has been
+  removed rather than maintained.
 
 - Warping the drawing to invent views that were never drawn. Tried twice
   (cylinder, shell); both read as distortion. The model swaps drawings now.

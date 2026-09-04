@@ -20,6 +20,7 @@
  *   node test/motion.mjs
  */
 import { chromium } from 'playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromeBin } from '../scripts/chrome.mjs';
 import { createServer } from 'vite';
 
@@ -653,8 +654,10 @@ try {
   const intact = await page.evaluate(async () => {
     const { avatars, emptyRig, store } = window.__vtuber;
     const a = avatars.parts2d;
-    // A phone's worth of pixels: the size it is actually looked at.
-    a.resize(412, 900, 1);
+    // A desktop canvas, the shape OBS is given. Wide, so the ribbon's tip —
+    // drawn at ninety-two per cent of the artwork's width — has room to swing
+    // without the frame's edge cutting it into a second piece.
+    a.resize(960, 540, 1);
 
     const CASES = [
       ['defaults', {}],
@@ -681,26 +684,33 @@ try {
     for (const [label, patch] of CASES) {
       for (const [poseName, drive] of POSES) {
         store.reset();
-        /* Zoomed out a little, as the sweep above is, so that nothing leaves
-         * the frame. The ribbon's tip is drawn at ninety-two per cent of the
-         * artwork's width, and at the panel's extremes the chain now swings
-         * it by its full ceiling; a tip cut off by the edge of a phone-shaped
-         * canvas reads here as the character in two pieces, and it is not.
-         */
-        store.patch({ 'stage.zoom': 0.72, ...patch });
+        store.patch(patch);
         a.scarf.reset();
         a.inertia.reset();
         const rig = emptyRig();
         let worst = 1;
         let where = '';
+        let picture = null;
         for (let f = 0; f < 240; f++) {
           if (drive) drive(rig, f);
           a.render(rig, 1 / 60);
           if (f % 20 !== 19) continue;
-          const n = window.__t.blobs(window.__t.read(a), 60);
-          if (n > worst) { worst = n; where = ` at frame ${f}`; }
+          const shot = window.__t.read(a);
+          const n = window.__t.blobs(shot, 60);
+          if (n > worst) {
+            worst = n; where = ` at frame ${f}`;
+            // The frame itself, for whoever has to find out which piece it was.
+            const img = new ImageData(shot.w, shot.h);
+            for (let y = 0; y < shot.h; y++) {
+              img.data.set(shot.d.subarray((shot.h - 1 - y) * shot.w * 4, (shot.h - y) * shot.w * 4), y * shot.w * 4);
+            }
+            const c = document.createElement('canvas');
+            c.width = shot.w; c.height = shot.h;
+            c.getContext('2d').putImageData(img, 0, 0);
+            picture = c.toDataURL('image/png');
+          }
         }
-        out.push({ label: `${label}, ${poseName}`, worst, where });
+        out.push({ label: `${label}, ${poseName}`, worst, where, picture });
       }
     }
     store.reset();
@@ -710,6 +720,13 @@ try {
   });
 
   const torn = intact.filter((o) => o.worst !== 1);
+  for (const o of torn) {
+    if (!o.picture) continue;
+    const file = `test/out/pieces-${o.label.replace(/[^a-z0-9]+/gi, '-')}.png`;
+    mkdirSync('test/out', { recursive: true });
+    writeFileSync(file, Buffer.from(o.picture.split(',')[1], 'base64'));
+    console.log(`       wrote ${file}`);
+  }
   check('the character renders as one piece at every setting',
     torn.length === 0,
     torn.length
