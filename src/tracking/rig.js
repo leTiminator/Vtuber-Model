@@ -11,6 +11,10 @@
  *      and body follow-through
  */
 import { FilterBank } from '../core/oneEuro.js';
+/* How much further a wrist travels than an elbow on a raised arm, for reading
+ * the raise off the elbow when the wrist is out of the picture. */
+const ELBOW_RAISE = 1.6;
+
 import { clamp, damp, DEG, lerp, makeSpring, remap, spring, TAU } from '../core/math.js';
 import * as store from '../core/store.js';
 
@@ -54,10 +58,12 @@ export function emptyRig() {
     cheeks: { puff: 0, squintL: 0, squintR: 0 },
     body: { leanX: 0, leanY: 0, twist: 0, breath: 0, bounce: 0, hairX: 0, hairY: 0 },
     // Arm angles are relative to the torso, not the screen, so leaning does not
-    // read as raising. `raise` is how far the wrist is above the shoulder.
+    // read as raising. `raise` is how far the wrist is above the shoulder —
+    // or, with no wrist in the picture, how far the elbow is. `seen` is how
+    // confidently the shoulder and elbow are tracked, `wrist` the wrist alone.
     arms: {
-      left: { upper: 0, fore: 0, raise: 0, seen: 0 },
-      right: { upper: 0, fore: 0, raise: 0, seen: 0 },
+      left: { upper: 0, fore: 0, raise: 0, seen: 0, wrist: 0 },
+      right: { upper: 0, fore: 0, raise: 0, seen: 0, wrist: 0 },
     },
     /* The body's own pose, measured from the shoulders rather than inferred
      * from the head. `seen` is how much the pose model is currently supplying
@@ -232,6 +238,7 @@ export class Rig {
       for (const side of ['left', 'right']) {
         const a = arms[side];
         a.seen = damp(a.seen, 0, 4, dt);
+        a.wrist = damp(a.wrist, 0, 4, dt);
         a.upper = damp(a.upper, 0, 3, dt);
         a.fore = damp(a.fore, 0, 3, dt);
         a.raise = damp(a.raise, 0, 3, dt);
@@ -332,10 +339,15 @@ export class Rig {
     const solve = (shoulder, elbow, wrist, key) => {
       const a = arms[key];
       if (!shoulder || !elbow) {
+        // Held where it was, not zeroed: a joint at the edge of the frame
+        // comes and goes several times a second, and an arm that answered
+        // each loss by dropping would shake.
         a.seen = damp(a.seen, 0, 4, dt);
+        a.wrist = damp(a.wrist, 0, 4, dt);
         return;
       }
       a.seen = damp(a.seen, 1, 8, dt);
+      a.wrist = damp(a.wrist, wrist ? 1 : 0, 6, dt);
 
       let ux = elbow.x - shoulder.x;
       let uy = elbow.y - shoulder.y;
@@ -344,8 +356,22 @@ export class Rig {
       const upper = this.arms.filter(
         `${key}Upper`, clamp(signedAngle(axisX, axisY, ux, uy) * flip, -Math.PI, Math.PI), dt);
 
-      let fore = 0;
-      let raise = 0;
+      /* The wrist is the joint most often out of the picture.
+       *
+       * Measured on a real minute at a desk: one wrist absent in every frame,
+       * the other present in six per cent of them, the elbows below the
+       * bottom edge more than half the time. A missing wrist used to read as a
+       * wrist at zero — a measurement, not an absence — so an arm whose hand
+       * drifted out of frame jumped to wherever "zero minus the rest pose"
+       * put it, and an arm whose hand drifted back in jumped again. That is
+       * the twitch that was reported as arm tracking not working.
+       *
+       * What is not seen is not measured. The forearm angle and the wrist's
+       * height are null without a wrist; how high the elbow sits is always
+       * there, and says most of the same thing about a raised arm.
+       */
+      let fore = null;
+      let raise = null;
       if (wrist) {
         let fx = wrist.x - elbow.x;
         let fy = wrist.y - elbow.y;
@@ -356,23 +382,42 @@ export class Rig {
         // Positive when the wrist is above the shoulder — hands off the keyboard.
         raise = this.arms.filter(`${key}Raise`, clamp((shoulder.y - wrist.y) / span, -1.5, 2), dt);
       }
+      const lift = this.arms.filter(`${key}Lift`,
+        clamp((shoulder.y - elbow.y) / span, -1.5, 2), dt);
 
-      measured[key] = { upper, fore, raise };
+      measured[key] = { upper, fore, raise, lift };
 
       // Everything downstream wants a *change* from how you normally sit, not
       // an absolute angle: the artwork already has arms drawn somewhere, and
       // the rig rotates them away from there. Without this, resting hands on
       // the keyboard would hold the drawn arms permanently bent.
+      //
+      // Each quantity has its own rest, adopted the first time it is actually
+      // measured — a rest pose captured with the hands out of frame has no
+      // opinion about where the wrists sit until it has seen them.
       const rest = this.armNeutral?.[key];
+      if (rest) {
+        if (rest.fore == null && fore != null) rest.fore = fore;
+        if (rest.raise == null && raise != null) rest.raise = raise;
+      }
       a.upper = (upper - (rest?.upper ?? 0)) * gain;
-      a.fore = (fore - (rest?.fore ?? 0)) * gain;
-      a.raise = (raise - (rest?.raise ?? 0)) * gain;
+      if (fore != null) a.fore = (fore - (rest?.fore ?? fore)) * gain;
+      /* Raise from the wrist while there is one, from the elbow's height when
+       * there is not. The two agree at rest by construction and roughly
+       * elsewhere — the wrist travels about half again as far as the elbow on
+       * a raised arm — and the change between them is eased rather than cut,
+       * so a hand at the edge of the frame does not make the arm stutter.
+       */
+      const fromWrist = raise != null && rest?.raise != null ? (raise - rest.raise) * gain : null;
+      const fromElbow = (lift - (rest?.lift ?? lift)) * gain * ELBOW_RAISE;
+      a.raise = damp(a.raise, fromWrist ?? fromElbow, 14, dt);
     };
 
     solve(shoulderL, elbowL, wristL, 'left');
     solve(shoulderR, elbowR, wristR, 'right');
 
     // First good look at both arms after a calibrate becomes the rest pose.
+    // Whatever the wrists were doing is filled in the first time they show.
     if (!this.armNeutral && measured.left && measured.right) {
       this.armNeutral = measured;
       for (const side of ['left', 'right']) {

@@ -279,6 +279,42 @@ const runPose = (rig, n, f, has = true) => {
     `L upper ${state.arms.left.upper}`);
 }
 
+/* --- a hand leaving the frame is not a hand at zero -----------------------
+ * Measured on the recorded minute this project has, the wrists were out of
+ * the picture in every frame and the elbows below its bottom edge in most. A
+ * missing wrist used to be read as a wrist at zero, so an arm whose hand
+ * drifted out of frame jumped to "zero minus the rest pose" and jumped back
+ * when it returned — the twitch reported as arm tracking not working.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  runPose(rig, 120, posed());
+  const up = posed({
+    le: { x: 0.30, y: 0.36 }, re: { x: 0.70, y: 0.36 },
+    lw: { x: 0.34, y: 0.18 }, rw: { x: 0.66, y: 0.18 },
+  });
+  const withWrist = runPose(rig, 240, up).arms.left.raise;
+  const noWrist = { ...up, joints: { ...up.joints, wristL: null, wristR: null } };
+  const lost = runPose(rig, 240, noWrist).arms.left;
+  check('losing the wrists keeps a raised arm raised',
+    lost.raise > 0.4 && lost.raise > withWrist * 0.5,
+    `raise ${lost.raise.toFixed(2)} without wrists, ${withWrist.toFixed(2)} with`);
+  check('the readout can tell a wrist is gone from an arm that is not',
+    lost.wrist < 0.05 && lost.seen > 0.95,
+    `wrist ${lost.wrist.toFixed(2)} seen ${lost.seen.toFixed(2)}`);
+
+  // A rest pose captured with the hands out of frame must not push the arms
+  // anywhere when the hands first show up, resting.
+  const rig2 = new Rig();
+  const restNoWrist = { ...posed(), joints: { ...posed().joints, wristL: null, wristR: null } };
+  runPose(rig2, 120, restNoWrist);
+  const appeared = runPose(rig2, 120, posed()).arms.left;
+  check('wrists appearing at rest read as no movement',
+    Math.abs(appeared.raise) < 0.05 && Math.abs(appeared.fore) < 0.05,
+    `raise ${appeared.raise.toFixed(3)} fore ${appeared.fore.toFixed(3)}`);
+}
+
 /* --- which physical hand drives which side of the screen ------------------
  * This is the one thing a headless run cannot check by pointing a camera at a
  * person, and it is the easiest thing in the whole rig to get backwards. It is

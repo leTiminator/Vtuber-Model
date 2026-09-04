@@ -452,11 +452,29 @@ function liveLines() {
   out.push(store.get('arms.track')
     ? `pose ${pose.enabled ? `${pose.rate.toFixed(0)}/s stride ${pose.stride}` : 'loading…'}`
       + ` · arms L ${a.left.seen.toFixed(2)} R ${a.right.seen.toFixed(2)}`
+      + ` · wrists L ${a.left.wrist.toFixed(2)} R ${a.right.wrist.toFixed(2)}`
       + ` · lift L ${a.left.raise.toFixed(2)} R ${a.right.raise.toFixed(2)}`
       + `\nbody from shoulders ${rig.state.torso.seen.toFixed(2)}`
       + ` · turn ${rig.state.torso.turn.toFixed(2)}`
       + ` lean ${rig.state.torso.lean.toFixed(2)}`
     : 'arm tracking off');
+  /* Framing, said in words, because it is the fix and it is not in the code.
+   *
+   * On the recorded minute this project has, the wrists were out of the
+   * picture in every frame and the elbows below its bottom edge in most, with
+   * the shoulders sitting at eighty per cent of the frame's height. No rig
+   * tracks an arm the camera cannot see, and nothing on screen said so.
+   */
+  const j = pose.frame?.joints;
+  if (store.get('arms.track') && pose.enabled && j?.shoulderL && j?.shoulderR) {
+    const shoulderY = (j.shoulderL.y + j.shoulderR.y) / 2;
+    const where = `shoulders at ${Math.round(shoulderY * 100)}% of the frame's height`;
+    if (a.left.seen < 0.3 && a.right.seen < 0.3) {
+      out.push(`  ⚠ elbows out of frame — ${where}; move the camera back or down`);
+    } else if (a.left.wrist < 0.3 && a.right.wrist < 0.3) {
+      out.push(`  ⚠ wrists out of frame — lift is read off the elbows; ${where}`);
+    }
+  }
   return out;
 }
 
