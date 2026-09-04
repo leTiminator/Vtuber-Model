@@ -18,15 +18,15 @@
  */
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { chromeBin } from '../chrome.mjs';
 import { writeFileSync } from 'node:fs';
 
 const OUT = process.argv[2] ?? 'faces.png';
-const CHROME = process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium';
 
 const server = await createServer({ server: { port: 5222 }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader', '--no-proxy-server'],
 });
 const page = await (await browser.newContext({ viewport: { width: 700, height: 700 } })).newPage();

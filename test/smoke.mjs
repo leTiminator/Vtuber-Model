@@ -9,9 +9,9 @@
  *   node test/smoke.mjs
  */
 import { chromium } from 'playwright';
+import { chromeBin } from '../scripts/chrome.mjs';
 import { createServer } from 'vite';
 
-const CHROME = process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const results = [];
 let failures = 0;
 
@@ -25,7 +25,7 @@ const server = await createServer({ server: { port: 5188 }, logLevel: 'error' })
 await server.listen();
 
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  executablePath: chromeBin(),
   args: [
     '--use-fake-ui-for-media-stream',
     '--use-fake-device-for-media-stream',

@@ -360,7 +360,21 @@ let saveTimer = 0;
  * its default, and only a deliberate choice sticks. It also makes the saved
  * blob small and readable, and it retires the rename trick.
  */
+/* Whether changes are written down at all.
+ *
+ * On by default and turned off by exactly one caller: the page OBS opens,
+ * which is told its settings over the link rather than remembering any. OBS's
+ * browser keeps its own storage, so a snapshot saved there would be read back
+ * on the next launch and win until the first message arrived — a second or two
+ * of a shot nobody framed, at the top of every stream.
+ */
+let persist = true;
+export function setPersistence(on) {
+  persist = Boolean(on);
+}
+
 function scheduleSave() {
+  if (!persist) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {

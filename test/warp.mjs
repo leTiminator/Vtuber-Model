@@ -10,9 +10,9 @@
  */
 import { deflateSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import { chromeBin } from '../scripts/chrome.mjs';
 import { createServer } from 'vite';
 
-const CHROME = process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 let failures = 0;
 
 function check(name, ok, detail = '') {
@@ -179,7 +179,7 @@ const server = await createServer({ server: { port: 5191 }, logLevel: 'error' })
 await server.listen();
 
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  executablePath: chromeBin(),
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--enable-unsafe-swiftshader'],
 });
 const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 1000, height: 800 } });

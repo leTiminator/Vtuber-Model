@@ -3,6 +3,7 @@
 //
 //   node scripts/visual/warp-demo.mjs out.png [path/to/art.png]
 import { chromium } from 'playwright';
+import { chromeBin } from '../chrome.mjs';
 import { createServer } from 'vite';
 
 const out = process.argv[2] ?? 'warp-demo.png';
@@ -12,7 +13,7 @@ const server = await createServer({ server: { port: 5193 }, logLevel: 'error' })
 await server.listen();
 
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath: chromeBin(),
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--enable-unsafe-swiftshader'],
 });
 const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 1400, height: 900 } });

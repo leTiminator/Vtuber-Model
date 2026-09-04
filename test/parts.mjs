@@ -16,9 +16,9 @@
  *   node test/parts.mjs
  */
 import { chromium } from 'playwright';
+import { chromeBin } from '../scripts/chrome.mjs';
 import { createServer } from 'vite';
 
-const CHROME = process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 let failures = 0;
 function check(name, ok, detail = '') {
   if (!ok) failures++;
@@ -28,7 +28,7 @@ function check(name, ok, detail = '') {
 const server = await createServer({ server: { port: 5189 }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader'],
 });
 const page = await (await browser.newContext({ viewport: { width: 900, height: 900 } })).newPage();

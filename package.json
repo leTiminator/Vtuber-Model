@@ -11,7 +11,7 @@
     "phone": "node scripts/phone.mjs",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "test": "node test/rig.mjs && node test/parts.mjs && node test/motion.mjs && node test/replay.mjs && node test/smoke.mjs && node test/mobile.mjs && node test/warp.mjs",
+    "test": "node test/rig.mjs && node test/parts.mjs && node test/motion.mjs && node test/replay.mjs && node test/smoke.mjs && node test/mobile.mjs && node test/warp.mjs && node test/output.mjs",
     "test:rig": "node test/rig.mjs",
     "test:parts": "node test/parts.mjs",
     "test:motion": "node test/motion.mjs",
@@ -27,7 +27,8 @@
     "arms": "node scripts/visual/arms.mjs arms.png",
     "motion": "node scripts/visual/motion.mjs motion.png",
     "dynamics": "node scripts/visual/dynamics.mjs dynamics.png",
-    "faces": "node scripts/visual/faces.mjs faces.png"
+    "faces": "node scripts/visual/faces.mjs faces.png",
+    "test:output": "node test/output.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.22"
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "playwright": "^1.56.1",
-    "vite": "^7.1.14"
+    "vite": "^7.1.14",
+    "ws": "^8.21.3"
   }
 }

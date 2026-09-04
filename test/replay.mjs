@@ -10,6 +10,7 @@
  *   node test/replay.mjs
  */
 import { chromium } from 'playwright';
+import { chromeBin } from '../scripts/chrome.mjs';
 import { createServer } from 'vite';
 import { readFileSync, existsSync } from 'node:fs';
 
@@ -37,7 +38,7 @@ check('the recording saw a face', (session.withFace ?? 0) > session.samples.leng
 const server = await createServer({ server: { port: 5193 }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader', '--no-proxy-server'],
 });
 const page = await (await browser.newContext({ viewport: { width: 420, height: 420 } })).newPage();

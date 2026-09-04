@@ -5,6 +5,8 @@
 import './styles.css';
 import * as store from './core/store.js';
 import { ZOOM_MAX, ZOOM_MIN, fitTo, zoomAbout } from './core/framing.js';
+import { applyBackground as paintStage, fitToWindow } from './core/stage.js';
+import { openRigLink } from './core/rigLink.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
@@ -63,35 +65,35 @@ function mountAvatar(id) {
   resize();
 }
 
-/* How many pixels the model is allowed to be drawn into.
- *
- * A phone reports a device pixel ratio of three or more, and taking it at its
- * word on a tall screen asks for a canvas of four and a half megapixels —
- * redrawn every frame, through sixteen blended passes, on a tiled mobile GPU,
- * sometimes inside an in-app browser with less memory to give than the real
- * one. What comes back when that runs short is missing tiles: rectangular
- * holes that sit still on the screen while the character slides past them,
- * which is exactly how it was described.
- *
- * Two ratios of supersampling is already past what the screen can show at
- * arm's length, so the cap costs nothing to look at and gives back most of
- * the fragment work.
- */
-const MAX_RATIO = 2;
-const MAX_PIXELS = 2.4e6;
-
-function renderScale(w, h) {
-  const dpr = Math.min(window.devicePixelRatio || 1, MAX_RATIO);
-  const area = Math.max(w * h, 1);
-  return Math.min(dpr, Math.sqrt(MAX_PIXELS / area));
-}
-
+// Sizing and the stage's background live in core/stage.js, because the page
+// OBS opens has to do both exactly as this one does or the shot you framed is
+// not the shot that goes out.
 function resize() {
-  if (!current) return;
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  current.resize(w, h, renderScale(w, h));
+  fitToWindow(current);
 }
+
+/* The window OBS opens, if one is listening.
+ *
+ * This tab keeps the camera and the tracking; the other one only draws. It is
+ * told the settings — including the neutral pose, which lives in the store —
+ * whenever they change and once on connect, and then a frame at a time. See
+ * core/rigLink.js.
+ */
+let outputs = 0;
+const link = openRigLink({
+  role: 'tracker',
+  onState: ({ outputs: n }) => {
+    const had = outputs;
+    outputs = n;
+    // Newly attached: catch it up before the next frame, in case the relay
+    // was restarted and lost the snapshot it replays to late arrivals.
+    if (n > had) link.send({ t: 'settings', values: store.snapshot() });
+    updateStatus();
+  },
+});
+store.subscribe(() => {
+  if (link.wanted) link.send({ t: 'settings', values: store.snapshot() });
+});
 
 let lastFrameTime = performance.now();
 function frame(now) {
@@ -104,6 +106,18 @@ function frame(now) {
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
   current?.render(rig.state, dt);
+
+  // Only when somebody is drawing it. A kilobyte a frame is nothing over
+  // loopback, but sending it to no one is still sending it.
+  if (link.wanted) {
+    link.send({
+      t: 'frame',
+      face: tracker.frame ?? null,
+      hasFace: tracker.hasFace,
+      pose: pose.enabled && pose.hasPose ? pose.frame ?? null : null,
+      hasPose: pose.enabled && pose.hasPose,
+    });
+  }
 
   /* The readout is for setting up, not for streaming.
    *
@@ -146,26 +160,30 @@ function setStatus(text, kind) {
 }
 
 function updateStatus() {
+  /* Whether the output window is listening, said here rather than there.
+   *
+   * That page is what OBS captures, so it has nowhere to put a message —
+   * anything drawn on it is on the stream. This is the only screen where
+   * "OBS is not actually receiving anything" can be read, and not knowing
+   * that is the failure people spend an evening on.
+   */
+  const out = outputs > 0 ? ` · to OBS ×${outputs}` : '';
   switch (tracker.status) {
     case 'requesting-camera': return setStatus('Asking for the camera…', 'busy');
     case 'loading-model': return setStatus('Loading tracking model…', 'busy');
     case 'error': return setStatus(tracker.error ?? 'Camera error', 'error');
     case 'running':
       return tracker.hasFace
-        ? setStatus('Tracking', 'live')
-        : setStatus('No face detected', 'lost');
-    default: return setStatus('Camera off', 'idle');
+        ? setStatus(`Tracking${out}`, 'live')
+        : setStatus(`No face detected${out}`, 'lost');
+    default: return setStatus(`Camera off${out}`, 'idle');
   }
 }
 
 /* ------------------------------------------------------------ background */
 
 function applyBackground() {
-  const mode = store.get('stage.background');
-  dom.stage.style.background =
-    mode === 'chroma' ? store.get('stage.chroma')
-    : mode === 'color' ? store.get('stage.color')
-    : 'transparent';
+  paintStage(dom.stage);
 }
 
 function applyPreview() {
@@ -593,7 +611,7 @@ artwork.recall().then(async (saved) => {
 // Dev-only handle, so the test suite can render a chosen pose and read the
 // pixels back without going through the camera.
 if (import.meta.env.DEV) {
-  window.__vtuber = { rig, avatars, tracker, pose, recorder, store, emptyRig,
+  window.__vtuber = { rig, avatars, tracker, pose, recorder, store, emptyRig, link,
     get current() { return current; } };
 }
 

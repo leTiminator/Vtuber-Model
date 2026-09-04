@@ -3,6 +3,7 @@
 //
 //   node scripts/visual/arms.mjs out.png
 import { chromium } from 'playwright';
+import { chromeBin } from '../chrome.mjs';
 import { createServer } from 'vite';
 import { writeFileSync } from 'node:fs';
 
@@ -11,7 +12,7 @@ const server = await createServer({ server: { port: 5202 }, logLevel: 'error' })
 await server.listen();
 
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader'],
 });
 const page = await (await browser.newContext({ viewport: { width: 460, height: 460 } })).newPage();

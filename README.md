@@ -132,37 +132,58 @@ with nothing to accept.
 
 ## Putting it in OBS
 
-There are two ways in. **Read this bit** — the obvious one has a catch.
+The model goes into OBS as a **Browser source**, which composites real
+transparency — no green screen to key, no window to capture, and so no title
+bar to crop out of shot.
 
-### The reliable way: window capture + chroma key
+The catch that used to make this awkward is that OBS's built-in browser cannot
+reliably open a webcam. So it is not asked to. The app has **two pages**:
 
-OBS's built-in browser cannot always get at a webcam, and when it fails it does
-so silently. Capturing a real browser window sidesteps that entirely.
+- the one you already use, which does the camera and the tracking, and
+- **`/output.html`** — the model and nothing else. No camera, no controls, no
+  tracking model. OBS opens this one.
 
-1. In the app, set **Background** to `Chroma key colour` (Output & OBS section).
-2. Put the browser window on your second monitor and press `F11` for fullscreen,
-   then `H` to hide the interface.
-3. In OBS add a **Window Capture** source and pick the browser window.
-4. Right-click the source → **Filters** → add a **Chroma Key** filter, key type
-   Green.
+They talk over the server that is already running, so tracking happens in your
+real browser with a real GPU, and OBS just draws.
 
-### The clean way: browser source
+### Setting it up
 
-Real transparency, no keying, but only if OBS's browser will open your camera.
+1. Start the app as usual and leave that browser window open. **Do not
+   minimise it** — browsers slow a hidden tab down to about one frame a second,
+   and the model would stutter. A second monitor, or a small window beside OBS,
+   is fine.
+2. In the app, leave **Background** on `Transparent` (Output & OBS section).
+3. In OBS: **+** → **Browser**, URL `http://127.0.0.1:5173/output.html`.
+4. Set the size to 1920x1080, then scale the source in your scene.
+5. Untick **Shutdown source when not visible**.
 
-1. Leave **Background** on `Transparent`.
-2. Add a **Browser** source with the URL `http://127.0.0.1:5173`.
-3. Set the size to 1920x1080, then scale the source in your scene.
-4. Untick **Shutdown source when not visible**.
+The status pill in the app then reads **"Tracking · to OBS ×1"**. If it does
+not say `to OBS`, the browser source is not connected and nothing you do in
+OBS will help — check the URL and that the app's terminal is still running.
 
-If the model appears but never tracks — no face detected, no fps counter — OBS
-did not get camera permission. Use the window-capture method instead; it is not
-worth fighting.
+Frame the shot in the app window; the output follows. Set the Browser source to
+the aspect ratio you want, because the framing is applied to whatever shape the
+canvas is.
 
-Either way, keep the terminal window from step 3 of Setup running.
+### If you would rather capture a window
 
-For a permanent install, `npm run build` writes a static site to `dist/` you can
-serve from anywhere.
+You can, and it is worth knowing which capture: **Game Capture with "Allow
+transparency"** carries an alpha channel, and **Window Capture does not**. So
+with Game Capture you can leave the background transparent; with Window
+Capture you have to set **Background** to `Chroma key colour` and add a Chroma
+Key filter in OBS.
+
+Either way press `F11` for fullscreen and `H` to hide the interface first —
+that is what keeps the browser's own top bar out of the shot.
+
+The browser source is still the better route: it needs no keying, no
+fullscreen, and no second monitor.
+
+Keep the terminal window from step 3 of Setup running throughout.
+
+For a permanent install, `npm run build` writes a static site to `dist/` you
+can serve from anywhere — though the two-page arrangement needs the local
+server, since that is what carries tracking between them.
 
 ---
 

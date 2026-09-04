@@ -21,6 +21,7 @@
  */
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { chromeBin } from '../chrome.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const SESSION = JSON.parse(readFileSync(
@@ -28,12 +29,11 @@ const SESSION = JSON.parse(readFileSync(
 
 const OUT = process.argv[2] ?? 'dynamics.png';
 const EYES_OUT = OUT.replace(/(\.png)?$/, '-eyes.png');
-const CHROME = process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium';
 
 const server = await createServer({ server: { port: 5208 }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader', '--no-proxy-server'],
 });
 const page = await (await browser.newContext({ viewport: { width: 500, height: 500 } })).newPage();

@@ -7,6 +7,7 @@
 //
 //   node scripts/visual/motion.mjs out.png
 import { chromium } from 'playwright';
+import { chromeBin } from '../chrome.mjs';
 import { createServer } from 'vite';
 import { writeFileSync } from 'node:fs';
 
@@ -14,7 +15,7 @@ const out = process.argv[2] ?? 'motion.png';
 const server = await createServer({ server: { port: 5223 }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_BIN ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath: chromeBin(),
   args: ['--enable-unsafe-swiftshader', '--no-proxy-server'],
 });
 const page = await (await browser.newContext({ viewport: { width: 400, height: 400 } })).newPage();
