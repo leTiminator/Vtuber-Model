@@ -153,18 +153,21 @@ export const DEFAULTS = {
    */
   'parts.mirrorStart': 0.46,
 
-  /* The head-on view, built out of the three-quarter one.
+  /* How much of the head-on face shows when the head is square to the camera.
    *
    * The artwork shows the face from one angle, and it is not the angle anybody
    * sits at. Looking straight down the camera, the avatar looked off to the
    * side — the single largest thing wrong with it, and the one no amount of
    * warping fixed, because a warp cannot put an eye where no eye was drawn.
    *
-   * The near eye is drawn nearly square-on: solving the two shards as points
-   * on a turned head puts it about seven degrees off the front, against
-   * seventy-nine for the far one. So the head-on face is already here. Sliding
-   * the pair onto the head's own centre and mirroring that near eye into the
-   * far one's place assembles it, entirely out of pixels the artist drew.
+   * It is drawn now. A second file draws this character facing the camera —
+   * a rounder hood, a symmetric visor, two matched shards — and its head is
+   * registered onto this one's and swapped in, so the head-on view is a
+   * drawing rather than an arrangement. What used to be here slid the near eye
+   * onto the head's centre line and mirrored it into the far eye's place,
+   * which is what read as the eyes coming off the face.
+   *
+   * Below a half this never reaches the swap, which is how it is switched off.
    */
   'parts.headOn': 1.0,
   /* How far the head can turn before the head-on face starts giving way.
@@ -197,27 +200,19 @@ export const DEFAULTS = {
    * threshold into a decision.
    */
   'parts.headOnDwell': 1.1,
-  /* How long the handover takes, in seconds — a time, not an angle.
+  /* How long the latch waits before the face actually changes, in seconds.
    *
-   * Tying it to the angle cannot win. Narrow, and the eyes cross the visor in
-   * a couple of degrees and it reads as a jump: measured, sixteen pixels in a
-   * single degree. Wide, and it is back to the eyes drifting across the face
-   * the whole time somebody is talking. Both were tried and both were wrong.
+   * The two faces are two drawings of a hood and they swap rather than fade,
+   * for the same reason the mirror does: two copies of hard-edged line art
+   * laid over each other are legible as two. So this is no longer a fade
+   * length — it is a ramp the swap happens halfway through, which gives the
+   * latch a moment to be sure of a decision it has already made slowly.
    *
-   * A latch decides which face to show and this decides how fast it changes
-   * hands, which are two different questions and were being answered by one
-   * number. Turning your head slowly no longer walks the eyes anywhere: the
-   * face holds, and then it changes, in the same fifth of a second every time.
+   * Tying any of this to the angle cannot win, which is why none of it is.
+   * Narrow, and the face changes in a couple of degrees and reads as a twitch;
+   * wide, and it changes back and forth the whole time somebody is talking.
    */
   'parts.headOnTime': 0.18,
-  /* How big the mirrored far eye is against the near one.
-   *
-   * Equal, if the hood were redrawn head-on. It is not — the hood stays the
-   * three-quarter cutout, so its far half is still foreshortened, and an eye
-   * at full size there runs off the visor and onto the rim.
-   */
-  'parts.headOnTwin': 0.9,
-
   /* Face the other way.
    *
    * The drawing faces one way and that is the character's default, which is
@@ -288,6 +283,23 @@ export const DEFAULTS = {
   'warp.nod': 1.0,
   'warp.parallax': 1.0, // how far the face plate slides across the skull
   'warp.overshoot': 1.0, // head settles rather than stopping dead
+
+  /* How far off the chain cloth still swings with it, in chain links.
+   *
+   * Only one piece of the scarf gets bones: the run with the most skeleton in
+   * it, which on this drawing is the great sweeping arc. Every other piece —
+   * here, the drape over the hip — binds to whichever end of that chain is
+   * nearest and is carried rigidly from a pivot a long way off, so a small
+   * motion at the tip arrives at the hip as a large one. That is the hip
+   * being dragged about by the scarf lying over it.
+   *
+   * Measured on this artwork, the arc's own cloth overshoots the ends of its
+   * chain by seven pixels at the median and thirty-one at the ninetieth,
+   * against a hundred and five for the hip drape — so two links separates
+   * cloth that is on the chain from cloth merely tied to it, with room to
+   * spare either side. Raise it to give the loose ends their swing back.
+   */
+  'parts.clothReach': 2.0,
 
   'warp.clothWeight': 1.0, // scarf travel
   'warp.clothStiffness': 1.0, // higher returns to the drawn pose faster

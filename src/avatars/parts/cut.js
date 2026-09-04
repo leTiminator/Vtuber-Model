@@ -56,9 +56,11 @@ export const PART_SPECS = [
  * @param {object} markers  headX/headY/headR/pivotX/pivotY/waistY/eyeL/eyeR, UV
  * @returns {{parts: object[], width: number, height: number}}
  */
-export function cutParts(image, markers) {
-  const w = image.naturalWidth;
-  const h = image.naturalHeight;
+export function cutParts(image, markers, opts = {}) {
+  // A canvas is as good a source as an <img>, and the repaired alternate views
+  // arrive as one — see repair.js.
+  const w = image.naturalWidth ?? image.width;
+  const h = image.naturalHeight ?? image.height;
 
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -68,7 +70,7 @@ export function cutParts(image, markers) {
   const src = ctx.getImageData(0, 0, w, h);
 
   const sockets = [];
-  const labels = labelPixels(src, markers, w, h, sockets);
+  const labels = labelPixels(src, markers, w, h, sockets, opts.minShard);
 
   // Depth per label, so dilation knows which neighbours sit in front.
   const zByLabel = new Int32Array(16).fill(-1);
@@ -115,7 +117,7 @@ const LABEL = {
  * What remains geometric is only what genuinely is: which side of the figure a
  * limb sits on, and where along the scarf the neck wrap ends.
  */
-function labelPixels(src, m, w, h, sockets) {
+function labelPixels(src, m, w, h, sockets, minShard = 0) {
   const n = w * h;
   const out = new Uint8Array(n);
   const d = src.data;
@@ -217,6 +219,17 @@ function labelPixels(src, m, w, h, sockets) {
    * test asserting it must not blink. Its own size is what identifies it, not
    * a marker that was derived from the other eye in the first place.
    */
+  /* How small a bright patch may be and still be an eye.
+   *
+   * Derived from the head's own size, so it scales with the artwork — but a
+   * drawing may put a genuine shard under it. The head-on view's far eye is 69
+   * pixels against a floor of 57, which is close enough that a view is allowed
+   * to lower it rather than losing an eye to a rounding. Read again by the
+   * socket measurement below, so both agree on what counts as a shard.
+   */
+  const shardFloor = minShard
+    || Math.max(MIN_AREA, Math.round(headSpan.w * headSpan.h * 0.001));
+
   const eyeMask = new Uint8Array(n);
   const shardCentres = [];
   {
@@ -226,7 +239,7 @@ function labelPixels(src, m, w, h, sockets) {
       if (headMask[i] && opaque(i) && hsl(i).lum >= BRIGHT) bright[i] = 1;
     }
     // A shard is a feature of the drawing, not a stray bright pixel.
-    dropSmall(bright, w, h, Math.max(MIN_AREA, Math.round(headSpan.w * headSpan.h * 0.001)));
+    dropSmall(bright, w, h, shardFloor);
 
     const seen = new Uint8Array(n);
     const stack = [];
@@ -318,7 +331,7 @@ function labelPixels(src, m, w, h, sockets) {
   fillEnclosed(eyeMask, w, h);
 
   if (sockets) {
-    const found = socketsFor(shardMask, m, w, h, ringWidth(w, h) + 2);
+    const found = socketsFor(shardMask, m, w, h, ringWidth(w, h) + 2, shardFloor);
     if (found) sockets.push(...found);
   }
 
@@ -1137,7 +1150,7 @@ function fitPlane(samples, od, pw, channel) {
  * measured on luminance. Keeps at least half, so a genuinely varied edge is
  * still fitted rather than whittled down to a single tone.
  */
-function robustRing(ring, od, pw) {
+export function robustRing(ring, od, pw) {
   if (ring.length < 16) return ring;
   const lum = (i) =>
     0.2126 * od[i * 4] + 0.7152 * od[i * 4 + 1] + 0.0722 * od[i * 4 + 2];
@@ -1201,7 +1214,7 @@ function fitPlaneOf(samples, pw, value) {
  *
  * @returns {Array<{cx,cy,hx,hy}>|null} left then right, in image UV
  */
-function socketsFor(shardMask, m, w, h, pad) {
+function socketsFor(shardMask, m, w, h, pad, minShard = MIN_AREA) {
   const angle = m.eyeAngle || 0;
 
   // Split the eye pixels into their connected shards, biggest two win.
@@ -1224,7 +1237,7 @@ function socketsFor(shardMask, m, w, h, pad) {
       if (y > 0) visit(i - w);
       if (y < h - 1) visit(i + w);
     }
-    if (pixels.length >= MIN_AREA) shards.push(pixels);
+    if (pixels.length >= minShard) shards.push(pixels);
   }
   if (!shards.length) return null;
   shards.sort((a, b) => b.length - a.length);
@@ -1252,9 +1265,20 @@ function socketsFor(shardMask, m, w, h, pad) {
       hx = Math.max(hx, Math.abs(dx * c - dy * sn));
       hy = Math.max(hy, Math.abs(dx * sn + dy * c));
     }
-    // Pad out to cover the ink ring that was handed to the eye with it, plus
-    // a shade more so the sweep clears the anti-aliased edge.
-    return { cx: cx / w, cy: cy / h, hx: (hx + pad) / w, hy: (hy + pad) / h };
+    /* Pad out to cover the ink ring that was handed to the eye with it, plus
+     * a shade more so the sweep clears the anti-aliased edge.
+     *
+     * `fill` is how much of that padded box the shard itself is. The pad is a
+     * fixed width — it covers an ink outline, which is drawn at one weight
+     * whatever it is drawn around — so on a small shard it is most of the box,
+     * and a lid sweeping the box sweeps mostly padding. The head-on eyes are a
+     * third the area of the turned-away ones, and a half blink shut them
+     * completely.
+     */
+    return {
+      cx: cx / w, cy: cy / h, hx: (hx + pad) / w, hy: (hy + pad) / h,
+      fill: hy / Math.max(hy + pad, 1e-6),
+    };
   });
 
   boxes.sort((a, b) => a.cx - b.cx);
@@ -1269,7 +1293,7 @@ function socketsFor(shardMask, m, w, h, pad) {
  * full basis — a hole ringed by a thin arc has no information about curvature,
  * and forcing six terms through it produces wild extrapolation inside the gap.
  */
-function fitBasis(samples, pw, basis, value) {
+export function fitBasis(samples, pw, basis, value) {
   const probe = basis(0, 0);
   const n = probe.length;
   if (samples.length < n * 3) {

@@ -169,16 +169,16 @@ export function buildPanel(root, ctx) {
           hint: 'How far you can turn before the face gives way to the drawn three-quarter '
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
             + 'so talking does not walk the eyes across the visor.' },
-        { type: 'slider', key: 'parts.headOnTime', label: '— handover takes', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
+        { type: 'slider', key: 'parts.headOnTime', label: '— changes after', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
         { type: 'slider', key: 'parts.headOnDwell', label: '— then holds for', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(1)}s`,
           hint: 'The least time a view is kept before it can hand over again. Without it, a '
             + 'head that sits near the threshold crosses it constantly and the eyes never settle.' },
-        { type: 'slider', key: 'parts.headOnTwin', label: '— far eye size', min: 0.5, max: 1.2, step: 0.01, format: x },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },
         { type: 'slider', key: 'warp.clothWeight', label: 'Scarf travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.clothStiffness', label: 'Scarf stiffness', min: 0.1, max: 4, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.clothReach', label: '— loose ends swing', min: 0.6, max: 20, step: 0.1, format: x },
         { type: 'slider', key: 'warp.tuftWeight', label: 'Tuft travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.tuftStiffness', label: 'Tuft stiffness', min: 0.1, max: 4, step: 0.01, format: x },
         { type: 'slider', key: 'warp.wind', label: 'Idle drift', min: 0, max: 3, step: 0.01, format: x },

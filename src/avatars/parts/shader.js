@@ -52,24 +52,6 @@ uniform float u_aspect;    // image width / height
 uniform float u_flip;      // 1 mirrors this part about u_flipAxis
 uniform float u_flipAxis;  // in image space, 0..1 across the artwork
 
-/* Where this drawing of the part goes, before anything else moves it.
- *
- * Scale and offset per axis — (1, 0, 1, 0) leaves the part exactly where it
- * was cut from, which is what every part but the eyes uses.
- *
- * The eyes need it because the artwork is one three-quarter view and the pose
- * missing from it is the one people sit in: looking straight at the camera.
- * There is no head-on drawing to switch to, but there is a head-on face
- * hiding inside this one — the near eye is drawn almost square-on already,
- * so sliding the pair onto the head's centre and standing a mirrored copy of
- * that eye opposite it builds the missing view out of the artist's own ink.
- * Nothing is invented, nothing is stretched, and the line weight and colour
- * match because they are the same pixels.
- *
- * A negative x scale is what makes that copy a mirror image.
- */
-uniform vec4 u_place;      // x scale, x offset, y scale, y offset
-
 /* How far the swap carries the head, for everything that is not swapping.
  *
  * The mirror reflects the head about the axis its group balances on, which
@@ -118,7 +100,7 @@ void main() {
    * scarf was the only part breaking on a phone that matched this machine in
    * every other respect.
    */
-  vec2 p = vec2(a_pos.x * u_place.x + u_place.y, a_pos.y * u_place.z + u_place.w);
+  vec2 p = a_pos;
   if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
   else p.x += u_flipSlide * a_follow;
 
@@ -192,6 +174,8 @@ uniform vec4 u_eyeL;      // centre.xy, half-size.xy, in this part's texture spa
 uniform vec4 u_eyeR;
 uniform float u_eyeAngle;
 uniform vec2 u_blink;
+/* How much of the eye socket the drawn shard actually is — see lidded(). */
+uniform float u_lidFill;
 uniform vec2 u_squint;
 uniform vec2 u_wide;
 uniform vec2 u_gaze;      // where the eyes are looking, -1..1
@@ -260,8 +244,36 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   // the corners of the slit — where the bow is flat and there is no extra
   // travel — end up half covered and stay lit. The socket is measured to fit
   // the slit, so anything past it costs nothing.
-  float upper = -1.0 + blink * 2.25 * (1.0 + 0.28 * bow);
-  float lower = 1.0 - squint * 1.1 * (1.0 + 0.28 * bow);
+  /* The lid starts at the top of the shard, not the top of the socket.
+   *
+   * The socket is the shard plus a fixed pad for the ink ring around it, so
+   * how much of it is shard depends on how big the shard is: two thirds for
+   * the turned-away eyes this was tuned on, under a half for the head-on ones.
+   * Sweeping the socket therefore shut the smaller pair three times as fast,
+   * and a half blink left nothing of them lit at all.
+   *
+   * Scaled by that fraction, a blink covers the same share of either shard.
+   * Reduces to the original expression exactly at the fraction it was tuned
+   * at, and the plain sweep is kept as a floor so a very small shard still has
+   * its ring cleared at full blink.
+   */
+  float g = 1.0 + 0.28 * bow;
+  float fill = clamp(u_lidFill, 0.05, 1.0);
+  // Where the lid is, in the shard's own terms. Reduces to the original
+  // expression exactly at the fraction that expression was tuned at.
+  float scaled = fill * (blink * 3.409 * g - 1.515);
+  /* And the socket's, brought in only at the very end of the sweep.
+   *
+   * A shard smaller than the pad around it needs a slower lid, which is the
+   * whole point of scaling — so taking whichever of the two is further along
+   * hands the middle of the range straight back to the socket's sweep and
+   * changes nothing at all. Measured: a half blink still shut the head-on eyes
+   * outright. The socket's reach is only wanted where it is wanted, which is
+   * at a full blink, clearing the ink ring the shard's own sweep stops inside.
+   */
+  float plain = -1.0 + blink * 2.25 * g;
+  float upper = max(scaled, mix(-4.0, plain, smoothstep(0.75, 1.0, blink)));
+  float lower = 1.0 - squint * 1.1 * g;
 
   // 1 where the lid covers, 0 where the eye is still open.
   float soft = 0.045;

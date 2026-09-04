@@ -233,6 +233,102 @@ try {
       !result.startsWith('THREW'), result);
   }
 
+  /* --- the alternate views arrive damaged, and have to be repaired --------
+   *
+   * Every uploaded view of this character came off a white background that was
+   * keyed away, and its eyes are white, so they went with it: transparent
+   * holes and thinned speckles where the shards belong. Nothing downstream can
+   * see an eye that is not there, so the head-on face silently never loaded
+   * and several rounds were spent arguing about a latch instead.
+   *
+   * Checked on the file itself rather than on the render, because this is a
+   * fact about the drawing and the render has a dozen other reasons to change.
+   */
+  const repaired = await page.evaluate(async () => {
+    const { repairKeyedHoles } = await import('/src/avatars/parts/repair.js');
+    const { cutParts } = await import('/src/avatars/parts/cut.js');
+    const { detectMarkers, readPixels } = await import('/src/avatars/warp2d/segment.js');
+    const art = window.__vtuber.avatars.parts2d;
+    const load = (src) => new Promise((done, fail) => {
+      const img = new Image();
+      img.onload = () => done(img);
+      img.onerror = () => fail(new Error(`could not load ${src}`));
+      img.src = src;
+    });
+    const view = await load('/art/views/head-front-open.png');
+
+    // How much near-white the visor holds, before and after. The eyes are the
+    // only near-white on this head, so this counts eye and nothing else.
+    const whiteIn = (source) => {
+      const c = document.createElement('canvas');
+      c.width = 630; c.height = 630;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(source, 0, 0);
+      const d = g.getImageData(380, 330, 160, 70).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] > 200 && d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) n++;
+      }
+      return n;
+    };
+    const before = whiteIn(view);
+    const fixed = repairKeyedHoles(view);
+    const after = whiteIn(fixed.canvas);
+
+    /* The same drawing loops its scarf over itself around thirteen thousand
+     * pixels of genuine background. Painting that in turns the scarf into a
+     * solid red slab, so the repair has to leave it alone — and the only thing
+     * telling it apart from an eye is that it is forty times the size of one.
+     *
+     * Asked of the picture rather than of the repair's own tally. Whether that
+     * region reads as enclosed at all depends on whether the background can
+     * squeeze along an anti-aliased seam where the ribbon crosses itself, and
+     * it can — so the tally said nothing was skipped while the region was
+     * plainly still empty. What matters is that it is still empty. */
+    const opaqueIn = (source) => {
+      const c = document.createElement('canvas');
+      c.width = 630; c.height = 630;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(source, 0, 0);
+      const d = g.getImageData(120, 160, 220, 100).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 200) n++;
+      return n;
+    };
+    const loopBefore = opaqueIn(view);
+    const loopAfter = opaqueIn(fixed.canvas);
+    // Its own markers: the head sits somewhere else in that picture, so this
+    // drawing's marker positions would seed the cut into its shoulder.
+    const front = { ...art.markers(), ...detectMarkers(readPixels(fixed.canvas)) };
+    const cut = cutParts(fixed.canvas, front, { minShard: 40 });
+    return {
+      before, after, filled: fixed.filled, holes: fixed.holes,
+      loopBefore, loopAfter,
+      eyes: cut.parts.filter((p) => p.name.startsWith('eye')).map((p) => p.name),
+      sockets: cut.sockets?.length ?? 0,
+      fills: (cut.sockets ?? []).map((b) => +b.fill.toFixed(2)),
+    };
+  });
+  check('the keyed-out eyes come back into the head-on drawing',
+    repaired.after > repaired.before * 2 && repaired.filled > 100,
+    `${repaired.before}px of white eye before, ${repaired.after}px after `
+      + `(${repaired.filled}px over ${repaired.holes} patches)`);
+  check('a hole the drawing means to have is left alone',
+    repaired.loopAfter <= repaired.loopBefore + 40 && repaired.loopBefore < 12000,
+    `${repaired.loopBefore}px of paint in the box round the scarf's loop before, `
+      + `${repaired.loopAfter}px after, of 22000`);
+  check('and the repaired drawing cuts into two eyes',
+    repaired.eyes.length === 2 && repaired.sockets === 2,
+    `${repaired.eyes.join('+') || 'none'}, ${repaired.sockets} sockets`);
+  /* The lid sweeps the socket, and the socket is the shard plus a fixed pad
+   * for its ink ring — so on a small shard the pad is most of the box and a
+   * half blink shuts the eye outright. The shader scales by this number; if it
+   * ever comes back as one, that scaling has quietly stopped doing anything.
+   */
+  check('and each socket knows how much of it is shard',
+    repaired.fills.length === 2 && repaired.fills.every((f) => f > 0.1 && f < 1),
+    repaired.fills.join(', '));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);

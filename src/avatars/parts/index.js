@@ -16,6 +16,7 @@ import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
 import { cutParts } from './cut.js';
+import { repairKeyedHoles } from './repair.js';
 
 /**
  * The two eye shards, each its own part.
@@ -26,7 +27,37 @@ import { cutParts } from './cut.js';
  * the same way as the head comes round. Cut apart they can, and a wink stops
  * being a shape the renderer has no way to draw.
  */
-const EYES = new Set(['eyeNear', 'eyeFar']);
+const EYES = new Set(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn']);
+
+/**
+ * The two faces: the head as it was drawn turned away, and the head as it was
+ * drawn looking at the camera.
+ *
+ * Everything the head-on view used to be was synthesised — the near shard slid
+ * onto the head's centre line and a mirrored copy of it stood in for the far
+ * one. That synthesis is what "the eyes slide on the face" was, and no amount
+ * of tuning removes a slide from something whose whole method is sliding. It
+ * also never looked like a head that had turned, because the hood underneath
+ * it had not: the same three-quarter cutout, wearing rearranged eyes.
+ *
+ * There is a drawing of this character facing the camera. It is a different
+ * pose — a different hood, a symmetric visor, two matched shards — so the
+ * head-on view is that drawing's head, put where this one's head is, and not
+ * anything computed. Its eyes arrived keyed out to transparent holes and are
+ * repaired on the way in; see repair.js.
+ *
+ * Only the head, the hair and the eyes are taken. The body, the arms and the
+ * scarf stay as they are, because those are not what changes when somebody
+ * looks up at the camera.
+ */
+const TURNED_FACE = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
+const HEADON_FACE = new Set(['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn']);
+
+/** What each piece of the head-on face is called, and what it replaces. */
+const HEADON_OF = { head: 'headOn', tufts: 'tuftsOn', eyeNear: 'eyeNearOn', eyeFar: 'eyeFarOn' };
+
+/** Which of the four eye parts takes the right eye's blink and gaze. */
+const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
 
 /**
  * The parts that take the head's cylindrical bend. They have to share one
@@ -39,7 +70,8 @@ const EYES = new Set(['eyeNear', 'eyeFar']);
  * are not a separate object from the face; they are the face.
  */
 const BENDS_WITH_HEAD = new Set(
-  ['head', 'tufts', 'wrap', 'tails', 'eyeNear', 'eyeFar', 'armLeft', 'armRight']);
+  ['head', 'tufts', 'wrap', 'tails', 'eyeNear', 'eyeFar',
+    'headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'armLeft', 'armRight']);
 
 /**
  * Where the head's turn stops being the head's, as multiples of the head's own
@@ -57,7 +89,8 @@ const FOLLOW_NONE = 2.30;
  * has nothing to cast onto, and the eyes sit flush in the visor rather than
  * over it.
  */
-const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']);
+const SHADOWS = new Set(
+  ['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap', 'tuftsOn', 'headOn']);
 
 /**
  * What the mirrored view takes with it: the head cutout and what is drawn on
@@ -72,7 +105,9 @@ const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap']
  * head, behind the scarf. The other arm reaches down across the body and stays
  * where it is.
  */
-const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'armRight']);
+const FLIPS_WITH_HEAD = new Set(
+  ['head', 'tufts', 'eyeNear', 'eyeFar',
+    'headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'armRight']);
 
 /**
  * Whose weight decides where the mirror's axis falls.
@@ -88,6 +123,9 @@ const FLIPS_WITH_HEAD = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'armRight
  * people are looking at, to keep a glove company.
  */
 const FLIP_AXIS = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
+/* The head-on face is left out on purpose. Only one of the two is ever drawn,
+ * and it is registered onto the other's place — so weighing both would count
+ * one head twice and pull the axis toward whichever happens to be heavier. */
 
 /**
  * The rig as it reads for a character facing the other way.
@@ -134,7 +172,7 @@ const UNIFORMS = [
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
   'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax',
-  'u_flip', 'u_flipAxis', 'u_place', 'u_flipSlide',
+  'u_flip', 'u_flipAxis', 'u_flipSlide', 'u_lidFill',
   'u_shell', 'u_depth',
 ];
 
@@ -243,6 +281,24 @@ export class Parts2D {
     this.build();
   }
 
+  /**
+   * A second drawing, used only for the face it looks at the camera with.
+   *
+   * Handed the raw file: the repair and the cut both happen here, so a caller
+   * only has to know which picture it is. Nothing else in the drawing is used
+   * — the hood, the scarf and the body all still come from the main artwork,
+   * which is what makes the swap invisible.
+   */
+  setHeadOnImage(image) {
+    this.headOnImage = image ?? null;
+    this.headOnFixed = null;
+    this.headOnNote = image ? 'not cut yet' : 'no drawing';
+    // Only if there is already a model to add it to. Set before the artwork —
+    // which is how it is loaded — this costs nothing, where rebuilding here
+    // would cut the whole character twice over on the way in.
+    if (this.image) this.build();
+  }
+
   markers() {
     return {
       headX: store.get('warp.headX'),
@@ -322,6 +378,10 @@ export class Parts2D {
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m, sockets));
 
+    // The face that looks at the camera, cut from its own drawing.
+    this.parts = this.parts.concat(this.buildHeadOnFace(width, height, m));
+    this.parts.sort((a, b) => a.z - b.z);
+
     /* One cylinder radius for the whole head, not one per part.
      *
      * The bend maps x to R*(sin(asin(x/R) + yaw) - sin(yaw)), which depends on
@@ -342,7 +402,7 @@ export class Parts2D {
     }
     this.headCylR = headCylR || 1;
 
-    this.headOn = this.solveHeadOn(this.parts);
+    this.headOn = this.parts.some((p) => p.name === 'headOn');
 
     this.owned = this.parts;
     this.ready = this.parts.length > 0;
@@ -358,7 +418,7 @@ export class Parts2D {
    * agree at the seam no matter where the cut fell.
    */
   followAt(name, px, py) {
-    if (name === 'head' || name === 'tufts' || EYES.has(name)) return 1;
+    if (TURNED_FACE.has(name) || HEADON_FACE.has(name)) return 1;
     if (name === 'body') return 0;
     const h = this.headSpan;
     const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
@@ -418,9 +478,23 @@ export class Parts2D {
       for (let col = 0; col <= n; col++) {
         const s = col / n;
         const t = row / n;
-        // Image space: where this pixel actually sits in the whole artwork.
-        const px = (part.x + s * part.w) / width;
-        const py = (part.y + t * part.h) / height;
+        /* Image space: where this pixel actually sits in the whole artwork.
+         *
+         * `place` moves a piece taken from another drawing onto this one. The
+         * head-on face comes from a separate picture in a different pose, so
+         * its head sits somewhere else and is drawn at a different size —
+         * measured, 184 pixels across against this one's 281. Registered here,
+         * once, so everything downstream reads the position it will actually
+         * be drawn at: how much of the head's turn it takes, how deep it sits
+         * on the shell, and the radius the whole head shares.
+         */
+        let px = (part.x + s * part.w) / width;
+        let py = (part.y + t * part.h) / height;
+        if (part.place) {
+          const q = part.place;
+          px = (px - q.fromX) * q.k + q.toX;
+          py = (py - q.fromY) * q.k + q.toY;
+        }
         pos.push(px, py);
         uv.push(s, t);
         followData.push(this.followAt(part.name, px, py));
@@ -519,6 +593,7 @@ export class Parts2D {
       return {
         eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
         eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
+        lidFill: sockets?.[0]?.fill ?? 1,
       };
     }
     const cx = part.x + part.w / 2;
@@ -530,54 +605,109 @@ export class Parts2D {
       if (d < bestD) { bestD = d; best = b; }
     }
     const own = best ? fromBox(best)
-      : fromMarker(part.name === 'eyeNear' ? m.eyeL : m.eyeR);
-    // Kept in image space too: the head-on view is assembled from where these
-    // two shards sit relative to each other and to the head.
-    return { eyeL: own, eyeR: AWAY, socket: best ?? null };
+      : fromMarker(FAR_EYES.has(part.name) ? m.eyeR : m.eyeL);
+    // How much of the socket is the shard, for the lid's sweep. The marker
+    // fallback is a hand-placed box with no ink ring in it, so it is all shard.
+    return { eyeL: own, eyeR: AWAY, lidFill: best?.fill ?? 1 };
   }
 
   /**
-   * Where the eyes go when the head comes round to face the camera.
+   * The face that looks at the camera, taken from the drawing of it.
    *
-   * Everything here is measured off the two shards the cut found and the head
-   * cutout's own centre of mass. Nothing is a number typed in for this one
-   * drawing, so a different character with two eye shards gets a head-on view
-   * out of the same code.
+   * Everything this replaces was synthesis. The near shard was slid onto the
+   * head's own centre line and a mirrored copy of it was grown into the far
+   * eye's place — assembled, as the note here used to say, "entirely out of
+   * pixels the artist drew". It was, and it still moved the eyes across the
+   * visor every time the view changed hands, because moving them is what it
+   * did. There is no version of that method that does not slide. It also never
+   * looked like a head that had turned, because the hood had not turned: the
+   * same three-quarter cutout, wearing rearranged eyes.
    *
-   * The rules, and why each one:
+   * There is a drawing of this character facing the camera, in a different
+   * pose — a rounder hood, a symmetric visor, two matched shards. So the
+   * head-on view is that drawing's head, and the only question is where to put
+   * it: both cuts measure their own head's centre and radius, and one similar
+   * transform lands the borrowed one exactly on the head it stands in for. No
+   * angle is solved and nothing is stretched to fit.
    *
-   * - **Centred on the head.** What reads as facing you is the eyes sitting in
-   *   the middle of the head, not their spacing. In the artwork the pair sits
-   *   eleven per cent of a head-width off to one side; head-on it sits on the
-   *   centre line.
-   * - **The drawn spacing, kept.** Two points on a turned head separate as
-   *   `2R sin(theta) cos(yaw)`, so head-on they should be about a fifth wider
-   *   than drawn — but that is only true of a head-on hood, and the hood here
-   *   stays the three-quarter cutout. Spread to the true head-on spacing on a
-   *   foreshortened visor and the far eye climbs over the rim; rendered and
-   *   looked at, that is exactly what it did.
-   * - **The far eye is the near one, mirrored.** The far shard is thirteen
-   *   pixels of sliver at the edge of the visor. Stretched five times to fill
-   *   a socket it would be a smear. The near shard is a whole crescent that
-   *   solves to seven degrees off square-on, so its mirror image is the far
-   *   eye, in the artist's own line.
+   * Its markers are found for it rather than inherited. The head sits
+   * somewhere else in that picture and is drawn smaller — measured, 145 by 150
+   * at (326, 282) against this one's 177 by 188 at (446, 318), so the borrowed
+   * head is scaled by 1.25 on the way in — and this drawing's marker positions
+   * would seed the cut's flood into its shoulder.
+   *
+   * Returns an empty list, and says why in `headOnNote`, if anything is
+   * missing. Silence here was its own bug: a feature that had never loaded and
+   * one whose latch was thrashing looked identical from outside.
    */
-  solveHeadOn(parts) {
-    const near = parts.find((p) => p.name === 'eyeNear')?.socket;
-    const far = parts.find((p) => p.name === 'eyeFar')?.socket;
-    if (!near || !far || !this.headSpan) return null;
-    const half = (far.cx - near.cx) / 2;
-    return {
-      // Where each eye ends up, straddling the head's own centre.
-      nearX: this.headSpan.cx - half,
-      farX: this.headSpan.cx + half,
-      farY: near.cy,
-      near, far,
-      // What the far shard is, as a fraction of the near one, so the mirrored
-      // copy can start out sitting exactly on it and grow into its place.
-      startX: Math.max(far.hx / Math.max(near.hx, 1e-6), 1e-3),
-      startY: Math.max(far.hy / Math.max(near.hy, 1e-6), 1e-3),
-    };
+  buildHeadOnFace(width, height, m) {
+    this.headOnNote = this.headOnImage ? 'not cut yet' : 'no drawing';
+    if (!this.headOnImage || !this.headSpan) return [];
+    try {
+      /* Repaired first, or there is nothing to cut.
+       *
+       * That drawing came off a white background that was keyed away, and its
+       * eyes are white, so they went with it: two patches of some six hundred
+       * pixels where the shards belong. Nothing downstream can see an eye that
+       * is not there, so the head-on face silently never loaded and several
+       * rounds went by arguing about a latch.
+       *
+       * Repaired once per drawing rather than once per cut — `build` runs
+       * again whenever a marker moves, and the file does not change when a
+       * slider does.
+       */
+      const fixed = this.headOnFixed
+        ?? (this.headOnFixed = repairKeyedHoles(this.headOnImage));
+      if (fixed.width !== width || fixed.height !== height) {
+        this.headOnNote = `drawn ${fixed.width}x${fixed.height}, not ${width}x${height}`;
+        return [];
+      }
+      const px = readPixels(fixed.canvas);
+      const found = px && detectMarkers(px);
+      if (!found) {
+        this.headOnNote = 'could not find a face in it';
+        return [];
+      }
+      /* A lower floor on what counts as a shard, for this cut only. The floor
+       * scales with the head, and this head is drawn four fifths the width of
+       * the one it stands in for, so its shards start out closer to it. */
+      const cut = cutParts(fixed.canvas, { ...m, ...found }, { minShard: 40 });
+      const head = cut.parts.find((p) => p.name === 'head');
+      const eyes = cut.parts.filter((p) => EYES.has(p.name));
+      if (!head || eyes.length < 2) {
+        this.headOnNote = `cut into ${cut.parts.map((p) => p.name).join('+') || 'nothing'}`;
+        return [];
+      }
+
+      // Where that head sits in its own picture, measured the same way this
+      // one is, so the two are the same measurement of the same thing.
+      const span = {
+        cx: (head.x + head.inset + (head.w - 2 * head.inset) / 2) / width,
+        cy: (head.y + head.inset + (head.h - 2 * head.inset) / 2) / height,
+        r: Math.max(head.w - 2 * head.inset, head.h - 2 * head.inset) / 2 / height,
+      };
+      const place = {
+        fromX: span.cx, fromY: span.cy,
+        toX: this.headSpan.cx, toY: this.headSpan.cy,
+        k: this.headSpan.r / Math.max(span.r, 1e-6),
+      };
+
+      // Each piece half a step above the one it stands in for, so it draws in
+      // the same slot: behind the neck scarf, in front of the shoulders.
+      const built = [];
+      for (const part of cut.parts) {
+        const name = HEADON_OF[part.name];
+        if (!name) continue;
+        built.push(this.upload({ ...part, name, z: part.z + 0.5, place },
+          width, height, { ...m, ...found }, cut.sockets));
+      }
+      this.headOnNote = `${built.length} pieces, ${fixed.filled}px repaired, `
+        + `scaled ${place.k.toFixed(2)}x`;
+      return built;
+    } catch (err) {
+      this.headOnNote = `failed: ${err?.message ?? err}`;
+      return [];
+    }
   }
 
   resize(width, height, dpr = window.devicePixelRatio || 1) {
@@ -598,7 +728,17 @@ export class Parts2D {
     if (!this.ready) return;
     if (this.rebuild) this.build();
 
-    dt = clamp(dt, 1 / 240, 1 / 15);
+    /* A zero step draws what is already there without advancing anything.
+     *
+     * Measuring a frame means drawing it several times — once per group of
+     * parts being weighed — and every one of those draws used to push the
+     * springs, the cloth, the glow and the latch forward by a frame. So the
+     * harness that decides whether the model is calm was itself shaking it,
+     * and every number this repo has quoted about hand-overs was measured
+     * through that. Each integrator below already no-ops at zero; the clamp
+     * was the only thing insisting on a minimum.
+     */
+    dt = dt > 0 ? clamp(dt, 1 / 240, 1 / 15) : 0;
     this.clock += dt;
 
     const L = this.loc;
@@ -813,16 +953,28 @@ export class Parts2D {
     const headOnT = this.headOn
       ? smoothstep(this.headOnPhase) * clamp(store.get('parts.headOn'), 0, 1)
       : 0;
-    /* The far shard leaves before its replacement is fully there.
+    /* The face changes hands rather than fading, for the same reason the
+     * mirror does: two copies of hard-edged line art laid over each other are
+     * legible as two, and these are two different drawings of a hood, not one
+     * drawing with the eyes moved. Halfway through a fade there were plainly
+     * two visor rims and two chins.
      *
-     * Two copies of hard-edged line art at half opacity read as two, which is
-     * the fault the head's own cross-fade was replaced for. They get away with
-     * it here because they overlap: the mirrored copy starts out sitting on
-     * the sliver at the sliver's own size and grows out of it, so through the
-     * hand-over there is one shape in one place, not two side by side.
+     * What makes a swap bearable is that it is rare and decided rather than
+     * triggered. The latch above averages about a second of angle and will not
+     * change its mind again for `headOnDwell` — measured on a real minute of
+     * tracking, three times, against thirty-three before it existed.
      */
-    const twinIn = smoothstep(clamp((headOnT - 0.10) / 0.45, 0, 1));
-    const farOut = 1 - smoothstep(clamp((headOnT - 0.06) / 0.36, 0, 1));
+    /* Which face is showing, kept where anything can read it.
+     *
+     * Not the same thing as the latch. The latch decides, and the face changes
+     * a fraction of a second later when the ramp crosses its middle — so a
+     * check watching the latch skips the wrong frame, and reports the change
+     * of drawing as a jump in whatever it was measuring. That is exactly what
+     * the motion harness did: nine pixels of "eye movement" that was the two
+     * faces being different, counted because the latch had already moved on.
+     */
+    this.faceOn = headOnT >= 0.5;
+    const faceOn = this.faceOn;
 
     /* How far the swap moves the head, for everything left behind to follow.
      *
@@ -915,18 +1067,15 @@ export class Parts2D {
         gl.uniform1f(L.u_depth, shellDepth);
       }
 
-      /* The near eye slides onto the head's centre line as the face comes
-       * round; every other part stays exactly where it was cut from.
+      /* Which of the two faces this part belongs to.
        *
-       * Named apart from the flip's own slide on purpose. They were both
-       * called `slide`, one inside the loop and one outside it, and the inner
-       * one quietly won: the eyes took their slide twice over and walked off
-       * the side of the visor, and the flip's slide reached nothing at all —
-       * so the fix it was written for was never running.
+       * Nothing is moved. Whichever head is showing is drawn where it was
+       * registered, and the other is not drawn at all. What used to be here
+       * slid the near shard along the visor toward the head's centre and grew
+       * a mirrored copy of it into the far eye — and sliding the eyes across
+       * the face was, precisely, the thing being reported.
        */
-      const eyeSlide = this.headOn && part.name === 'eyeNear'
-        ? headOnT * (this.headOn.nearX - this.headOn.near.cx) : 0;
-      gl.uniform4f(L.u_place, 1, eyeSlide, 1, 0);
+      if (HEADON_FACE.has(part.name) ? !faceOn : TURNED_FACE.has(part.name) && faceOn) continue;
 
       const carriesEyes = EYES.has(part.name);
       gl.uniform1f(L.u_eyesEnabled, carriesEyes && store.get('warp.eyesEnabled') ? 1 : 0);
@@ -938,10 +1087,11 @@ export class Parts2D {
          * declared, because the shader has two; the second is parked outside
          * the quad by `socketOf` and its blink is zero, so it does nothing.
          */
-        const far = part.name === 'eyeFar';
+        const far = FAR_EYES.has(part.name);
         gl.uniform4fv(L.u_eyeL, part.eyeL);
         gl.uniform4fv(L.u_eyeR, part.eyeR);
         gl.uniform1f(L.u_eyeAngle, m.eyeAngle);
+        gl.uniform1f(L.u_lidFill, part.lidFill ?? 1);
         // No lid colour: the lid erases this layer and the visor behind shows
         // through, so there is nothing to match a sampled tone against.
         gl.uniform2f(L.u_blink, far ? rig.eyes.blinkR : rig.eyes.blinkL, 0);
@@ -1040,38 +1190,9 @@ export class Parts2D {
        */
       gl.uniform1f(L.u_flip, flips ? 1 : 0);
       gl.uniform1f(L.u_flipSlide, flips ? 0 : flipSlide);
-      gl.uniform1f(L.u_opacity, part.name === 'eyeFar' ? farOut : 1);
+      gl.uniform1f(L.u_opacity, 1);
       gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
 
-      /* The far eye, built from the near one.
-       *
-       * Same buffers, same texture, drawn a second time through a mirrored
-       * transform — so it costs one more draw call and not one more part, and
-       * it cannot drift out of step with the eye it is a copy of.
-       *
-       * It starts life at the far shard's own position and size and grows into
-       * the socket as the head comes round, which is what the far eye actually
-       * does: it opens out of the rim rather than appearing beside it.
-       */
-      if (part.name === 'eyeNear' && this.headOn && twinIn > 0.001) {
-        const g = this.headOn;
-        const t = headOnT;
-        const sx = lerp(g.startX, store.get('parts.headOnTwin'), t);
-        const sy = lerp(g.startY, store.get('parts.headOnTwin'), t);
-        const cx = lerp(g.far.cx, g.farX, t);
-        const cy = lerp(g.far.cy, g.farY, t);
-        // Mirror about the shard's own centre, then land that centre on cx.
-        gl.uniform4f(L.u_place, -sx, cx + sx * g.near.cx, sy, cy - sy * g.near.cy);
-        gl.uniform1f(L.u_opacity, twinIn);
-        // Its lid is the near eye's socket in the near eye's texture, driven
-        // by the far eye's blink. Mirrored, so the lid's slant mirrors too.
-        gl.uniform2f(L.u_blink, rig.eyes.blinkR, 0);
-        gl.uniform1f(L.u_eyeAngle, -m.eyeAngle);
-        const sq = store.get('warp.squint');
-        gl.uniform2f(L.u_squint, clamp(rig.eyes.squintR * sq, 0, 1), 0);
-        gl.uniform2f(L.u_wide, rig.eyes.wideR, rig.eyes.wideR);
-        gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
-      }
     }
     gl.bindVertexArray(null);
   }
@@ -1104,6 +1225,12 @@ export class Parts2D {
       if (!part.skinned || !part.binds || !part.live) continue;
       const { binds, live, rest, follows } = part;
       const skew = this.aspect || 1;
+      // The chain's own link length, so the reach below is measured in what
+      // the chain is made of rather than in a number typed in for this
+      // drawing. Guarded, because a chain of one node has no span.
+      const span = Math.max(this.spineSpan || 0, 1e-4);
+      // How far past the ends of the chain cloth still follows it, in links.
+      const far = Math.max(clamp(store.get('parts.clothReach'), 0.6, 60), 0.6);
       for (let v = 0, b = 0; v < live.length; v += 2, b += 3) {
         const f = spineFrame(this.boneNodes(), binds[b], skew);
         const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
@@ -1127,10 +1254,39 @@ export class Parts2D {
          * wrapped round a neck does not flap at the neck anyway.
          */
         const loose = 1 - (follows ? follows[v >> 1] : 0);
+        /* Cloth the chain does not run through is not swung by it.
+         *
+         * Only one piece of the scarf gets bones — the run with the most
+         * skeleton in it, which on this drawing is the great sweeping arc.
+         * Everything else binds to whichever end of that chain is nearest and
+         * is carried rigidly, pivoting about a point a long way off, so a
+         * small motion at the tip arrives at the hip as a large one. That is
+         * the hip being dragged about by the scarf over it.
+         *
+         * The bind already says which is which. It holds the offset from the
+         * chain split into the two directions of the frame there, and how far
+         * a point is from the chain is the size of that offset — measured on
+         * this artwork, the arc's own cloth sits about one link out, while the
+         * cloth that moves most over the hip sits five links out and swings
+         * about a frame it is nowhere near.
+         *
+         * The overshoot past the ends alone is not enough, and the first
+         * version of this used only that. It catches cloth hanging off a tip
+         * and misses cloth held out sideways from the middle — which on this
+         * drawing is the whole of the drape, and every vertex of it came back
+         * unchanged.
+         *
+         * Held whole out to half of `parts.clothReach` and let go of by twice
+         * it, which is a calm tail rather than a still one — it keeps the
+         * head's own turn through `follow` either way.
+         */
+        const over = Math.hypot(binds[b + 1], binds[b + 2]) / span;
+        const reach = 1 - smoothstep(clamp((over - far * 0.5) / Math.max(far * 1.5, 0.05), 0, 1));
+        const carry = loose * reach;
         const sx = f.hx + ox / skew;
         const sy = f.hy + oy;
-        live[v] = rest[v] + (sx - rest[v]) * loose;
-        live[v + 1] = rest[v + 1] + (sy - rest[v + 1]) * loose;
+        live[v] = rest[v] + (sx - rest[v]) * carry;
+        live[v + 1] = rest[v + 1] + (sy - rest[v + 1]) * carry;
       }
       const gl = this.gl;
       gl.bindBuffer(gl.ARRAY_BUFFER, part.posBuffer);
@@ -1316,6 +1472,16 @@ export class Parts2D {
       dpr: (window.devicePixelRatio || 1).toFixed(2),
       drawn: this.parts.map((p) => `${p.name} ${Math.round((p.pixels ?? 0) / 1000)}k`).join(' '),
       skinning: 'cpu',
+      /* Whether the head-on face is loaded, and which face is showing.
+       *
+       * It used to disable itself in silence if the cut came up short, so
+       * "the drawing never loaded" and "the latch is changing its mind" looked
+       * exactly alike from outside — to me as much as to anyone testing it.
+       * Rounds went by arguing about the second when it was the first.
+       */
+      headOn: this.headOn
+        ? `${this.faceOn ? 'head-on' : 'turned away'} (${this.headOnNote})`
+        : `OFF — ${this.headOnNote ?? 'no drawing'}`,
     };
   }
 
@@ -1328,6 +1494,10 @@ export class Parts2D {
     const { width, height } = this.imageSize;
     let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
     for (const part of this.parts) {
+      // A piece borrowed from another drawing is registered onto this one at
+      // draw time, so its stored rectangle is a position in a picture that is
+      // not being framed. It lands inside the head it replaces either way.
+      if (part.place) continue;
       const inset = part.inset ?? 0;
       x0 = Math.min(x0, (part.x + inset) / width);
       y0 = Math.min(y0, (part.y + inset) / height);

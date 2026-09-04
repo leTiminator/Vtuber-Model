@@ -410,10 +410,12 @@ function runSelfCheck() {
       : `neutral not set — press "Set neutral pose" sitting how you stream`
         + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
     r.drawn,
+    // Which face is showing, and whether the head-on drawing loaded at all.
+    r.headOn ? `head-on: ${r.headOn}` : null,
     changed.length
       ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`
       : 'all settings default',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   selfcheckEl.hidden = false;
 }
 /* Due at a time, read inside the frame.
@@ -558,6 +560,27 @@ artwork.recall().then(async (saved) => {
   } else {
     try {
       const image = await artwork.loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
+      /* The second drawing: the same character, drawn facing the camera.
+       *
+       * Handed over before the artwork, so the model is cut once with both in
+       * hand rather than cut for the artwork and then cut again to take this.
+       *
+       * Only alongside the bundled art. It is a drawing of this character's
+       * face and belongs to it — laid over somebody else's uploaded artwork it
+       * would cut two eyes out of a picture it has never seen and paste them
+       * wherever they happened to land.
+       *
+       * Its failure is not the model's failure, so it is loaded separately and
+       * a missing or unreadable file leaves the turned-away face working
+       * exactly as before. What went wrong shows up in the self-check readout
+       * rather than only in the console.
+       */
+      try {
+        avatars.parts2d.setHeadOnImage(
+          await artwork.loadImage(`${import.meta.env.BASE_URL}art/views/pose-front-arms-out.png`));
+      } catch (err) {
+        console.warn('head-on view could not be loaded', err);
+      }
       avatars.warp2d.setImage(image, true);
       avatars.parts2d.setImage(image, false);
     } catch (err) {

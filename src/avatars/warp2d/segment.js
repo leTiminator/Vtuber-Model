@@ -18,9 +18,13 @@ const ALPHA_FLOOR = 40;
 
 /** Draw the artwork into an offscreen canvas and hand back its pixels. */
 export function readPixels(image, maxWidth = ANALYSIS_WIDTH) {
-  const scale = Math.min(1, maxWidth / image.naturalWidth);
-  const w = Math.max(8, Math.round(image.naturalWidth * scale));
-  const h = Math.max(8, Math.round(image.naturalHeight * scale));
+  // A canvas is as good a source as an <img>, and a drawing that has been
+  // repaired on the way in arrives as one — see parts/repair.js.
+  const iw = image.naturalWidth ?? image.width;
+  const ih = image.naturalHeight ?? image.height;
+  const scale = Math.min(1, maxWidth / iw);
+  const w = Math.max(8, Math.round(iw * scale));
+  const h = Math.max(8, Math.round(ih * scale));
 
   const canvas = document.createElement('canvas');
   canvas.width = w;

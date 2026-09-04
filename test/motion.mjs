@@ -131,7 +131,9 @@ try {
   });
   check('a clean profile mounts the parts model', boot.mounted === 'parts2d' &&
     boot.setting === 'parts2d', `setting ${boot.setting}, mounted ${boot.mounted}`);
-  check('it boots with the bundled artwork already cut', boot.hasImage && boot.parts.length === 9,
+  check('it boots with the bundled artwork already cut',
+    boot.hasImage && boot.parts.length === 13
+    && ['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn'].every((n) => boot.parts.includes(n)),
     boot.parts.join(', '));
 
   /* --- the good path was taken -------------------------------------------
@@ -706,7 +708,11 @@ try {
      */
     const all = a.parts;
     const centreY = () => {
-      a.parts = all.filter((p) => ['head', 'eyeNear', 'eyeFar', 'tufts'].includes(p.name));
+      // Both heads, because only one of them is ever drawn: asking for the
+      // turned-away one while the head-on one is showing measures a blank
+      // canvas, and a centroid of nothing is NaN.
+      a.parts = all.filter((p) => ['head', 'eyeNear', 'eyeFar', 'tufts',
+        'headOn', 'eyeNearOn', 'eyeFarOn', 'tuftsOn'].includes(p.name));
       a.render(rig.state, 1 / 60);
       const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
       const d = new Uint8Array(w * h * 4);
@@ -817,8 +823,8 @@ try {
     };
     const out = [];
     for (const [label, yaw] of [['facing as drawn', 0.70], ['mirrored', -0.70]]) {
-      const head = centroid(draw(['head'], yaw));
-      const eyes = centroid(draw(['eyeNear', 'eyeFar'], yaw));
+      const head = centroid(draw(['head', 'headOn'], yaw));
+      const eyes = centroid(draw(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn'], yaw));
       // Where the eye sits across the head, as a signed offset from its middle.
       out.push({ label, eye: eyes.n, offset: eyes.cx - head.cx });
     }
@@ -950,7 +956,10 @@ try {
       a.parts = all;
       return d;
     };
-    const EYES = ['eyeNear', 'eyeFar'];
+    // All four shards: the pair drawn turned away and the pair drawn head-on.
+    // Filtering to the first two alone measures a blank visor whenever the
+    // head-on face is showing, which is most of the time somebody streams.
+    const EYES = ['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn'];
 
     /* Where the head is, to measure the eyes against.
      *
@@ -1052,6 +1061,20 @@ try {
      * is the rate an eye is actually watching at.
      */
     const FRAMES_PER_STEP = 2;
+    /* The change of face is an event, and is counted rather than smoothed over.
+     *
+     * The two faces are two drawings of a hood, not one drawing with the eyes
+     * moved, so they change hands rather than fade — the same decision the
+     * mirror flip made, and for the same reason. That step is meant to be
+     * there. Folding it into "the worst frame" would put a deliberate swap and
+     * an accidental drift into one number, which is how the last version of
+     * this check ended up asserting something about the arithmetic that
+     * produced the old synthesised face rather than about the face.
+     *
+     * So the frame the face changes on is counted and stepped over, and what
+     * is measured is everything else: whether anything moves while the face
+     * is not changing, and how often it changes at all.
+     */
     const turn = (fromDeg, toDeg, degPerSec) => {
       const dtStep = FRAMES_PER_STEP / 60;
       const steps = Math.max(1,
@@ -1060,15 +1083,30 @@ try {
       let lo = Infinity;
       let hi = -Infinity;
       let prev = null;
+      let swaps = 0;
+      // Which face is drawn, not which one the latch has settled on: they are
+      // the same decision a fraction of a second apart, and reading the latch
+      // steps over the frame before the drawing changes rather than the frame
+      // it changes on.
+      let was = a.faceOn;
       for (let f = 0; f <= steps; f++) {
         const yaw = (fromDeg + (toDeg - fromDeg) * (f / steps)) * Math.PI / 180;
         const edge = spread(yaw, 1).lo - headMid(yaw);
-        if (prev != null) worstStep = Math.max(worstStep, Math.abs(edge - prev));
-        lo = Math.min(lo, edge);
-        hi = Math.max(hi, edge);
-        prev = edge;
+        const swapped = a.faceOn !== was;
+        was = a.faceOn;
+        if (swapped) swaps++;
+        else if (prev != null) {
+          worstStep = Math.max(worstStep, Math.abs(edge - prev));
+          lo = Math.min(lo, edge);
+          hi = Math.max(hi, edge);
+        }
+        prev = swapped ? null : edge;
       }
-      return { worstStep: worstStep / FRAMES_PER_STEP, span: hi - lo };
+      return {
+        worstStep: worstStep / FRAMES_PER_STEP,
+        span: hi > lo ? hi - lo : 0,
+        swaps,
+      };
     };
 
     // A committed turn, at a speed a person turns at: seventy-five degrees a
@@ -1082,52 +1120,102 @@ try {
      * — which is the latch working, not the eyes drifting, and reading it as
      * drift is a mistake about the test rather than about the model.
      */
-    turn(25, 0, 75);
-    turn(0, 0, 75);
-    const chatter = turn(0, 8, 40);
-    const back = turn(8, -8, 40);
-    const worst = swing.worstStep;
-    const worstAt = 0;
-    const chatLo = 0;
-    const chatHi = Math.max(chatter.span, back.span);
+    /* The same wander, with the head-on face switched off, as the control.
+     *
+     * A face that turns eight degrees moves its eyes across the visor, and
+     * should — that is the head turning, not the eyes coming off it. Read on
+     * its own, this number cannot tell the two apart, and the version of this
+     * check that did read it on its own would have passed the drifting model
+     * and failed the fixed one. Only the difference says anything.
+     */
+    const wander = () => {
+      turn(25, 0, 75);
+      turn(0, 0, 75);
+      return Math.max(turn(0, 8, 40).span, turn(8, -8, 40).span);
+    };
+    const chat = wander();
+    const chatSwaps = turn(0, 8, 40).swaps + turn(8, -8, 40).swaps;
+    store.patch({ 'parts.headOn': 0 });
+    const chatWithout = wander();
+    const swingWithout = turn(0, 25, 75);
+    store.patch({ 'parts.headOn': 1 });
     store.reset();
-    return { facing, turned, without, worst, worstAt, headMiddle,
-      chat: chatHi - chatLo };
+    return { facing, turned, without, headMiddle,
+      worst: swing.worstStep, worstWithout: swingWithout.worstStep,
+      swaps: swing.swaps, chatSwaps,
+      chat, chatWithout };
   });
 
   const offCentre = (s) => s.mid - headOn.headMiddle;
-  check('the eyes sit square on the head when it faces the camera',
-    Math.abs(offCentre(headOn.facing)) < 12 && Math.abs(offCentre(headOn.without)) > 20,
-    `${offCentre(headOn.facing).toFixed(0)}px off the middle of the head, `
-      + `${offCentre(headOn.without).toFixed(0)}px with it switched off`);
-  check('and go back off to one side as the head turns away',
-    Math.abs(offCentre(headOn.turned)) > 20,
-    `${offCentre(headOn.turned).toFixed(0)}px at 40 degrees`);
-  /* The far eye has to be an eye, not the sliver the drawing gives it.
-   * Facing the camera the pair reaches right across the visor; turned away it
-   * is one shard and a rim, and covers less than half the ground.
+  /* Facing the camera shows a different drawing, not the same one moved.
+   *
+   * What the head-on view used to be was the near shard slid onto the head's
+   * centre line with a mirrored copy of it standing in for the far eye, and
+   * these checks were written around that: the pair had to land on the middle
+   * of the head and reach right across the visor, because those were things
+   * the arithmetic did. Both are claims about a synthesis, and neither is a
+   * claim about a face.
+   *
+   * There is a drawing of this face now. So what has to be true is only that
+   * the two are different drawings, that the one meant for facing you is the
+   * one shown when the head faces you, and that changing between them moves
+   * nothing — which is the fault that was actually reported, over and over.
    */
-  check('facing the camera the eyes reach across the whole visor',
-    headOn.facing.width > headOn.turned.width * 1.6,
-    `${headOn.facing.width}px across facing, ${headOn.turned.width}px turned`);
-  check('the eyes change over without a jump when the head turns',
+  /* Where the eye ink is, not how much of it there is.
+   *
+   * The turned-away face is one wide crescent and a sliver; the head-on one is
+   * two matched shards. Those are plainly different drawings and they put
+   * their ink in different places — but they hold a similar TOTAL, because two
+   * small eyes come to about what one big one does. The first cut of this
+   * check compared the totals and failed on two faces that were obviously
+   * different, which is a fact about the ruler.
+   */
+  check('facing the camera draws a different face from turning away',
+    Math.abs(headOn.facing.mid - headOn.turned.mid) > 10,
+    `${(headOn.facing.mid - headOn.turned.mid).toFixed(0)}px apart `
+      + `(${headOn.facing.width}px of reach against ${headOn.turned.width}px)`);
+  check('and that face is only there because the drawing is',
+    Math.abs(headOn.facing.mid - headOn.without.mid) > 10,
+    `${(headOn.facing.mid - headOn.without.mid).toFixed(0)}px from where the `
+      + `same angle puts them with it switched off`);
+  /* The head-on pair sits nearer the middle of the head than the turned-away
+   * pair does, which is what reads as a face pointed at you. How much nearer
+   * is the artist's decision and not a number this code chooses. */
+  check('the head-on pair sits nearer the middle of the head',
+    Math.abs(offCentre(headOn.facing)) < Math.abs(offCentre(headOn.turned)),
+    `${offCentre(headOn.facing).toFixed(0)}px facing, `
+      + `${offCentre(headOn.turned).toFixed(0)}px at 40 degrees`);
+  check('nothing drifts between one face and the next',
     headOn.worst < 10,
-    `worst ${headOn.worst.toFixed(1)}px in a frame of a 25° turn`);
-  /* And do not move at all while somebody is talking.
+    `worst ${headOn.worst.toFixed(1)}px in a frame of a 25° turn, `
+      + `${headOn.worstWithout.toFixed(1)}px with it switched off`);
+  /* And the face changes once on the way through, not repeatedly.
+   *
+   * A swap is only bearable because it is rare and decided. Measured on a real
+   * minute of tracking the band this replaced changed hands thirty-three
+   * times, which is what "the eyes slide on the face" was — every one of them
+   * dragged the eyes across the visor.
+   */
+  check('and the face changes hands once on the way round, not repeatedly',
+    headOn.swaps <= 1, `${headOn.swaps} times across 25°`);
+  check('and not at all inside the range an ordinary head keeps to',
+    headOn.chatSwaps === 0, `${headOn.chatSwaps} times across ±8°`);
+  /* And the change of face adds nothing to that while somebody is talking.
    *
    * Nobody holds their head still. Speaking is a constant ten or fifteen
    * degrees either side of centre, and the first version of the head-on face
    * faded out across that whole range — so the eyes slid back and forth over
    * the visor the entire time somebody spoke, which is exactly what it looked
-   * like: eyes coming off the face. The fade also finished where the flip
-   * begins, putting a drift and a snap back to back.
+   * like: eyes coming off the face.
    *
-   * Measured over the band an ordinary talking head lives in, not the band
-   * where the handover is allowed to happen.
+   * Read against the same wander with the feature switched off, because a
+   * face that turns moves its eyes across the visor whatever this does. The
+   * absolute figure is mostly that, and reading it alone says nothing.
    */
-  check('and hold still through the range an ordinary head keeps to',
-    headOn.chat < 4,
-    `${headOn.chat.toFixed(1)}px of movement on the face across ±8°`);
+  check('and adds nothing to that while somebody is talking',
+    Math.abs(headOn.chat - headOn.chatWithout) < 2,
+    `${headOn.chat.toFixed(1)}px across ±8°, `
+      + `${headOn.chatWithout.toFixed(1)}px with it switched off`);
   /* --- the flip turns the head without moving it -------------------------
    *
    * A swap changes which way the head faces. It must not also change where the
@@ -1167,9 +1255,16 @@ try {
      * head turns out not to move at all. The haze is checked on its own, just
      * below.
      */
+    /* And with the head-on face switched off, because this is about the
+     * mirror. The two faces are different drawings and changing between them
+     * moves the centroid on purpose; left on, this sweep crosses that change
+     * and reads a deliberate swap as the lurch it exists to catch. Worse, the
+     * filter below drew nothing at all while the head-on face was showing, so
+     * the sweep was quietly skipping the frames it could not measure.
+     */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
       'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
-      'stage.zoom': 1.5, 'parts.flipMargin': 32 });
+      'stage.zoom': 1.5, 'parts.flipMargin': 32, 'parts.headOn': 0 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const all = a.parts;
@@ -1188,11 +1283,13 @@ try {
       return n ? { cx: sx / n, cy: sy / n } : null;
     };
     let prev = null, worst = 0, worstAt = 0, flipped = false, flipAt = null;
+    let blank = 0;
     for (let deg = -8; deg >= -30; deg -= 1) {
       const rig = emptyRig();
       rig.head.yaw = (deg * Math.PI) / 180;
       for (let f = 0; f < 30; f++) a.render(rig, 1 / 60);
       const c = centre();
+      if (!c) blank++;
       if (a.mirrored !== flipped) { flipped = a.mirrored; flipAt = deg; }
       if (prev && c) {
         const j = Math.hypot(c.cx - prev.cx, c.cy - prev.cy);
@@ -1202,13 +1299,16 @@ try {
     }
     a.parts = all;
     store.reset();
-    return { worst, worstAt, flipAt };
+    return { worst, worstAt, flipAt, blank };
   });
 
   check('the head flips without jumping across the screen',
-    lurch.flipAt !== null && lurch.worst < 5,
+    lurch.flipAt !== null && lurch.worst < 5 && lurch.blank === 0,
     `worst ${lurch.worst.toFixed(1)}px in one degree at ${lurch.worstAt}°`
-      + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`));
+      + (lurch.flipAt === null ? ' — the flip never fired' : `, flip at ${lurch.flipAt}°`)
+      // A step that drew nothing is a step this never looked at. It happened:
+      // the filter held one of the two faces and the other one was showing.
+      + (lurch.blank ? ` — ${lurch.blank} steps drew nothing` : ''));
 
   /* --- and drops the paint it can no longer justify -----------------------
    *
