@@ -20,6 +20,8 @@
 import { clamp } from '../../core/math.js';
 
 const FIXED_DT = 1 / 120;
+// How much of a joint's excess fold is taken back in one step — see unfold().
+const UNFOLD = 0.8;
 
 export class ChainField {
   /**
@@ -272,9 +274,10 @@ export class LinkChain {
    * @param {number} opts.friction how fast neighbours moving differently are evened out, per second
    * @param {number} opts.maxStep  how far a node may travel in one sub-step, in link lengths
    * @param {number} opts.limit    how far any node may leave the drawing, in UV, carried with the root
+   * @param {number} opts.maxFold  how far a joint may fold past its drawn angle before it is eased back, radians
    */
   constructor({ nodes = 16, pinned = 2, bend = 160, rest = 14, damping = 3, tipBias = 3,
-    carry = 3, friction = 12, maxStep = 0.3, limit = 0.17 } = {}) {
+    carry = 3, friction = 12, maxStep = 0.3, limit = 0.17, maxFold = 0.6 } = {}) {
     this.nodes = nodes;
     this.pinned = Math.max(1, Math.min(pinned, nodes - 1));
     this.bend = bend;
@@ -285,15 +288,18 @@ export class LinkChain {
     this.friction = friction;
     this.maxStep = maxStep;
     this.limit = limit;
+    this.maxFold = maxFold;
     this.aspect = 1;
     this.twist = 0;
 
-    // Where it was drawn, in square space: position, link length, direction.
+    // Where it was drawn, in square space: position, link length, direction,
+    // and the angle each joint was drawn at relative to the one before.
     this.rx = new Float32Array(nodes);
     this.ry = new Float32Array(nodes);
     this.len = new Float32Array(nodes);
     this.dirx = new Float32Array(nodes);
     this.diry = new Float32Array(nodes);
+    this.joint = new Float32Array(nodes);
 
     this.px = new Float32Array(nodes);
     this.py = new Float32Array(nodes);
@@ -327,6 +333,10 @@ export class LinkChain {
       this.len[i] = d;
       this.dirx[i] = dx / d;
       this.diry[i] = dy / d;
+    }
+    for (let i = 2; i < n; i++) {
+      this.joint[i] = wrapAngle(Math.atan2(this.diry[i], this.dirx[i])
+        - Math.atan2(this.diry[i - 1], this.dirx[i - 1]));
     }
     this.hasRest = n >= 2;
     this.reset();
@@ -492,7 +502,39 @@ export class LinkChain {
         px[i] -= ex * k; py[i] -= ey * k;
       }
     }
+    this.unfold();
     this.tighten();
+  }
+
+  /**
+   * Ease any joint folded too far past its drawn angle back toward it.
+   *
+   * A ribbon skinned to a chain has a width, and where two links fold right
+   * over on each other its two edges cross and the cloth pinches to nothing
+   * — measured at the panel's extremes as the character in two pieces, with
+   * the fold plainly visible in the saved frame. A hard stop on the angle was
+   * the first answer and jammed (see tighten). This is soft: a joint past the
+   * limit is turned part of the way back each step, so a spiral cannot lock
+   * itself against the stops, and the joints' own springs finish the job.
+   */
+  unfold() {
+    const n = this.nodes;
+    const p = this.pinned;
+    const { px, py, qx, qy, len, joint } = this;
+    for (let i = Math.max(p, 2); i < n; i++) {
+      const parent = Math.atan2(py[i - 1] - py[i - 2], px[i - 1] - px[i - 2]);
+      const here = Math.atan2(py[i] - py[i - 1], px[i] - px[i - 1]);
+      const fold = wrapAngle(here - parent - joint[i]);
+      if (Math.abs(fold) <= this.maxFold) continue;
+      const ang = here - (fold - Math.sign(fold) * this.maxFold) * UNFOLD;
+      const nx = px[i - 1] + Math.cos(ang) * len[i];
+      const ny = py[i - 1] + Math.sin(ang) * len[i];
+      // Carried on the previous position too, so the move changes where the
+      // node is and not how fast it is going: a correction the integrator
+      // read as velocity doubled the swing after a yank.
+      qx[i] += nx - px[i]; qy[i] += ny - py[i];
+      px[i] = nx; py[i] = ny;
+    }
   }
 
   /**
@@ -510,7 +552,8 @@ export class LinkChain {
    * joint refolded the next, so the stops made the whole tail one rigid body
    * and it hung there, balanced, for good. The joints' own springs have a
    * single resting shape — the drawing — and a soft pull toward it cannot be
-   * jammed the way a stop can.
+   * jammed the way a stop can; the fold limit in unfold() is soft for the
+   * same reason.
    */
   tighten() {
     const n = this.nodes;
@@ -533,4 +576,11 @@ export class LinkChain {
     this.accumulator = 0;
     this.twist = 0;
   }
+}
+
+/** Into (-PI, PI]. */
+function wrapAngle(a) {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a <= -Math.PI) a += 2 * Math.PI;
+  return a;
 }

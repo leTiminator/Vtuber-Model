@@ -1,20 +1,13 @@
 import { defineConfig } from 'vite';
-import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
 import { rigRelay } from './scripts/rig-relay.mjs';
-
-// `npm run phone` sets this. Testing on a phone needs two things a desktop run
-// does not: the server has to listen on the LAN, and it has to serve HTTPS —
-// browsers refuse getUserMedia on a plain-HTTP origin that is not localhost, so
-// over the LAN the camera is simply unavailable without a certificate.
-const phone = process.env.VTUBER_PHONE === '1';
 
 // A GitHub project page is served from /<repo>/, not from the root, so every
 // asset URL needs that prefix. The workflow passes it in; locally it stays '/'
 // so `npm run dev` and a plain `npm run build` are unaffected.
 const base = process.env.VTUBER_BASE ?? '/';
 
-// Stamped into the page so a build can be identified from the phone. "Is it
+// Stamped into the page so a build can be identified at a glance. "Is it
 // cached?" should be a question with an answer, not a guess.
 const BUILD = process.env.VTUBER_BUILD
   || new Date().toISOString().replace('T', ' ').slice(0, 16);
@@ -25,9 +18,9 @@ export default defineConfig({
   // The relay carries tracking from the tab with the camera to the page OBS
   // opens — see scripts/rig-relay.mjs. Dev only: it is a live connection, and
   // a built copy on a static host has no server to hold one.
-  plugins: phone ? [rigRelay(), basicSsl()] : [rigRelay()],
+  plugins: [rigRelay()],
   server: {
-    host: phone ? true : '127.0.0.1',
+    host: '127.0.0.1',
     port: 5173,
     open: false,
   },
