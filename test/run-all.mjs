@@ -7,7 +7,7 @@
  */
 import { spawnSync } from 'node:child_process';
 
-export const SUITES = ['rig', 'parts', 'motion', 'replay', 'smoke', 'warp', 'output', 'golden'];
+export const SUITES = ['rig', 'cloth', 'replay', 'parts', 'invariants', 'golden', 'smoke', 'output', 'warp'];
 
 const wanted = process.argv.slice(2);
 const list = wanted.length ? wanted : SUITES;

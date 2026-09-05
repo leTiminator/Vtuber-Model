@@ -305,17 +305,6 @@ export const DEFAULTS = {
    * background, and it can afford to keep just enough to cover a seam.
    */
   'parts.clothMargin': 8,
-  /* The same cap for every part, flipped or not.
-   *
-   * Full by default, because the margin is doing its job wherever a piece in
-   * front is moving off a piece behind. It exists as a setting so a check can
-   * turn it off and measure the drawing rather than the padding around it —
-   * which matters more than it sounds: the scarf's two halves each carry
-   * twenty-eight pixels of it, so a check for them coming apart was watching
-   * fifty-six pixels of invented paint bridge every gap, and reported the
-   * scarf perfectly joined however far it tore.
-   */
-  'parts.margin': 32,
 
   /* Turning the head as a rounded surface rather than bending it on a
    * cylinder. See shell.js: the cylinder slides pixels inside an outline that

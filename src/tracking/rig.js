@@ -24,8 +24,8 @@ import * as store from '../core/store.js';
  * 45-degree glance runs at roughly 5 rad/s — so they bite only on estimates no
  * neck could have produced.
  */
-const MAX_HEAD_SLEW = 6;
-const MAX_HEAD_DRIFT = 5;
+export const MAX_HEAD_SLEW = 6;
+export const MAX_HEAD_DRIFT = 5;
 
 /** How long the head takes to trust the tracker fully again after a dropout. */
 const REACQUIRE_SECONDS = 0.3;

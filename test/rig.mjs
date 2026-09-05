@@ -164,6 +164,20 @@ const run = (rig, n, f, tracked = true) => {
   settings.reset();
 }
 
+/* --- Flip nod reverses the nod, and only the nod --------------------------- */
+{
+  settings.reset();
+  const plain = run(new Rig(), 200, frame({ head: { pitch: 0.3, yaw: 0.2 } }));
+  settings.set('head.flipNod', true);
+  const flipped = run(new Rig(), 200, frame({ head: { pitch: 0.3, yaw: 0.2 } }));
+  check('Flip nod reverses the pitch the renderer is given',
+    Math.abs(plain.head.pitch) > 0.1 && Math.abs(flipped.head.pitch + plain.head.pitch) < 1e-6,
+    `pitch ${plain.head.pitch.toFixed(3)} then ${flipped.head.pitch.toFixed(3)}`);
+  check('and leaves the turn alone', Math.abs(flipped.head.yaw - plain.head.yaw) < 1e-6,
+    `yaw ${plain.head.yaw.toFixed(3)} then ${flipped.head.yaw.toFixed(3)}`);
+  settings.reset();
+}
+
 /* --- restarting the camera keeps a neutral somebody set ------------------- */
 {
   settings.reset();

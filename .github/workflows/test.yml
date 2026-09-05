@@ -18,17 +18,16 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # One job a suite, in parallel. Run end to end they take about
-    # twenty-five minutes, nearly all of it in `motion`, and a check that slow
-    # gets ignored. Split, the wall clock is however long `motion` takes.
+    timeout-minutes: 10
+    # One job a suite, in parallel, each a few minutes at most: a check that
+    # takes twenty minutes gets ignored, which is how the last one was.
     #
     # fail-fast off on purpose: when two suites break, knowing about both is
     # worth more than finding out about the second one tomorrow.
     strategy:
       fail-fast: false
       matrix:
-        suite: [rig, parts, motion, replay, smoke, warp, output, golden]
+        suite: [rig, cloth, replay, parts, invariants, golden, smoke, output, warp]
     name: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v4

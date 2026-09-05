@@ -196,6 +196,8 @@ const UNIFORMS = [
 ];
 
 const SPINE_NODES = 16;
+/** How much invented margin a part may draw, in pixels of its texture. */
+const MARGIN_FULL = 32;
 /** The settings the cut reads; any other warp.* key is a render-time gain. */
 const CUT_KEYS = new Set(['warp.headX', 'warp.headY', 'warp.headR', 'warp.pivotX',
   'warp.pivotY', 'warp.waistY', 'warp.eyeAngle', 'warp.eyeL', 'warp.eyeR']);
@@ -1242,7 +1244,7 @@ export class Parts2D {
        */
       gl.uniform1f(L.u_marginMax, flips ? store.get('parts.flipMargin')
         : part.skinned ? store.get('parts.clothMargin')
-          : store.get('parts.margin'));
+          : MARGIN_FULL);
 
       /* This part's geometry, bound before anything is drawn with it.
        *
