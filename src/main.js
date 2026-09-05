@@ -421,25 +421,53 @@ const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}
  * wrong, and that one line says so in a way no amount of describing the
  * symptom over chat can.
  */
+/* Where "forward" is, in words.
+ *
+ * The number alone was read for a week as the model being broken. A neutral
+ * taken from the button is taken looking at the screen, and a camera beside
+ * the screen makes that a permanent turn — thirty-eight degrees, measured
+ * live — so looking at the camera afterwards read as a hard turn away and the
+ * head sat at its limit. Nothing was broken; forward was the screen. Which is
+ * right for streaming, and needs saying.
+ */
+function neutralLine() {
+  const n = rig.neutral;
+  const cal = rig.pendingCalibration;
+  const wait = cal ? Math.max(0, cal.armAt - rig.clock) : 0;
+  const capturing = !cal ? ''
+    : wait > 0 ? ` · setting neutral in ${Math.ceil(wait)}… look where you stream`
+      : ' · capturing — hold still';
+  if (!n) {
+    return (cal ? 'neutral: not set yet' : 'NEUTRAL NOT SET — press C sitting how you stream')
+      + capturing;
+  }
+  const off = Math.abs(n.yaw) * 180 / Math.PI;
+  const where = off > 8
+    ? `forward is where you looked when you set the pose, ${Math.round(off)}° from the camera`
+    : 'forward is the camera';
+  return `${where} · neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
+    + (off > 8 && !cal ? ' — C resets it, 3-second countdown' : '') + capturing;
+}
+
 function liveLines() {
   if (!tracker.running) return [];
   const out = [];
   const head = tracker.frame?.head;
-  const n = rig.neutral;
-  if (head) {
-    const raw = `raw yaw ${deg(head.yaw)} pitch ${deg(head.pitch)} roll ${deg(head.roll)}`;
+  if (head && tracker.hasFace) {
+    /* In the rig's own terms — mirrored, when the camera is — so this line,
+     * the neutral and the driven angles can be read against each other. The
+     * camera's raw reading has the opposite sign on yaw and roll, and a line
+     * that printed it beside a mirrored neutral could not be subtracted by
+     * eye, which is what it was there for.
+     */
+    const mirror = store.get('camera.mirror');
+    const seen = mirror ? { yaw: -head.yaw, pitch: head.pitch, roll: -head.roll } : head;
     const s = rig.state.head;
-    out.push(`${raw}  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`);
+    out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
+      + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`);
   } else {
     out.push('no face in frame');
   }
-  out.push(n
-    ? `neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
-      + (rig.pendingCalibration ? ' · capturing…' : '')
-    : rig.pendingCalibration
-      ? 'neutral: capturing… hold still and look at the lens'
-      : 'NEUTRAL NOT SET — press C sitting how you stream');
-  if (rig.neutralWarning) out.push(`  ⚠ ${rig.neutralWarning}`);
 
   // The pose model is a separate model on a separate stride, and "the arms do
   // not move" has three different causes that look identical from outside:
@@ -469,10 +497,20 @@ function liveLines() {
   if (store.get('arms.track') && pose.enabled && j?.shoulderL && j?.shoulderR) {
     const shoulderY = (j.shoulderL.y + j.shoulderR.y) / 2;
     const where = `shoulders at ${Math.round(shoulderY * 100)}% of the frame's height`;
-    if (a.left.seen < 0.3 && a.right.seen < 0.3) {
-      out.push(`  ⚠ elbows out of frame — ${where}; move the camera back or down`);
-    } else if (a.left.wrist < 0.3 && a.right.wrist < 0.3) {
-      out.push(`  ⚠ wrists out of frame — lift is read off the elbows; ${where}`);
+    // Per arm. A desk camera crops one side long before it crops both, and a
+    // warning that waited for both was silent exactly when it was needed.
+    const gone = [];
+    for (const [side, arm] of [['left', a.left], ['right', a.right]]) {
+      if (arm.seen < 0.3) gone.push(`${side} elbow`);
+      else if (arm.wrist < 0.3) gone.push(`${side} wrist`);
+    }
+    if (gone.length) {
+      const joint = (g) => g.split(' ')[1];
+      const what = gone.length === 2 && joint(gone[0]) === joint(gone[1])
+        ? `both ${joint(gone[0])}s` : gone.join(' and ');
+      const why = gone.some((g) => g.endsWith('elbow'))
+        ? 'move the camera back or down' : 'lift is read off the elbow';
+      out.push(`  ⚠ ${what} out of frame — ${why}; ${where}`);
     }
   }
   return out;
@@ -497,11 +535,7 @@ function runSelfCheck() {
     // Where "facing forward" is. Sitting off to one side reads as a permanent
     // yaw, so this is the difference between a model at rest and one parked
     // in the worst part of its range.
-    rig.neutral
-      ? `neutral yaw ${deg(rig.neutral.yaw)} pitch ${deg(rig.neutral.pitch)} roll ${deg(rig.neutral.roll)}`
-        + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : '')
-      : `neutral not set — press "Set neutral pose" sitting how you stream`
-        + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
+    neutralLine() + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
     r.drawn,
     // Which face is showing, and whether the head-on drawing loaded at all.
     r.headOn ? `head-on: ${r.headOn}` : null,

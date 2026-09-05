@@ -118,6 +118,57 @@ const run = (rig, n, f, tracked = true) => {
     `yaw ${state.head.yaw.toFixed(3)} limit ${limit.toFixed(3)}`);
 }
 
+/* --- tilt has a limit of its own ----------------------------------------- */
+{
+  settings.reset();
+  const rig = new Rig();
+  const state = run(rig, 400, frame({ head: { yaw: 2.5, roll: 2.5 } }));
+  const rollLimit = (25 * Math.PI) / 180 + 1e-6;
+  const yawLimit = (42 * Math.PI) / 180 + 1e-6;
+  check('tilt stops at its own limit while the turn keeps the wider one',
+    Math.abs(state.head.roll) <= rollLimit && Math.abs(state.head.roll) > rollLimit - 0.02
+      && Math.abs(state.head.yaw) > rollLimit + 0.1 && Math.abs(state.head.yaw) <= yawLimit,
+    `roll ${state.head.roll.toFixed(3)} yaw ${state.head.yaw.toFixed(3)}`);
+}
+
+/* --- an automatic neutral gives up rather than guessing ------------------ */
+{
+  settings.reset();
+  const rig = new Rig();
+  rig.calibrate(true);
+  // A head that never holds still: a glance every third of a second.
+  for (let i = 0; i < 60 * 15; i++) {
+    rig.update(frame({ head: { yaw: (Math.floor(i / 20) % 2) * 0.5 } }), true, DT);
+  }
+  check('an unsteady automatic capture saves nothing and says so',
+    rig.pendingCalibration === null && rig.neutral === null && /steady/.test(rig.neutralWarning),
+    `neutral ${JSON.stringify(rig.neutral)} — ${rig.neutralWarning || 'no warning'}`);
+
+  // A requested one waits three seconds first, so the person can look where
+  // they mean to, and then takes what it sees.
+  const rig2 = new Rig();
+  rig2.calibrate();
+  run(rig2, 120, frame({ head: { yaw: 0.3 } }));
+  check('a requested capture has not sampled during its countdown',
+    rig2.neutral === null && rig2.pendingCalibration !== null,
+    `neutral ${JSON.stringify(rig2.neutral)}`);
+  run(rig2, 120, frame({ head: { yaw: 0.1 } }));
+  check('and takes the pose held after it',
+    rig2.neutral !== null && Math.abs(Math.abs(rig2.neutral.yaw) - 0.1) < 0.02,
+    `neutral yaw ${rig2.neutral?.yaw.toFixed(3)}`);
+}
+
+/* --- a neutral written to the store reaches a rig already built ----------- */
+{
+  settings.reset();
+  const rig = new Rig();
+  settings.set('camera.neutral', JSON.stringify({ yaw: 0.3, pitch: 0.1, roll: 0, x: 0, y: 0, z: -45 }));
+  check('the OBS page\'s rig picks up a neutral sent after it was built',
+    rig.neutral !== null && Math.abs(rig.neutral.yaw - 0.3) < 1e-6,
+    `neutral ${JSON.stringify(rig.neutral)}`);
+  settings.reset();
+}
+
 /* --- losing the face relaxes rather than freezing ------------------------ */
 {
   settings.reset();
@@ -313,6 +364,40 @@ const runPose = (rig, n, f, has = true) => {
   check('wrists appearing at rest read as no movement',
     Math.abs(appeared.raise) < 0.05 && Math.abs(appeared.fore) < 0.05,
     `raise ${appeared.raise.toFixed(3)} fore ${appeared.fore.toFixed(3)}`);
+}
+
+/* --- the body's turn is measured against the shoulders at rest ------------
+ * It used to be measured against the widest shoulder line ever seen, which is
+ * a ratchet: lean toward the camera once and every later pose reads as turned.
+ * Measured live, the body sat at a quarter turn all session with its owner
+ * square to the camera.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  const shoulders = (w) => ({
+    joints: {
+      shoulderL: { x: 0.5 - w / 2, y: 0.40, z: 0 }, shoulderR: { x: 0.5 + w / 2, y: 0.40, z: 0 },
+      elbowL: { x: 0.36, y: 0.58 }, elbowR: { x: 0.64, y: 0.58 },
+      wristL: { x: 0.38, y: 0.74 }, wristR: { x: 0.62, y: 0.74 },
+      hipL: { x: 0.44, y: 0.78 }, hipR: { x: 0.56, y: 0.78 },
+    },
+    time: 0,
+  });
+  runPose(rig, 120, shoulders(0.20));
+  const rest = rig.state.torso.turn;
+  runPose(rig, 240, shoulders(0.14));
+  const turned = rig.state.torso.turn;
+  runPose(rig, 240, shoulders(0.26));
+  const leaned = rig.state.torso.turn;
+  runPose(rig, 240, shoulders(0.20));
+  const back = rig.state.torso.turn;
+  check('narrower shoulders read as a turn',
+    Math.abs(rest) < 0.02 && Math.abs(turned) > 0.3,
+    `rest ${rest.toFixed(3)} turned ${turned.toFixed(3)}`);
+  check('leaning in past the rest width is not a turn, and does not become one',
+    Math.abs(leaned) < 0.05 && Math.abs(back) < 0.05,
+    `leaned ${leaned.toFixed(3)} back at rest ${back.toFixed(3)}`);
 }
 
 /* --- which physical hand drives which side of the screen ------------------

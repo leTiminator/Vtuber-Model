@@ -124,7 +124,10 @@ try {
    * ships, from the tracker's own state outward.
    */
   await tracker.evaluate((face) => {
-    const { tracker: t } = window.__vtuber;
+    const { tracker: t, store } = window.__vtuber;
+    // A neutral too, so the crossing carries the one setting the OBS page was
+    // found to be missing: its rig is built against an empty store.
+    store.set('camera.neutral', JSON.stringify({ yaw: 0.12, pitch: 0.05, roll: 0, x: 0, y: 0, z: -45 }));
     t.frame = face;
     t.hasFace = true;
   }, { shapes: {}, head: sample.face.head, position: sample.face.position });

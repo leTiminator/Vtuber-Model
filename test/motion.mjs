@@ -847,6 +847,8 @@ try {
    * every check here, because none of them asked where the eye had got to.
    */
   const face = await page.evaluate(async () => {
+    // The mirror is off by default now; this check is about the mirror.
+    window.__vtuber.store.set('parts.flipTurn', 1);
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
     store.reset();
@@ -1463,7 +1465,9 @@ try {
      */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
       'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
-      'stage.zoom': 1.5, 'parts.flipMargin': 32, 'parts.headOn': 0 });
+      'stage.zoom': 1.5, 'parts.flipMargin': 32, 'parts.headOn': 0,
+      // Off by default; this check is about the flip.
+      'parts.flipTurn': 1 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const all = a.parts;
@@ -1548,7 +1552,9 @@ try {
      */
     store.patch({ 'warp.wind': 0, 'warp.clothWeight': 0, 'body.breathAmount': 0,
       'body.swayAmount': 0, 'warp.overshoot': 0, 'body.hairPhysics': 0,
-      'warp.eyeGlow': 0, 'stage.zoom': 1.5, 'parts.headOn': 0 });
+      'warp.eyeGlow': 0, 'stage.zoom': 1.5, 'parts.headOn': 0,
+      // Off by default; this check is about what the flip leaves behind.
+      'parts.flipTurn': 1 });
     a.resize(320, 320, 2);
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
     const gl = a.gl;

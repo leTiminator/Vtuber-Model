@@ -221,7 +221,7 @@ export class Parts2D {
     this.clock = 0;
     this.onStatus = () => {};
 
-    /* Rigid links, with the root tied to the neck scarf — see LinkChain.
+    /* Rigid links, rooted on the shoulder — see LinkChain.
      *
      * tipBias is what makes it read as a chain rather than a flag: the root is
      * held and each link further out carries more of the drive, so the wave
@@ -457,7 +457,7 @@ export class Parts2D {
   followAt(name, px, py) {
     if (TURNED_FACE.has(name) || HEADON_FACE.has(name)) return 1;
     if (name === 'body') return 0;
-    /* Cloth is not blended. It was, and that was the stretch.
+    /* Cloth is not blended toward the head. It was, and that was the stretch.
      *
      * Every part is placed by mixing two joints per vertex, and for the scarf
      * those were the neck and the hips, weighted by this gradient. A mix of two
@@ -467,13 +467,13 @@ export class Parts2D {
      * length on a roll — the scarf "attached to the head and stretched", in
      * exactly those words, every day for a week.
      *
-     * So the neck scarf takes one rigid transform of its own (the wrap joint),
-     * which cannot shear, and the ribbon takes none at all: it is skinned to a
-     * chain of rigid links whose root is pinned to that same transform. What the
-     * head does reaches the ribbon through the chain, as bend, not as stretch.
+     * So the ribbon is skinned to a chain of rigid links and takes none of the
+     * head's transform, and the neck scarf sits still on the body, behind the
+     * head, which moves over it as a cutout. A rigid collar that followed the
+     * chin by half was tried in between and turned inside the head on a roll;
+     * still and behind, there is nothing for it to get wrong.
      */
-    if (name === 'wrap') return 1;
-    if (name === 'tails') return 0;
+    if (name === 'wrap' || name === 'tails') return 0;
     const h = this.headSpan;
     const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
     const t = clamp((d - FOLLOW_FULL) / (FOLLOW_NONE - FOLLOW_FULL), 0, 1);
@@ -869,9 +869,7 @@ export class Parts2D {
       ? 2 * (this.flipAxis - this.headSpan.cx) : 0;
 
     // --- joints ----------------------------------------------------------
-    // Decided after the mirror, because the neck scarf and the ribbon's root
-    // take the swap through their joints and have to know it has happened.
-    const joints = this.solveJoints(rig, roll, pitch, yaw, m, flipSlide);
+    const joints = this.solveJoints(rig, roll, pitch, yaw, m);
 
     // --- cloth -----------------------------------------------------------
     const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045;
@@ -936,14 +934,13 @@ export class Parts2D {
      */
     const fx = clamp(-this.clothInertia.ax, -12, 12) * CLOTH_DRIVE * weight;
     const fy = clamp(-this.clothInertia.ay, -12, 12) * CLOTH_DRIVE * weight;
-    /* Tied at the root to the neck scarf. Whatever the wrap does — leaning
-     * with the chin, jumping with the mirror — the first links do exactly, and
-     * the rest of the ribbon finds out about it one joint at a time. That lag
-     * is the movement that has been asked for all week; the chain had no root
-     * to be moved by, so there was nothing for it to lag behind.
+    /* Rooted on the shoulder, which does not move with the head. The ribbon
+     * leaves from behind the shoulder in this drawing, so its first links sit
+     * where they were drawn and everything the head does reaches the ribbon
+     * as the inertia above — a swing that starts at the root and arrives at
+     * the tip one joint later, which is the movement that was asked for.
      */
-    const swing = this.scarf.step(fx, fy, CLOTH_WIND * store.get('warp.wind') * weight, dt,
-      this.wrapLocal);
+    const swing = this.scarf.step(fx, fy, CLOTH_WIND * store.get('warp.wind') * weight, dt);
 
     // Displace each bone by its own node in the chain. The chain's later nodes
     // move further, so the ribbon lags along its length and folds rather than
@@ -1093,22 +1090,9 @@ export class Parts2D {
     const shellDepth = Math.min(clamp(store.get('parts.shellDepth'), 0, 1), foldSafe)
       * this.headSpan.r;
 
-    /* Mirrored, the neck scarf goes behind the head.
-     *
-     * It is drawn in front because in the drawing it crosses the near cheek.
-     * Mirrored, that cheek is the far one, so the same cloth is now on the far
-     * side of the face and belongs behind it — and while it stayed in front it
-     * covered the chin, because the head reflects about the mirror axis while
-     * the wrap only slides.
-     *
-     * This hides the overlap. It does not close the gap, which is the tear
-     * still reported; that needs the whole scarf mirroring together.
-     */
-    const headZ = this.parts.find((p) => p.name === 'head')?.z ?? 0;
-    const order = mirror > 0.5
-      ? [...this.parts].sort((p, q) =>
-        (p.name === 'wrap' ? headZ - 0.5 : p.z) - (q.name === 'wrap' ? headZ - 0.5 : q.z))
-      : this.parts;
+    // Back to front, always: the neck scarf is drawn behind the head in every
+    // view now, so the mirror no longer has to reorder anything.
+    const order = this.parts;
 
     // --- draw, back to front ---------------------------------------------
     for (const part of order) {
@@ -1131,9 +1115,7 @@ export class Parts2D {
        * the face does not follow the head across.
        */
       const flips = FLIPS_WITH_HEAD.has(part.name) && mirror > 0.5;
-      // The cloth takes the swap through its joints — the wrap in its own
-      // transform, the ribbon at its root — and would take it twice if it
-      // slid as well.
+      // The cloth stays where the body is; only the arms slide with the head.
       const slide = flips || part.name === 'wrap' || part.name === 'tails' ? 0 : flipSlide;
       // Nothing bends any more; the head turns instead. Kept behind a setting
       // rather than deleted, so the two can still be compared.
@@ -1397,7 +1379,7 @@ export class Parts2D {
     return nodes;
   }
 
-  solveJoints(rig, roll, pitch, yaw, m, slide = 0) {
+  solveJoints(rig, roll, pitch, yaw, m) {
     const lean = rig.head.x * 0.045 + rig.body.leanX * 0.02;
     const rise = -rig.head.y * 0.04 + rig.body.bounce * 0.004;
     const breath = rig.body.breath * 0.012;
@@ -1444,47 +1426,6 @@ export class Parts2D {
       rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
     );
 
-    /* The neck scarf: one rigid transform, following the chin by half.
-     *
-     * The head's own transform, relative to the body, is everything above
-     * except the hips — and applying it whole to the wrap is what the old blend
-     * did at the chin, where it was right, before shearing it out toward the
-     * shoulders, where it was wrong. What the scarf round a neck actually does
-     * is simpler: its top goes where the chin goes, more or less, and its
-     * bottom lies on the chest and stays there. So the wrap leans about the
-     * belt line, by whatever angle carries its top through a share of the
-     * chin's own travel, and rises and falls by the same share.
-     *
-     * A share rather than all of it, because the hood is cut along the top of
-     * the scarf and painted twenty-eight pixels past it, and the body is
-     * painted the same distance up under the scarf's bottom edge. Half the
-     * chin's travel shows at the chin and half at the chest, and both stay
-     * inside what was painted for them, where all of it at one seam would not.
-     * Tilt this head all the way and the number is still under thirty pixels.
-     *
-     * The mirror's jump is taken whole. It moves the whole head sideways at
-     * once, and a scarf left half a head behind is the tear that was reported.
-     */
-    const local = compose(
-      translate(IDENTITY, shift, nod),
-      rotateAbout(roll, m.pivotX, m.pivotY, this.aspect),
-      rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
-    );
-    const chinX = local[0] * m.pivotX + local[3] * m.pivotY + local[6] - m.pivotX;
-    const chinY = local[1] * m.pivotX + local[4] * m.pivotY + local[7] - m.pivotY;
-    const share = clamp(store.get('parts.wrapFollow'), 0, 1);
-    // Leaning about the belt moves the chin sideways by the angle times the
-    // drop between them, in the square space the rotation is measured in.
-    const drop = Math.max(m.waistY - m.pivotY, 0.02);
-    const lean_ = (share * chinX * this.aspect) / drop;
-    const wrapLocal = compose(
-      translate(IDENTITY, slide, share * chinY),
-      rotateAbout(lean_, m.pivotX, m.waistY, this.aspect),
-    );
-    // The ribbon's root is pinned to this same transform — see the chain step
-    // in render — so the seam between the two is exact by construction.
-    this.wrapLocal = wrapLocal;
-    const wrap = compose(hips, wrapLocal);
 
     /* Arms hang off the hips rather than the neck: lifting a hand should not
      * inherit the head's tilt, and a shoulder that followed the head would
@@ -1528,7 +1469,7 @@ export class Parts2D {
     );
 
     return {
-      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts, wrap,
+      root: IDENTITY, hips, torso: hips, neck, head: neck, eyes: neck, tufts,
       shoulderLeft: armAt('armLeft', 'right'),
       shoulderRight: armAt('armRight', 'left'),
     };

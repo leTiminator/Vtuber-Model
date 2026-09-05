@@ -149,6 +149,10 @@ export class Rig {
 
     store.subscribe((key) => {
       if (key.startsWith('smooth.') || key === 'arms.smooth') this.applySmoothing();
+      // The OBS page builds its rig against an empty store and is told the
+      // settings afterwards. Without this it drew with no neutral for as long
+      // as the tracker page had one, and the two heads did not match.
+      if (key === 'camera.neutral') this.neutral = readNeutral();
     });
     this.applySmoothing();
   }
@@ -195,11 +199,19 @@ export class Rig {
       // A second and a half at thirty frames, so a blink or a glance is a
       // minority of it rather than all of it.
       needed: 45,
-      skip: auto ? 45 : 0,
+      /* Nothing is sampled until this. A second and a half for an automatic
+       * capture, so the camera has settled. Three seconds for a requested one,
+       * so whoever pressed the button can look where they mean to look rather
+       * than at the button: measured live, a neutral set from the button read
+       * thirty-eight degrees from the camera, because the button is on the
+       * screen and the camera was not.
+       */
+      armAt: this.clock + (auto ? 1.5 : 3),
       auto,
       deadline: this.clock + (auto ? 12 : 0),
     };
     this.armNeutral = null; // re-read on the next pose frame
+    this.torsoNeutral = null; // and the shoulders' rest with it
     this.neutralWarning = '';
   }
 
@@ -307,18 +319,24 @@ export class Rig {
     const width = Math.hypot(shoulderL.x - shoulderR.x, shoulderL.y - shoulderR.y);
     const depth = (shoulderL.z ?? 0) - (shoulderR.z ?? 0);
     const torsoNow = {
-      // Widest seen so far is "square on", which is what foreshortening is
-      // measured against. It only ever grows, so a turn cannot redefine it.
       width,
       turn: 0,
       lean: shoulders.x - 0.5,
       rise: shoulders.y - 0.5,
       depth,
     };
-    this.shoulderSpan = Math.max(this.shoulderSpan ?? 0, width);
-    if (this.shoulderSpan > 0.02) {
+    /* Foreshortening is measured against the shoulder width captured with the
+     * rest pose, not the widest ever seen. The widest-ever was a ratchet: lean
+     * toward the camera once and the shoulders read wider than they ever will
+     * sitting back, so every pose after it read as turned. Measured live, the
+     * body held at a quarter turn for a whole session with its owner sitting
+     * square. Against the rest width, sitting square is square, and leaning
+     * in reads as nothing rather than as "even more square than square".
+     */
+    const restWidth = this.torsoNeutral?.width ?? width;
+    if (restWidth > 0.02) {
       // cos of the turn, near enough, and the sign from which shoulder is nearer.
-      const closed = clamp(width / this.shoulderSpan, 0, 1);
+      const closed = clamp(width / restWidth, 0, 1);
       torsoNow.turn = Math.acos(closed) * Math.sign(depth || 1) * flip;
     }
     if (!this.torsoNeutral) this.torsoNeutral = { ...torsoNow };
@@ -504,7 +522,7 @@ export class Rig {
   collectCalibration(head, pos) {
     const cal = this.pendingCalibration;
     if (!cal) return;
-    if (cal.skip > 0) { cal.skip--; return; }
+    if (this.clock < cal.armAt) return;
     cal.samples.push({ ...head, px: pos.x, py: pos.y, pz: pos.z });
     if (cal.samples.length < cal.needed) return;
 
@@ -531,7 +549,21 @@ export class Rig {
      */
     const STILL = 12 * DEG;
     const steady = spread('yaw') < STILL && spread('pitch') < STILL;
-    if (cal.auto && !steady && this.clock < cal.deadline) { cal.samples = []; return; }
+    if (cal.auto && !steady) {
+      cal.samples = [];
+      if (this.clock < cal.deadline) return;
+      /* Past the deadline it gives up, as promised above. It used to save the
+       * median of whatever it had at that point — a head that never held
+       * still — and that guess then stood as "forward" for the whole session,
+       * with no warning, because a guess inside the per-axis bounds looks
+       * exactly like a pose. Nothing is better than a guess here: with no
+       * neutral the model follows the camera's own frame, and the readout
+       * says what to do.
+       */
+      this.pendingCalibration = null;
+      this.neutralWarning = 'no steady pose found to set as neutral — press C sitting the way you stream';
+      return;
+    }
 
     /* Bounded to what a resting head can actually be, one axis at a time.
      *
@@ -595,10 +627,12 @@ export class Rig {
     const pitch = (head.pitch - (n?.pitch ?? 0)) * PITCH_SIGN * g('head.pitchGain')
       * (g('head.flipNod') ? -1 : 1);
     const roll = (head.roll - (n?.roll ?? 0)) * g('head.rollGain');
+    // Tilt has a limit of its own — see head.rollLimitDeg.
+    const rollLimit = g('head.rollLimitDeg') * DEG;
 
     s.head.yaw = this.pose.filter('yaw', clamp(yaw, -limit, limit), dt);
     s.head.pitch = this.pose.filter('pitch', clamp(pitch, -limit, limit), dt);
-    s.head.roll = this.pose.filter('roll', clamp(roll, -limit, limit), dt);
+    s.head.roll = this.pose.filter('roll', clamp(roll, -rollLimit, rollLimit), dt);
 
     // Translation arrives in centimetres; normalise to roughly -1..1 of frame.
     const pg = g('head.positionGain');

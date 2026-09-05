@@ -62,6 +62,14 @@ export const DEFAULTS = {
   'head.rollGain': 1.25,
   'head.positionGain': 1.0,
   'head.limitDeg': 42,
+  /* Tilt has a limit of its own, lower than the turn's.
+   *
+   * At the shared limit a person tilting their head hard — measured live,
+   * raw roll +49° — rolled the model forty-two degrees, and a head that far
+   * over turns inside its collar. Twenty-five keeps it level enough to read as
+   * a head, and is about where a collar stops looking wrong under a jaw.
+   */
+  'head.rollLimitDeg': 25,
   /* Which way a nod goes, as a preference on top of a convention that is now
    * fixed in code — see PITCH_SIGN in rig.js.
    *
@@ -165,7 +173,14 @@ export const DEFAULTS = {
    * switched off for a reason that no longer applies is to ask again under a
    * new name.
    */
-  'parts.flipTurn': 1.0,
+  /* Off. The head can be driven to head.limitDeg and the mirror fired just
+   * under it, so a hard glance to the side swapped the whole head for its
+   * reflection — "it just flips between left and right" — and every swap is a
+   * seam somewhere. A drawn three-quarter view sliding as far as it can is
+   * less true to the turn and far less noticeable than a face changing hands.
+   * Left as a setting for anyone who wants the swap back.
+   */
+  'parts.flipTurn': 0,
   // Radians of yaw before the mirror starts blending. Late on purpose: cross-
   // fading hard-edged line art ghosts, so the swap belongs where the far side
   // of the face is already hidden by the turn and there is least to see.
@@ -188,13 +203,12 @@ export const DEFAULTS = {
    * genuine turn away, where a bad seam matters far less than a face pointing
    * the wrong way would.
    *
-   * Reachable, which the first number chosen was not. The rig clamps the head
-   * at head.limitDeg and scales it by head.yawGain, so the most yaw the
-   * renderer ever sees is about 0.84 at the defaults — a threshold above that
-   * is a mirror that never fires, and three checks that only pass by feeding
-   * the renderer an angle the rig would have refused. This fires at about
-   * thirty-five degrees of real head, which nobody talks at and anybody turning
-   * away passes through.
+   * Reachable, which the first number chosen was not. The rig scales the head
+   * by head.yawGain and THEN clamps at head.limitDeg, so the most yaw the
+   * renderer ever sees is limitDeg itself — 0.733 rad at the default — and a
+   * threshold above that is a mirror that never fires. This sits just under
+   * it, so a head driven to its limit flips; which is also why the mirror is
+   * now off by default (parts.flipTurn).
    */
   'parts.mirrorStart': 0.70,
 
@@ -314,17 +328,6 @@ export const DEFAULTS = {
    * available here, and the only one that has ever read unambiguously.
    */
   'parts.nodTurn': 0.55,
-  /* How much of the chin's travel the neck scarf follows, 0..1.
-   *
-   * The scarf round the neck is one rigid piece now — it used to be blended
-   * toward the head per vertex, and that blend is what stretched it. Rigid, it
-   * has to choose: go with the chin and open a gap against the chest, or stay
-   * on the chest and open one under the chin. Both seams carry twenty-eight
-   * pixels of paint for exactly this, so half puts each gap at half the travel
-   * and inside what was painted. Raise it if the chin lifts out of the scarf;
-   * lower it if the scarf lifts off the chest.
-   */
-  'parts.wrapFollow': 0.5,
   // The old bending, off. Kept so the two can be compared rather than argued
   // about; at zero the head is a rigid cutout.
   'parts.bendHead': 0,

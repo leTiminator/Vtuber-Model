@@ -57,6 +57,8 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'head.rollGain', label: 'Tilt', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.positionGain', label: 'Lean / move', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.limitDeg', label: 'Range limit', min: 10, max: 80, step: 1, format: deg },
+        { type: 'slider', key: 'head.rollLimitDeg', label: 'Tilt limit', min: 5, max: 60, step: 1, format: deg,
+          hint: 'How far the head may tilt. Past about 25° it turns inside its collar.' },
       ],
     },
     {
@@ -188,9 +190,6 @@ export function buildPanel(root, ctx) {
         { type: 'heading', label: 'Cloth & hair' },
         { type: 'slider', key: 'warp.clothWeight', label: 'Scarf travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.clothStiffness', label: 'Scarf stiffness', min: 0.1, max: 4, step: 0.01, format: x },
-        { type: 'slider', key: 'parts.wrapFollow', label: 'Neck scarf follows the chin', min: 0, max: 1, step: 0.05, format: x,
-          hint: 'Half by default. Higher keeps the chin buried in the scarf and lifts the '
-            + 'scarf off the chest; lower does the opposite.' },
         { type: 'slider', key: 'parts.clothReach', label: '— loose ends swing', min: 0.6, max: 20, step: 0.1, format: x },
         { type: 'slider', key: 'warp.tuftWeight', label: 'Tuft travel', min: 0, max: 3, step: 0.01, format: x },
         { type: 'slider', key: 'warp.tuftStiffness', label: 'Tuft stiffness', min: 0.1, max: 4, step: 0.01, format: x },
@@ -615,7 +614,8 @@ const BUILDERS = {
       ['3', 'Sparkle'],
       ['4', 'Nervous'],
       ['5', 'Shocked'],
-      ['C', 'Set neutral pose'],
+      ['C', 'Set neutral pose (3-second countdown)'],
+      ['D', 'Show or hide the readout'],
       ['H', 'Hide the interface'],
       ['M', 'Flip mirroring'],
     ];

@@ -168,7 +168,7 @@ settings** writes a JSON file worth keeping once you have it dialled in.
 | Looks permanently sleepy | Raise **Blink threshold** |
 | Blinks get missed | Lower **Blink threshold**, or raise **Blink strength** |
 | Winks when you didn't wink | Turn on **Blink both eyes together** |
-| Head sits at an angle | Press **Set neutral pose** |
+| Head sits turned or tilted at rest | Press **C** sitting the way you stream. It counts down three seconds so you can look where you mean to — forward is wherever you are looking when it captures, and the readout (`D`) says how far that is from the camera |
 | Movement feels stiff | Raise the **Head** gains |
 | It moves the wrong way | Toggle **Mirror me** (`M`) |
 | Speech is unreliable in low light | Set **Speech → Driven by** to `Microphone` |

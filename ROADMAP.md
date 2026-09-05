@@ -43,11 +43,15 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   the camera, with its keyed-out eyes repaired on the way in. Eyes with lids,
   glow, gaze and blink; contact shadows; invented margins under every seam.
   Hair that lags. Breathing and idle sway.
-- **The scarf** — as of this commit, a chain of rigid links pinned to a neck
-  scarf that is one rigid piece. It bends and it does not stretch: 5% at
-  worst held, against 116%; both seams at 0px through a tour of every axis;
-  one piece at every extreme including the mirror. The lag down the ribbon is
-  the chain-like movement that was asked for.
+- **The scarf** — a chain of rigid links rooted on the shoulder. It bends and
+  it does not stretch: 5% at worst held, against 116%; one piece at every
+  extreme. The lag down the ribbon is the chain-like movement that was asked
+  for. The neck scarf sits still on the chest, drawn *behind* the head, and
+  the head moves over it as a cutout — the collar's painted margin shows
+  wherever the head moves away, and nothing ever lands on the visor.
+- **The head** — turns as far as 42°, tilts to 25° (its own limit), and never
+  mirrors unless you switch the mirror on: a hard glance used to swap the whole
+  head for its reflection.
 - **Output** — a model-only page for OBS as a Browser Source, with real
   transparency and no window to crop; the tracker page feeds it over the dev
   server; settings and pose cross, nothing persists on the OBS side, the last
@@ -59,18 +63,20 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
 
 ## What is still in the way, in order
 
-### 1. Ship the scarf and have you look at it — now
+### 1. Forward is where you look when you set the pose — know it, set it
 
-The rebuild is committed and measured. Three checks want small adjustments
-before it goes out (settling time in two, a displacement ceiling at the
-extreme settings in the third), then the full run, then `main`.
+Your readout said `neutral yaw +38°`: the pose was set looking at the
+screen, and your camera is 38° from your screen. Facing the camera therefore
+read as a hard turn, and with the mirror on, a flip. Nothing in the model was
+wrong. The screen *is* the right forward for streaming; what was missing is
+now in: the readout says in words where forward is and how far from the
+camera; **C** counts down three seconds before capturing so you can look
+where you mean to; an automatic capture that finds no steady pose gives up
+and says so instead of guessing; the OBS page receives the neutral (it was
+rendering without one); and the mirror is off.
 
 Then the one thing no harness can do: **you run it with the readout up** and
-say what you see, quoting the readout for anything wrong. Specifically:
-does the ribbon lag and settle when you move; does the chin stay in the
-scarf when you turn and nod; does the head-on face show when you face the
-camera, and if not what do the *raw* and *driven* yaw lines read while you
-do; does the body turn with your shoulders.
+say what you see, quoting the readout.
 
 ### 2. Arms — the evidence is already in
 

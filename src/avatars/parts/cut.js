@@ -26,22 +26,32 @@ const ALPHA_FLOOR = 40;
  * the head cannot drift off the neck because the neck carries it.
  */
 export const PART_SPECS = [
-  /* The cloth is held at one joint each, and never blended between two.
+  /* The cloth is held by the body, and never blended toward the head.
    *
-   * The ribbon hangs off the body and is moved by its chain, whose root is
-   * pinned to the neck scarf; the neck scarf has a rigid transform of its own
-   * that follows the chin by a share. Both used to be blended between the neck
-   * and the hips per vertex, and a blend of two transforms that differ by a
-   * rotation shears — measured at more than twice an edge's drawn length on a
-   * roll. See followAt and solveJoints in index.js.
+   * Both pieces of scarf used to be blended between the neck and the hips per
+   * vertex, and a blend of two transforms that differ by a rotation shears —
+   * measured at more than twice an edge's drawn length on a roll. The ribbon
+   * hangs off the body and is moved by its chain; the neck scarf sits still on
+   * the chest, BEHIND the head, and the head moves over it as a cutout. See
+   * followAt in index.js and the note on the wrap below.
    */
   { name: 'tails', parent: 'root', joint: 'hips', z: 0 },
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
   { name: 'armLeft', parent: 'root', joint: 'neck', farJoint: 'shoulderLeft', z: 2 },
   { name: 'armRight', parent: 'root', joint: 'neck', farJoint: 'shoulderRight', z: 3 },
   { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
-  { name: 'head', parent: 'neck', joint: 'neck', z: 5 },
-  { name: 'wrap', parent: 'neck', joint: 'wrap', z: 6 },
+  /* The neck scarf is drawn behind the head, though the drawing has it in
+   * front of the chin. Which is in front only matters once they move apart,
+   * and then it decides everything: a collar in front covered the visor when
+   * the head rolled, and to keep off the visor it had to follow the chin,
+   * which is what sheared it. Behind, the head turns and slides over a still
+   * collar as a cutout. The margin rule makes that clean — a part is painted
+   * outward only under parts in front of it, so the collar grows its red under
+   * the head and shows it wherever the head moves away, while the head has no
+   * paint below its cut edge to land on the collar.
+   */
+  { name: 'wrap', parent: 'root', joint: 'hips', z: 5 },
+  { name: 'head', parent: 'neck', joint: 'neck', z: 6 },
   // Drawn last, above the scarf. The slit and the scarf do not overlap in the
   // drawing, so this changes nothing about the composition — but it puts the
   // eye above every contact shadow. It is the one thing on the model that
