@@ -14,10 +14,10 @@
  * this space use, and the same division the native ones make when they hand a
  * texture to OBS rather than asking OBS to animate anything.
  *
- * What crosses is what the session recorder already captures: blendshape
- * weights and head angles, about a kilobyte a frame. No video, and nothing
- * leaves the machine — the relay is the local dev server that is already
- * running.
+ * What crosses is the solved rig: the sixty or so numbers the renderer reads,
+ * about a kilobyte a frame, so both windows draw the same pose from the same
+ * solve. No video, and nothing leaves the machine — the relay is the local dev
+ * server that is already running.
  */
 
 const PATH = '/__rig';
@@ -32,12 +32,12 @@ function endpoint() {
 /**
  * @param {object} opts
  * @param {'tracker'|'output'} opts.role
- * @param {(msg: object) => void} [opts.onFrame]
+ * @param {(msg: {seq: number, at: number, state: object}) => void} [opts.onRigState]
  * @param {(values: object) => void} [opts.onSettings]
  * @param {(state: {connected: boolean, outputs: number}) => void} [opts.onState]
  * @param {(msg: {text: string}) => void} [opts.onPeerStatus]  an error the other page reports
  */
-export function openRigLink({ role, onFrame, onSettings, onState, onPeerStatus }) {
+export function openRigLink({ role, onRigState, onSettings, onState, onPeerStatus }) {
   let socket = null;
   let closed = false;
   /* Backs off, because the common case is that the other end is simply not
@@ -98,8 +98,8 @@ export function openRigLink({ role, onFrame, onSettings, onState, onPeerStatus }
         announce();
       } else if (msg.t === 'settings') {
         onSettings?.(msg.values ?? {});
-      } else if (msg.t === 'frame') {
-        onFrame?.(msg);
+      } else if (msg.t === 'state') {
+        onRigState?.(msg);
       } else if (msg.t === 'status') {
         onPeerStatus?.(msg);
       }

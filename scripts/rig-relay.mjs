@@ -6,14 +6,15 @@
  * have them keep one. It attaches to the same port, so the OBS side is the same
  * address with a different page on it.
  *
- * Deliberately almost nothing: it forwards frames from the tracker to whoever
+ * Deliberately almost nothing: it forwards the tracker's messages to whoever
  * is listening and tells the tracker how many that is, so it can stop sending
  * when nobody is.
  *
- * The one piece of state it does keep is the last settings message. Without it,
- * an output that connects second — which is every time OBS is opened after the
- * tracker — would sit on stock defaults until the tracker happened to change a
- * setting, and the shot you framed would not be the shot going out.
+ * It keeps the last settings message and the last rig state. Without them an
+ * output that connects second — which is every time OBS is opened after the
+ * tracker — would sit on stock defaults in the rest pose until the tracker
+ * happened to send again, and the shot you framed would not be the shot going
+ * out.
  */
 import { WebSocketServer } from 'ws';
 
@@ -27,6 +28,7 @@ export function rigRelay() {
       const outputs = new Set();
       const trackers = new Set();
       let lastSettings = null;
+      let lastState = null;
 
       const tellTrackers = () => {
         const msg = JSON.stringify({ t: 'peers', outputs: outputs.size });
@@ -47,6 +49,7 @@ export function rigRelay() {
               outputs.add(sock);
               // Catch it up, or it renders the defaults until something changes.
               if (lastSettings) sock.send(lastSettings);
+              if (lastState) sock.send(lastState);
             } else {
               trackers.add(sock);
             }
@@ -65,6 +68,7 @@ export function rigRelay() {
           // Otherwise only the tracker has anything to say, and only outputs listen.
           if (!trackers.has(sock)) return;
           if (msg.t === 'settings') lastSettings = data.toString();
+          if (msg.t === 'state') lastState = data.toString();
           const out = data.toString();
           for (const peer of outputs) if (peer.readyState === 1) peer.send(out);
         });

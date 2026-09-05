@@ -87,6 +87,7 @@ const link = openRigLink({
 });
 // One snapshot per frame at most: a drag writes the store hundreds of times.
 let settingsDirty = false;
+let stateSeq = 0;
 store.subscribe(() => { settingsDirty = true; });
 
 let lastFrameTime = performance.now();
@@ -107,15 +108,7 @@ function frame(now) {
     settingsDirty = false;
     link.send({ t: 'settings', values: store.snapshot() });
   }
-  if (link.wanted) {
-    link.send({
-      t: 'frame',
-      face: tracker.frame ?? null,
-      hasFace: tracker.hasFace,
-      pose: pose.enabled && pose.hasPose ? pose.frame ?? null : null,
-      hasPose: pose.enabled && pose.hasPose,
-    });
-  }
+  if (link.wanted) link.send({ t: 'state', seq: ++stateSeq, at: now, state: rig.state });
 
   /* The readout stays up while the camera runs, which is the whole point.
    *

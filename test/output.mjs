@@ -1,167 +1,79 @@
 /**
- * The two windows, and the wire between them.
- *
- * OBS composites a Browser Source with real transparency, which is the only
- * way into a scene with no window to crop and no title bar in shot. What it
- * cannot reliably do is open a webcam. So the tracking stays in an ordinary
- * tab and the page OBS opens has no camera in it — see src/core/rigLink.js.
- *
- * Everything about that arrangement fails quietly. A relay that never
- * connects, settings that never cross, a page that snaps to neutral the moment
- * the link hiccups: none of them throws, and all of them are things you find
- * out about on stream. So this drives both pages at once and asks whether the
- * second one is actually following the first.
- *
- *   node test/output.mjs
+ * The OBS page and the wire to it: settings cross and are not persisted, the
+ * solved rig crosses and is held when the tracker goes quiet, a late window
+ * gets the last of both, and an error on the OBS page reaches the tracker.
  */
-import { chromium } from 'playwright';
-import { createServer } from 'vite';
 import { readFileSync } from 'node:fs';
-import { chromeBin } from '../scripts/chrome.mjs';
+import { join } from 'node:path';
+import { boot, makeCheck, ROOT } from './harness.mjs';
 
-const SESSION = JSON.parse(readFileSync(
-  new URL('fixtures/tracker-session.json', import.meta.url), 'utf8'));
-
-let failures = 0;
-function check(name, ok, detail = '') {
-  if (!ok) failures++;
-  console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
-}
-
-const server = await createServer({ server: { port: 5191, strictPort: true }, logLevel: 'error' });
-await server.listen();
-const browser = await chromium.launch({
-  executablePath: chromeBin(),
-  args: ['--enable-unsafe-swiftshader', '--no-proxy-server',
-    '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+const SESSION = JSON.parse(readFileSync(join(ROOT, 'test/fixtures/tracker-session.json'), 'utf8'));
+const { check, finish } = makeCheck('output');
+const { page: tracker, openPage, errors, close } = await boot({
+  camera: true, viewport: { width: 500, height: 500 },
 });
-
-/* Two contexts, not two tabs.
- *
- * OBS's browser is a different browser with its own storage, which is the
- * whole reason the output page is told its settings rather than reading them.
- * Sharing a context here would hand it the tracker's localStorage and the test
- * would pass on something that cannot happen in the real arrangement.
- */
-const trackerCtx = await browser.newContext({
-  permissions: ['camera'], viewport: { width: 500, height: 500 },
-});
-const outputCtx = await browser.newContext({ viewport: { width: 480, height: 480 } });
-const errors = [];
-const watch = (page, who) => page.on('pageerror', (e) => errors.push(`${who}: ${e}`));
+const OUTPUT_READY = () => window.__vtuberOutput?.avatar?.ready === true;
 
 try {
-  const tracker = await trackerCtx.newPage();
-  watch(tracker, 'tracker');
-  await tracker.goto('http://127.0.0.1:5191/', { waitUntil: 'load' });
-  await tracker.waitForFunction(
-    () => window.__vtuber?.avatars?.parts2d?.ready === true, null, { timeout: 60000 });
+  const { page: output } = await openPage('output', { width: 480, height: 480 }, false);
+  await output.waitForFunction(OUTPUT_READY, null, { timeout: 60000 });
 
-  const output = await outputCtx.newPage();
-  watch(output, 'output');
-  await output.goto('http://127.0.0.1:5191/output.html', { waitUntil: 'load' });
-  await output.waitForFunction(
-    () => window.__vtuberOutput?.avatars?.parts2d?.ready === true, null, { timeout: 60000 });
-
-  // --- the wire is up ------------------------------------------------------
   const linked = await tracker.waitForFunction(
-    () => window.__vtuber?.store && document.getElementById('status')?.textContent?.includes('OBS'),
+    () => document.getElementById('status')?.textContent?.includes('OBS'),
     null, { timeout: 15000 }).catch(() => null);
-  check('the tracker page says the output window is listening',
-    Boolean(linked),
+  check('the tracker page says the output window is listening', Boolean(linked),
     (await tracker.locator('#status').textContent()) ?? 'no status');
-
-  check('and the output page never loaded a camera or a tracking model',
-    await output.evaluate(() => !('__vtuber' in window)
+  check('the output page never loaded a camera or a tracking model, and solves no rig of its own',
+    await output.evaluate(() => !('__vtuber' in window) && !('rig' in window.__vtuberOutput)
       && !performance.getEntriesByType('resource').some((r) => /\.task(\?|$)/.test(r.name))),
-    'no .task fetched');
+    'no .task fetched, no rig on the page');
 
-  // --- a setting crosses ---------------------------------------------------
+  // --- settings -------------------------------------------------------------
   await tracker.evaluate(() => window.__vtuber.store.set('stage.zoom', 2.25));
   const crossed = await output.waitForFunction(
     () => Math.abs(window.__vtuberOutput.store.get('stage.zoom') - 2.25) < 1e-6,
     null, { timeout: 8000 }).catch(() => null);
   check('a setting changed on the tracker reaches the output', Boolean(crossed),
     `output zoom ${await output.evaluate(() => window.__vtuberOutput.store.get('stage.zoom'))}`);
-
   check('but the output does not write it down',
     await output.evaluate(() => {
       for (let i = 0; i < localStorage.length; i++) {
         if ((localStorage.key(i) ?? '').startsWith('vtuber-model/settings')) return false;
       }
       return true;
-    }),
-    'nothing under vtuber-model/settings');
+    }), 'nothing under vtuber-model/settings');
 
+  // --- the solved rig -------------------------------------------------------
   await tracker.evaluate(() => window.__vtuber.store.set('stage.zoom', 1));
-
-  // --- the pose crosses ----------------------------------------------------
-  /* A frame from the real recording, pushed over the link, and then read back
-   * off the OTHER page's rig.
-   *
-   * Two numbers from two pages is the only thing that says the wire carries
-   * what it is supposed to. A relay that connects and forwards nothing looks
-   * identical from either side on its own — the tracker sees a peer, the
-   * output sees a socket, and the model never moves.
-   *
-   * The fake camera shows a rolling test pattern rather than a face, so the
-   * frame is handed to the link directly instead of waiting for one that will
-   * never come.
-   */
-  const sample = SESSION.samples.find((s) => s.face
-    && Math.abs(s.face.head.yaw) > 0.25) ?? SESSION.samples.find((s) => s.face);
-  check('the recording has a turned head to send', Boolean(sample),
-    sample ? `yaw ${sample.face.head.yaw}` : 'none');
-
-  /* Put the pose where the camera would have, and let the page send it.
-   *
-   * Injecting a frame into the link directly does not work, and finding out
-   * why is worth the note: the tracker page sends `tracker.frame` on every
-   * animation frame, so an injected one is overwritten within milliseconds by
-   * the real stream — which, on a fake camera showing a test pattern, says
-   * there is no face. Thirty-three frames arrived and every one of them was
-   * empty. Written the other way round it exercises the path that actually
-   * ships, from the tracker's own state outward.
-   */
+  const sample = SESSION.samples.find((s) => s.face && Math.abs(s.face.head.yaw) > 0.25)
+    ?? SESSION.samples.find((s) => s.face);
+  check('the recording has a turned head to send', Boolean(sample), sample ? `yaw ${sample.face.head.yaw}` : 'none');
   await tracker.evaluate((face) => {
     const { tracker: t, store } = window.__vtuber;
-    // A neutral too, so the crossing carries the one setting the OBS page was
-    // found to be missing: its rig is built against an empty store.
     store.set('camera.neutral', JSON.stringify({ yaw: 0.12, pitch: 0.05, roll: 0, x: 0, y: 0, z: -45 }));
     t.frame = face;
     t.hasFace = true;
   }, { shapes: {}, head: sample.face.head, position: sample.face.position });
   await output.bringToFront();
 
-  // The rig smooths on wall time, so give it some.
-  await output.waitForTimeout(4000);
-  const outYaw = await output.evaluate(() => window.__vtuberOutput.rig.state.head.yaw);
-  check('a pose sent from the tracker turns the head on the output page',
-    Math.abs(outYaw) > 0.1, `output yaw ${outYaw.toFixed(3)}`);
-
-  /* And turns it the same way this page would.
-   *
-   * Both ends run the rig, so both apply the mirror, the gains and the neutral
-   * pose — but only if they are reading the same settings, which is the whole
-   * point of sending them. Get that wrong and the model still moves, just
-   * backwards or half as far, and "it works" from either side alone. Measured
-   * against a rig on the tracker page fed the same frame for the same time.
-   */
-  const want = await tracker.evaluate(async (face) => {
-    const { Rig } = await import('/src/tracking/rig.js');
-    const rig = new Rig();
-    // Well past settling, which the rig reaches in well under a second.
-    for (let f = 0; f < 300; f++) rig.update(face, true, 1 / 60);
-    return rig.state.head.yaw;
-  }, { shapes: {}, head: sample.face.head, position: sample.face.position });
-  check('and turns it the way this page would, not backwards or half as far',
-    Math.sign(outYaw) === Math.sign(want) && Math.abs(outYaw - want) < 0.05,
-    `output ${outYaw.toFixed(3)} against ${want.toFixed(3)} for the same frame`);
-
-  check('and the output page is drawing something',
+  // Both pages settle on the same frame; the output is one message behind at most.
+  let pair = { tracker: 0, output: 0 };
+  for (let i = 0; i < 40; i++) {
+    await tracker.waitForTimeout(150);
+    pair = {
+      tracker: await tracker.evaluate(() => window.__vtuber.rig.state.head.yaw),
+      output: await output.evaluate(() => window.__vtuberOutput.seen().latest?.head?.yaw ?? 0),
+    };
+    if (Math.abs(pair.tracker) > 0.1 && Math.abs(pair.tracker - pair.output) < 1e-3) break;
+  }
+  check('the head the output draws is the head the tracker solved, to a thousandth',
+    Math.abs(pair.tracker) > 0.1 && Math.abs(pair.tracker - pair.output) < 1e-3,
+    `tracker ${pair.tracker.toFixed(4)}, output ${pair.output.toFixed(4)}`);
+  const bytes = await tracker.evaluate(() => JSON.stringify({ t: 'state', seq: 1, at: 0, state: window.__vtuber.rig.state }).length);
+  check('a state message is small', bytes < 2048, `${bytes} bytes`);
+  check('the output page is drawing something',
     await output.evaluate(() => {
-      const a = window.__vtuberOutput.avatars.parts2d;
-      const gl = a.gl;
+      const gl = window.__vtuberOutput.avatar.gl;
       const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
       const d = new Uint8Array(w * h * 4);
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
@@ -170,38 +82,41 @@ try {
       return n > 2000;
     }), 'opaque pixels on the output canvas');
 
-  // --- and it holds when the wire goes quiet -------------------------------
-  /* Falling back to neutral would put a lurch on stream every time the link
-   * hiccupped — a tab minimised for a moment, the server restarted. The last
-   * pose is the right thing to keep showing.
-   */
-  const before = outYaw;
-  await output.waitForTimeout(2500);
-  const after = await output.evaluate(() => window.__vtuberOutput.rig.state.head.yaw);
-  check('and holds that pose when nothing more arrives',
-    Math.abs(after - before) < 0.02 && Math.abs(after) > 0.1,
-    `yaw ${before.toFixed(3)} then ${after.toFixed(3)} two and a half seconds later,`
-      + ' on one frame sent once');
+  // --- the OBS page reporting back ------------------------------------------
+  await output.evaluate(() => window.__vtuberOutput.link.send({ t: 'status', text: 'test: the stage cannot draw' }));
+  const told = await tracker.waitForFunction(
+    () => document.getElementById('status')?.textContent?.includes('the stage cannot draw'),
+    null, { timeout: 5000 }).catch(() => null);
+  check('an error on the OBS page reaches the tracker status line', Boolean(told),
+    (await tracker.locator('#status').textContent()) ?? 'no status');
+  await output.evaluate(() => window.__vtuberOutput.link.send({ t: 'status', text: '' }));
 
-  /* --- the canvas says what its pixels are ---------------------------------
-   *
-   * The blend writes colour already multiplied by alpha. Declared straight,
-   * the compositor multiplied it again and every soft edge went dark on a
-   * light scene. Pixels read back from the buffer cannot see either version,
-   * so this asks the context what it promised the compositor; the golden
-   * composited-on-white sees the result.
-   */
+  // --- silence ----------------------------------------------------------------
+  // Close the tracker's link, let anything already in flight land, then watch.
+  await tracker.evaluate(() => window.__vtuber.link.close());
+  await output.waitForTimeout(400);
+  const held = await output.evaluate(() => window.__vtuberOutput.seen());
+  await output.waitForTimeout(1500);
+  const later = await output.evaluate(() => window.__vtuberOutput.seen());
+  check('the output holds the last state when the tracker goes quiet',
+    later.received === held.received && later.latest?.head?.yaw === held.latest?.head?.yaw,
+    `${held.received} messages then ${later.received}; yaw ${held.latest?.head?.yaw?.toFixed(3)} then ${later.latest?.head?.yaw?.toFixed(3)}`);
+
+  const { page: late } = await openPage('output', { width: 480, height: 480 }, false);
+  await late.waitForFunction(OUTPUT_READY, null, { timeout: 60000 });
+  const replayed = await late.waitForFunction(() => window.__vtuberOutput.seen().latest !== null, null, { timeout: 5000 })
+    .then(() => late.evaluate(() => window.__vtuberOutput.seen().latest.head.yaw)).catch(() => null);
+  check('a window opened after the tracker went quiet still gets the last state and settings',
+    replayed !== null && Math.abs(replayed - held.latest.head.yaw) < 1e-9
+      && await late.evaluate(() => Math.abs(window.__vtuberOutput.store.get('stage.zoom') - 1) < 1e-6),
+    `late yaw ${replayed?.toFixed?.(3) ?? 'none'} against ${held.latest?.head?.yaw?.toFixed(3)}`);
+
   check('the output canvas is declared premultiplied, which is what its blend writes',
-    await output.evaluate(() => window.__vtuberOutput.avatars.parts2d.gl
-      .getContextAttributes().premultipliedAlpha === true));
-
+    await output.evaluate(() => window.__vtuberOutput.avatar.gl.getContextAttributes().premultipliedAlpha === true));
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('test run completed', false, err.stack);
 } finally {
-  await browser.close();
-  await server.close();
+  await close();
 }
-
-console.log(`\n${failures ? `${failures} failing` : 'all output checks passed'}`);
-process.exit(failures ? 1 : 0);
+finish();

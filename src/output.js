@@ -21,7 +21,7 @@
 import * as store from './core/store.js';
 import { applyBackground, fitToWindow } from './core/stage.js';
 import { openRigLink } from './core/rigLink.js';
-import { Rig } from './tracking/rig.js';
+import { emptyRig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
 
 store.setPersistence(false);
@@ -29,7 +29,6 @@ store.setPersistence(false);
 const stage = document.getElementById('stage');
 const host = document.getElementById('avatar-host');
 
-const rig = new Rig();
 const avatar = new Parts2D();
 
 /* The one thing this page may say: that it could not draw. It cannot say it
@@ -68,8 +67,12 @@ store.subscribe((key) => {
  * pose is the right thing to keep showing. Falling back to neutral would put a
  * lurch on stream every time the link hiccupped.
  */
-let latest = { face: null, hasFace: false, pose: null, hasPose: false };
+// The last solved rig the tracker sent. Held as-is when messages stop, so
+// a stalled tracker leaves the model where it was rather than snapping back.
+let latest = null;
+let lastSeq = -1;
 let received = 0;
+const rest = emptyRig();
 
 const link = openRigLink({
   role: 'output',
@@ -81,14 +84,13 @@ const link = openRigLink({
     applyBackground(stage);
     fitToWindow(avatar);
   },
-  onFrame: (msg) => {
+  onRigState: (msg) => {
+    // Out-of-order delivery is dropped; a small sequence number is a tracker
+    // that restarted, and its first frames are wanted.
+    if (msg.seq <= lastSeq && msg.seq >= 100) return;
+    lastSeq = msg.seq;
+    latest = msg.state;
     received++;
-    latest = {
-      face: msg.face ?? null,
-      hasFace: Boolean(msg.hasFace),
-      pose: msg.pose ?? null,
-      hasPose: Boolean(msg.hasPose),
-    };
   },
 });
 
@@ -100,13 +102,11 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  rig.update(latest.face, latest.hasFace, dt);
-  rig.updatePose(latest.pose, latest.hasPose, dt);
-  avatar.render(rig.state, dt);
+  avatar.render(latest ?? rest, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
-  window.__vtuberOutput = { rig, avatar, avatars: { parts2d: avatar }, store, link, seen: () => ({ ...latest, received }) };
+  window.__vtuberOutput = { avatar, avatars: { parts2d: avatar }, store, link, seen: () => ({ received, lastSeq, latest }) };
 }
