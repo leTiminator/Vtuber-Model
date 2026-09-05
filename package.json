@@ -25,7 +25,10 @@
     "test:output": "node test/output.mjs",
     "test:golden": "node test/golden.mjs",
     "test:invariants": "node test/invariants.mjs",
-    "test:cloth": "node test/cloth.mjs"
+    "test:cloth": "node test/cloth.mjs",
+    "bake": "node scripts/bake-model.mjs",
+    "bake:check": "node scripts/bake-model.mjs --check",
+    "test:model": "node test/model.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.22"
