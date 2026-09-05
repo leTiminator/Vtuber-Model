@@ -15,9 +15,7 @@
  *
  *   node test/parts.mjs
  */
-import { chromium } from 'playwright';
-import { chromeBin } from '../scripts/chrome.mjs';
-import { createServer } from 'vite';
+import { boot } from './harness.mjs';
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -25,21 +23,9 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const server = await createServer({ server: { port: 5189, strictPort: true }, logLevel: 'error' });
-await server.listen();
-const browser = await chromium.launch({
-  executablePath: chromeBin(),
-  args: ['--enable-unsafe-swiftshader'],
-});
-const page = await (await browser.newContext({ viewport: { width: 900, height: 900 } })).newPage();
-const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
+const { page, errors, close } = await boot({ viewport: { width: 900, height: 900 } });
 
 try {
-  await page.goto('http://127.0.0.1:5189/', { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__vtuber?.avatars?.parts2d?.ready === true,
-    null, { timeout: 30000 });
-
   const result = await page.evaluate(async () => {
     const { cutParts } = await import('/src/avatars/parts/cut.js');
     const art = window.__vtuber.avatars.parts2d;
@@ -333,8 +319,7 @@ try {
 } catch (err) {
   check('test run completed', false, err.stack);
 } finally {
-  await browser.close();
-  await server.close();
+  await close();
 }
 
 console.log(`\n${failures ? `${failures} failing` : 'all part checks passed'}`);

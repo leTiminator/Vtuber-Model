@@ -8,9 +8,7 @@
  *
  *   node test/smoke.mjs
  */
-import { chromium } from 'playwright';
-import { chromeBin } from '../scripts/chrome.mjs';
-import { createServer } from 'vite';
+import { boot } from './harness.mjs';
 
 const results = [];
 let failures = 0;
@@ -21,46 +19,11 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const server = await createServer({ server: { port: 5188, strictPort: true }, logLevel: 'error' });
-await server.listen();
-
-const browser = await chromium.launch({
-  executablePath: chromeBin(),
-  args: [
-    '--use-fake-ui-for-media-stream',
-    '--use-fake-device-for-media-stream',
-    '--enable-unsafe-swiftshader',
-  ],
+const { page, errors, close } = await boot({
+  viewport: { width: 1280, height: 720 }, camera: true,
 });
-const context = await browser.newContext({
-  permissions: ['camera', 'microphone'],
-  viewport: { width: 1280, height: 720 },
-});
-const page = await context.newPage();
-
-const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-// MediaPipe logs its own INFO/GL notices on stderr, which the CDP console
-// reports as errors. Only genuinely unexpected output should fail the run.
-const NOISE = /favicon|404|^INFO:|XNNPACK delegate|GL Driver Message|OpenGL error checking/i;
-page.on('console', (m) => {
-  if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
-});
-
-// The stage canvas may be 2D or WebGL depending on the backend; read either.
-const READ_CANVAS = `window.readCanvas = (c) => {
-  const two = c.getContext('2d');
-  if (two) return two.getImageData(0, 0, c.width, c.height);
-  const gl = c.getContext('webgl2') || c.getContext('webgl');
-  const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-  gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
-  return { data };
-};`;
-await page.addInitScript(READ_CANVAS);
 
 try {
-  await page.goto('http://127.0.0.1:5188/', { waitUntil: 'load' });
-
   check('page loads with a stage and a panel',
     await page.locator('#stage').isVisible() && await page.locator('#panel').isVisible());
 
@@ -202,8 +165,7 @@ try {
 } catch (err) {
   check('test run completed', false, err.message);
 } finally {
-  await browser.close();
-  await server.close();
+  await close();
 }
 
 console.log(`\n${results.length - failures}/${results.length} checks passed`);

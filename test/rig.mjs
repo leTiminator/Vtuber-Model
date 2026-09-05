@@ -4,12 +4,7 @@
  *
  *   node test/rig.mjs
  */
-const store = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (store.has(k) ? store.get(k) : null),
-  setItem: (k, v) => store.set(k, String(v)),
-  removeItem: (k) => store.delete(k),
-};
+import './node-shim.mjs';
 
 const settings = await import('../src/core/store.js');
 const { Rig } = await import('../src/tracking/rig.js');

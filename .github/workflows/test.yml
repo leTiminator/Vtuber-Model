@@ -18,6 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     # One job a suite, in parallel. Run end to end they take about
     # twenty-five minutes, nearly all of it in `motion`, and a check that slow
     # gets ignored. Split, the wall clock is however long `motion` takes.
@@ -49,3 +50,13 @@ jobs:
       # suite already asks Chromium for software rendering itself. Nothing to
       # set here — and nothing to point at a browser either.
       - run: node test/${{ matrix.suite }}.mjs
+
+      # Whatever a failing check wrote for a human to look at — the frame where
+      # the model came apart, a golden's diff — is worthless on a runner that
+      # is about to be destroyed unless it is uploaded.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-out-${{ matrix.suite }}
+          path: test/out
+          if-no-files-found: ignore
