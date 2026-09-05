@@ -183,57 +183,17 @@ try {
     `yaw ${before.toFixed(3)} then ${after.toFixed(3)} two and a half seconds later,`
       + ' on one frame sent once');
 
-  /* --- how dark the soft edges are ----------------------------------------
+  /* --- the canvas says what its pixels are ---------------------------------
    *
-   * This is the fault transparent capture actually has, and it stays invisible
-   * until the model goes on a light scene: colour that has been multiplied by
-   * its own alpha, handed over as though it had not, composites every soft
-   * edge toward black. It is why the native tools ship something called
-   * AlphaDilate.
-   *
-   * Measured, this model's rim comes out at about two thirds the brightness of
-   * the paint beside it at four fifths alpha — darker than premultiplication
-   * alone would explain, because this character is drawn with a heavy black
-   * outline and its outermost pixels are that ink. So this cannot separate the
-   * two, and does not pretend to: it is a floor, to catch the edges going
-   * properly black. The blend does write premultiplied colour into a canvas
-   * declared straight, and putting that right means changing the blend, the
-   * shader and the shadow pass across three backends — a change of its own,
-   * not a footnote to this one.
+   * The blend writes colour already multiplied by alpha. Declared straight,
+   * the compositor multiplied it again and every soft edge went dark on a
+   * light scene. Pixels read back from the buffer cannot see either version,
+   * so this asks the context what it promised the compositor; the golden
+   * composited-on-white sees the result.
    */
-  const fringe = await output.evaluate(() => {
-    const gl = window.__vtuberOutput.avatars.parts2d.gl;
-    const w = gl.drawingBufferWidth;
-    const h = gl.drawingBufferHeight;
-    const d = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
-    const luma = (i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-    let rim = 0; let rimLuma = 0; let rimAlpha = 0; let solid = 0; let solidLuma = 0;
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const i = (y * w + x) * 4;
-        const a = d[i + 3];
-        if (a >= 250) continue;
-        if (a < 40) continue;
-        // Only rim next to real paint, so a lone speck cannot skew it.
-        let near = -1;
-        for (const j of [i - 4, i + 4, i - w * 4, i + w * 4]) {
-          if (d[j + 3] >= 250) { near = j; break; }
-        }
-        if (near < 0) continue;
-        rim++; rimLuma += luma(i); rimAlpha += a;
-        solid++; solidLuma += luma(near);
-      }
-    }
-    return rim > 200
-      ? { rim, ratio: (rimLuma / rim) / Math.max(solidLuma / solid, 1e-6), alpha: (rimAlpha / rim) / 255 }
-      : { rim, ratio: null, alpha: null };
-  });
-  check('the soft edges have not gone black',
-    fringe.ratio !== null && fringe.ratio > 0.55,
-    fringe.ratio === null ? `only ${fringe.rim} rim pixels to judge by`
-      : `rim is ${(fringe.ratio * 100).toFixed(0)}% as bright as the paint beside it `
-        + `at ${(fringe.alpha * 100).toFixed(0)}% alpha`);
+  check('the output canvas is declared premultiplied, which is what its blend writes',
+    await output.evaluate(() => window.__vtuberOutput.avatars.parts2d.gl
+      .getContextAttributes().premultipliedAlpha === true));
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

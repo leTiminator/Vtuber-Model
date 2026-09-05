@@ -40,6 +40,19 @@ const avatars = {
 };
 let current = null;
 
+/* The one thing this page may say: that it could not draw. It cannot say it
+ * here — everything on this page is on the stream — so it goes back over the
+ * link to the tracker's status line, once the link is up. */
+let drawError = null;
+let reportDrawError = () => {}; // replaced once the link exists
+for (const avatar of Object.values(avatars)) {
+  avatar.onStatus = (text) => {
+    drawError = text;
+    console.error(text);
+    reportDrawError();
+  };
+}
+
 function mountAvatar(id) {
   const next = avatars[id] ?? avatars.parts2d;
   if (next === current) return;
@@ -96,6 +109,9 @@ let received = 0;
 
 const link = openRigLink({
   role: 'output',
+  onState: ({ connected }) => {
+    if (connected) reportDrawError();
+  },
   onSettings: (values) => {
     store.patch(values);
     applyBackground(stage);
@@ -112,6 +128,10 @@ const link = openRigLink({
     };
   },
 });
+
+reportDrawError = () => {
+  if (drawError && link.connected) link.send({ t: 'status', text: drawError });
+};
 
 let last = performance.now();
 function frame(now) {

@@ -50,6 +50,16 @@ const avatars = {
   parts2d: new Parts2D(),
 };
 let current = null;
+// Why the stage cannot draw, when it cannot. Wired before the first mount,
+// because a missing WebGL2 context is reported from inside it.
+let avatarError = null;
+for (const avatar of Object.values(avatars)) {
+  avatar.onStatus = (text) => {
+    avatarError = text;
+    console.error(text);
+    updateStatus();
+  };
+}
 const rigEditor = new RigEditor();
 // The overlay draws whatever the backend actually segmented, not a re-guess.
 rigEditor.setMaskSource(() => avatars.warp2d.masks);
@@ -57,7 +67,7 @@ rigEditor.setMaskSource(() => avatars.warp2d.masks);
 /* ------------------------------------------------------------- rendering */
 
 function mountAvatar(id) {
-  const next = avatars[id] ?? avatars.warp2d;
+  const next = avatars[id] ?? avatars.parts2d;
   if (next === current) return;
   dom.host.replaceChildren();
   current = next;
@@ -80,20 +90,27 @@ function resize() {
  * core/rigLink.js.
  */
 let outputs = 0;
+// What the OBS page reported it could not do, while it is attached.
+let outputError = null;
 const link = openRigLink({
   role: 'tracker',
   onState: ({ outputs: n }) => {
     const had = outputs;
     outputs = n;
+    if (n === 0) outputError = null;
     // Newly attached: catch it up before the next frame, in case the relay
     // was restarted and lost the snapshot it replays to late arrivals.
     if (n > had) link.send({ t: 'settings', values: store.snapshot() });
     updateStatus();
   },
+  onPeerStatus: ({ text }) => {
+    outputError = text || null;
+    updateStatus();
+  },
 });
-store.subscribe(() => {
-  if (link.wanted) link.send({ t: 'settings', values: store.snapshot() });
-});
+// One snapshot per frame at most: a drag writes the store hundreds of times.
+let settingsDirty = false;
+store.subscribe(() => { settingsDirty = true; });
 
 let lastFrameTime = performance.now();
 function frame(now) {
@@ -109,6 +126,10 @@ function frame(now) {
 
   // Only when somebody is drawing it. A kilobyte a frame is nothing over
   // loopback, but sending it to no one is still sending it.
+  if (link.wanted && settingsDirty) {
+    settingsDirty = false;
+    link.send({ t: 'settings', values: store.snapshot() });
+  }
   if (link.wanted) {
     link.send({
       t: 'frame',
@@ -131,7 +152,7 @@ function frame(now) {
    * same turn as the draw, because reading pixels from a timer returns
    * whatever survived compositing. Press D to put it away.
    */
-  if (!selfcheckDue) selfcheckDue = now + (tracker.running ? 250 : 700);
+  if (!selfcheckDue) selfcheckDue = now + 1000;
   if (now >= selfcheckDue) {
     selfcheckDue = 0;
     runSelfCheck();
@@ -157,7 +178,35 @@ function setStatus(text, kind) {
   dom.status.className = `status status--${kind}`;
 }
 
+/* The window was hidden, and for how long.
+ *
+ * A hidden or fully covered tab gets about one animation frame a second, so
+ * OBS is starved for exactly as long as the tracker sits behind a game. The
+ * pill says so for a few seconds after the window comes back, which is the
+ * only time anyone is looking at it.
+ */
+let hiddenSince = 0;
+let starvedFor = 0;
+let starvedUntil = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenSince = performance.now();
+  } else if (hiddenSince) {
+    starvedFor = (performance.now() - hiddenSince) / 1000;
+    starvedUntil = performance.now() + 8000;
+    hiddenSince = 0;
+  }
+  updateStatus();
+});
+
 function updateStatus() {
+  // Faults first: a stage that cannot draw makes every other state moot.
+  if (avatarError) return setStatus(avatarError, 'error');
+  if (outputError && outputs > 0) return setStatus(`OBS page: ${outputError}`, 'error');
+  if (outputs > 0 && starvedFor > 2 && performance.now() < starvedUntil) {
+    return setStatus(`This window was hidden for ${Math.round(starvedFor)} s, and OBS gets about `
+      + 'one frame a second while it is. Keep it visible while streaming.', 'error');
+  }
   /* Whether the output window is listening, said here rather than there.
    *
    * That page is what OBS captures, so it has nowhere to put a message —
@@ -368,7 +417,7 @@ dom.resetBtn.addEventListener('click', () => {
  * defaults on every machine, and listing them buries the handful that were
  * actually tuned — which is the only thing this line is for.
  */
-const MACHINE_SET = /^(warp\.(head|pivot|waist|eye)|camera\.(deviceId|neutral)|stage\.avatarChosen)/;
+const MACHINE_SET = /^(warp\.(headX|headY|headR|pivotX|pivotY|waistY|eyeAngle|eyeL|eyeR)|camera\.(deviceId|neutral)|stage\.avatarChosen)$/;
 
 const stamp = document.getElementById('build-stamp');
 function showStamp() {

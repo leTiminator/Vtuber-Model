@@ -19,7 +19,7 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const { page, errors, close } = await boot({
+const { page, errors, close, openBrowser } = await boot({
   viewport: { width: 1280, height: 720 }, camera: true,
 });
 
@@ -61,6 +61,11 @@ try {
   const shown = await page.evaluate(() => !document.body.classList.contains('panel-hidden'));
   check('the panel button is not swallowed by drag-to-pan', hidden && shown,
     `hid ${hidden}, restored ${shown}`);
+
+  // Chords belong to the browser: Ctrl+H must not touch the panel.
+  await page.keyboard.press('Control+h');
+  check('a hotkey with a modifier held is left to the browser',
+    await page.evaluate(() => !document.body.classList.contains('panel-hidden')));
 
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
   const idlePixels = await page.evaluate(() => {
@@ -162,6 +167,23 @@ try {
   check('a changed setting survives a reload', after === !before, `${before} -> ${after}`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+  /* A stage that cannot draw has to say so.
+   *
+   * With WebGL switched off the parts renderer gets no context. That used to
+   * be a blank page with no message anywhere; the status line now carries it.
+   */
+  const noGl = await openBrowser(['--disable-3d-apis']);
+  try {
+    await noGl.page.waitForFunction(
+      () => /WebGL2/.test(document.getElementById('status')?.textContent ?? ''),
+      null, { timeout: 15000 }).catch(() => {});
+    check('a browser without WebGL is told so on the status line',
+      /WebGL2/.test(await noGl.page.locator('#status').textContent()),
+      await noGl.page.locator('#status').textContent());
+  } finally {
+    await noGl.close();
+  }
 } catch (err) {
   check('test run completed', false, err.message);
 } finally {

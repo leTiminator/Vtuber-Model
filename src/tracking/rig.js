@@ -194,6 +194,13 @@ export class Rig {
    *   that looks turned, and they are the only one who can say so.
    */
   calibrate(auto = false) {
+    // A camera restart re-reads the shoulders' rest but never replaces a head
+    // neutral somebody already has; only a request does that.
+    if (auto && this.neutral) {
+      this.armNeutral = null;
+      this.torsoNeutral = null;
+      return;
+    }
     this.pendingCalibration = {
       samples: [],
       // A second and a half at thirty frames, so a blink or a glance is a

@@ -22,7 +22,7 @@
 
 const PATH = '/__rig';
 
-/** ws:// beside http://, wss:// beside https:// — see scripts/phone.mjs. */
+/** ws:// beside http://, wss:// beside https://. */
 function endpoint() {
   const url = new URL(PATH, window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -35,8 +35,9 @@ function endpoint() {
  * @param {(msg: object) => void} [opts.onFrame]
  * @param {(values: object) => void} [opts.onSettings]
  * @param {(state: {connected: boolean, outputs: number}) => void} [opts.onState]
+ * @param {(msg: {text: string}) => void} [opts.onPeerStatus]  an error the other page reports
  */
-export function openRigLink({ role, onFrame, onSettings, onState }) {
+export function openRigLink({ role, onFrame, onSettings, onState, onPeerStatus }) {
   let socket = null;
   let closed = false;
   /* Backs off, because the common case is that the other end is simply not
@@ -99,6 +100,8 @@ export function openRigLink({ role, onFrame, onSettings, onState }) {
         onSettings?.(msg.values ?? {});
       } else if (msg.t === 'frame') {
         onFrame?.(msg);
+      } else if (msg.t === 'status') {
+        onPeerStatus?.(msg);
       }
     };
 

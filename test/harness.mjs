@@ -64,6 +64,12 @@ export const POSES = [
     settings: { 'stage.faceFlip': true } },
   { name: 'scarf-settled', settings: { 'warp.clothWeight': 1, 'body.hairPhysics': 1 },
     drive: [[40, {}], [260, { head: { yaw: -0.5 } }]] },
+  /* The one pose that goes through the compositor: a screenshot of the app's
+   * own stage over white, so the alpha the canvas declares is what is
+   * measured. Glow and auto-blink are off because the app's renderer cannot
+   * be reset; the still model it settles to is the same every time. */
+  { name: 'composited-on-white', screenshot: true,
+    settings: { 'parts.headOn': 0, 'eyes.autoBlink': false, 'warp.eyeGlow': 0 } },
 ];
 
 export function freePort() {
@@ -246,6 +252,18 @@ export async function boot({ page = 'index', viewport = { width: 480, height: 48
     server,
     /** A second page (its own context and storage) on the same server. */
     openPage: (which, vp, cam) => open(which, vp, cam),
+    /** A separate browser with different launch flags, on the same server. */
+    openBrowser: async (extraArgs = [], vp = viewport) => {
+      const b = await chromium.launch({
+        executablePath: process.env.CHROME_BIN || undefined,
+        args: ['--enable-unsafe-swiftshader', '--no-proxy-server', ...extraArgs],
+      });
+      const ctx = await b.newContext({ viewport: vp });
+      const pg = await ctx.newPage();
+      await pg.addInitScript(PAGE_HELPERS);
+      await pg.goto(base, { waitUntil: 'load' });
+      return { page: pg, close: () => b.close() };
+    },
     close: async () => {
       await browser.close();
       await server.close();
@@ -292,7 +310,11 @@ export function fromPage({ b64, w, h }) {
 }
 
 export function loadPng(path) {
-  const png = PNG.sync.read(readFileSync(path));
+  return decodePng(readFileSync(path));
+}
+
+export function decodePng(buffer) {
+  const png = PNG.sync.read(buffer);
   return { d: new Uint8Array(png.data.buffer, png.data.byteOffset, png.data.length), w: png.width, h: png.height };
 }
 

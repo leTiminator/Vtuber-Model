@@ -164,6 +164,24 @@ const run = (rig, n, f, tracked = true) => {
   settings.reset();
 }
 
+/* --- restarting the camera keeps a neutral somebody set ------------------- */
+{
+  settings.reset();
+  settings.set('camera.neutral', JSON.stringify({ yaw: 0.3, pitch: 0.1, roll: 0, x: 0, y: 0, z: -45 }));
+  const rig = new Rig();
+  rig.calibrate(true); // what a camera start or a device change does
+  run(rig, 600, frame({ head: { yaw: 0 } }));
+  check('an automatic capture never replaces a neutral that exists',
+    rig.pendingCalibration === null && rig.neutral !== null && Math.abs(rig.neutral.yaw - 0.3) < 1e-6,
+    `neutral ${JSON.stringify(rig.neutral)}`);
+  rig.calibrate(); // but asking for one does
+  run(rig, 400, frame({ head: { yaw: 0 } }));
+  check('while a requested capture replaces it',
+    rig.neutral !== null && Math.abs(rig.neutral.yaw) < 0.02,
+    `neutral yaw ${rig.neutral?.yaw.toFixed(3)}`);
+  settings.reset();
+}
+
 /* --- losing the face relaxes rather than freezing ------------------------ */
 {
   settings.reset();

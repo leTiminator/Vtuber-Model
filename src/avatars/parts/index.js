@@ -286,7 +286,7 @@ export class Parts2D {
   initGL() {
     const gl = this.canvas.getContext('webgl2', {
       alpha: true,
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
       antialias: true,
       preserveDrawingBuffer: true,
     });
@@ -1525,10 +1525,17 @@ export class Parts2D {
     const step = Math.max(1, Math.ceil(Math.max(w, h) / 420));
     const mw = Math.ceil(w / step);
     const mh = Math.ceil(h / step);
-    const mask = new Uint8Array(mw * mh);
-
     const BAND = Math.max(step, 256 - (256 % step));
-    const row = new Uint8Array(w * BAND * 4);
+    // One set of buffers per buffer size, not a fresh megabyte per call.
+    const sc = this.scratch ??= {};
+    if (sc.w !== w || sc.h !== h || sc.step !== step) {
+      sc.w = w; sc.h = h; sc.step = step;
+      sc.mask = new Uint8Array(mw * mh);
+      sc.seen = new Uint8Array(mw * mh);
+      sc.row = new Uint8Array(w * BAND * 4);
+    }
+    const mask = sc.mask.fill(0);
+    const row = sc.row;
     for (let y0 = 0; y0 < h; y0 += BAND) {
       const rows = Math.min(BAND, h - y0);
       gl.readPixels(0, y0, w, rows, gl.RGBA, gl.UNSIGNED_BYTE, row);
@@ -1541,7 +1548,7 @@ export class Parts2D {
       }
     }
 
-    const seen = new Uint8Array(mw * mh);
+    const seen = sc.seen.fill(0);
     const stack = [];
     const areas = [];
     for (let start = 0; start < mask.length; start++) {

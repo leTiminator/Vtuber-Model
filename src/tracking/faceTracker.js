@@ -227,8 +227,11 @@ export class FaceTracker {
       // Where the face is in the WHOLE frame, whatever was handed over — so
       // the next crop follows it and the position below can be put back.
       const marks = result.faceLandmarks?.[0];
+      // The crop this detection was made through, taken before aimCrop moves
+      // it for the next one.
+      const used = this.crop;
       this.aimCrop(marks, now);
-      if (this.crop) position = this.uncrop(position);
+      if (used) position = this.uncrop(position, used);
 
       this.hasFace = true;
       this.frame = { shapes: raw, head, position, landmarks: marks, time: now };
@@ -339,8 +342,7 @@ export class FaceTracker {
    * times the lens's half-angle — a webcam is around fifty degrees, so half a
    * unit of frame is about half the distance to the face.
    */
-  uncrop(position) {
-    const c = this.crop;
+  uncrop(position, c = this.crop) {
     if (!c) return position;
     const depth = Math.abs(position.z) || 45;
     return {

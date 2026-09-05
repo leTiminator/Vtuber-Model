@@ -54,7 +54,15 @@ export function rigRelay() {
             return;
           }
 
-          // Only the tracker has anything to say, and only outputs listen.
+          // An output has one thing to say: that it could not draw. The page
+          // OBS captures may show nothing but the model, so the message goes
+          // back to the tracker's status line.
+          if (outputs.has(sock) && msg.t === 'status') {
+            const out = data.toString();
+            for (const peer of trackers) if (peer.readyState === 1) peer.send(out);
+            return;
+          }
+          // Otherwise only the tracker has anything to say, and only outputs listen.
           if (!trackers.has(sock)) return;
           if (msg.t === 'settings') lastSettings = data.toString();
           const out = data.toString();

@@ -19,6 +19,8 @@ export function installHotkeys({ rig, onCalibrate, onToggleUI, onToggleMirror, o
 
   const down = (event) => {
     if (event.repeat || isTyping(event.target)) return;
+    // Ctrl+D is a bookmark and Cmd+H hides the window; leave them to the browser.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
 
     const expression = EXPRESSIONS[event.code];
     if (expression) {

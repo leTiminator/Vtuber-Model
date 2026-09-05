@@ -17,7 +17,7 @@
  */
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { boot, makeCheck, FROZEN, POSES, ROOT, ensureOut, savePng, loadPng, fromPage, diffImages, contactSheet } from './harness.mjs';
+import { boot, makeCheck, FROZEN, POSES, ROOT, ensureOut, savePng, loadPng, decodePng, fromPage, diffImages, contactSheet } from './harness.mjs';
 
 const CHANNEL_TOL = 16;
 const MAX_DIFFERING = 0.001;
@@ -41,18 +41,36 @@ try {
   const frames = [];
   for (const pose of poses) {
     const started = Date.now();
-    const shot = await page.evaluate(async ({ pose, frozen, size, frames }) => {
-      const t = window.__t;
-      const a = window.__goldenAvatar ?? (window.__goldenAvatar = await t.makeAvatar(size));
-      t.resetStore({ ...frozen, ...(pose.settings ?? {}) });
-      a.reset();
-      const emptyRig = t.app().emptyRig;
-      const drive = pose.drive ?? [[frames, pose.rig ?? {}]];
-      for (const [count, mut] of drive) t.pose(a, emptyRig, mut, count);
-      return t.readTopDown(a);
-    }, { pose, frozen: FROZEN, size: SIZE, frames: FRAMES });
-    const actual = fromPage(shot);
-    frames.push(actual);
+    let actual;
+    if (pose.screenshot) {
+      // The app's own stage, settled, with nothing but the model on it.
+      await page.evaluate(({ frozen, settings }) => {
+        window.__t.resetStore({ ...frozen, ...settings });
+        document.body.classList.add('panel-hidden');
+        document.getElementById('selfcheck')?.click();
+        for (const id of ['hud', 'selfcheck', 'first-run', 'camera-preview', 'panel']) {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        }
+        document.getElementById('stage').style.background = '#fff';
+      }, { frozen: FROZEN, settings: pose.settings ?? {} });
+      await page.waitForTimeout(3000);
+      const vp = page.viewportSize();
+      actual = decodePng(await page.screenshot({ clip: { x: 0, y: 0, width: vp.width, height: vp.height } }));
+    } else {
+      const shot = await page.evaluate(async ({ pose, frozen, size, frames }) => {
+        const t = window.__t;
+        const a = window.__goldenAvatar ?? (window.__goldenAvatar = await t.makeAvatar(size));
+        t.resetStore({ ...frozen, ...(pose.settings ?? {}) });
+        a.reset();
+        const emptyRig = t.app().emptyRig;
+        const drive = pose.drive ?? [[frames, pose.rig ?? {}]];
+        for (const [count, mut] of drive) t.pose(a, emptyRig, mut, count);
+        return t.readTopDown(a);
+      }, { pose, frozen: FROZEN, size: SIZE, frames: FRAMES });
+      actual = fromPage(shot);
+      frames.push(actual);
+    }
     const took = `${((Date.now() - started) / 1000).toFixed(1)}s`;
 
     const file = join(GOLDEN_DIR, `${pose.name}.png`);
