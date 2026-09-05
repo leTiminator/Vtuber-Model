@@ -119,9 +119,95 @@ try {
   const pct = (100 * result.wrong) / result.opaque;
   check('the committed parts reassemble into the artwork', pct < 0.5,
     `${result.wrong} wrong of ${result.opaque} opaque (${pct.toFixed(3)}%)`);
+
+  // --- the cut itself, on drawings it was not made for ------------------------
+  const odd = await page.evaluate(async () => {
+    const { cutParts } = await import('/scripts/bake/cut.js');
+    const make = (draw) => {
+      const c = document.createElement('canvas');
+      c.width = 240;
+      c.height = 240;
+      draw(c.getContext('2d'));
+      return Object.assign(c, { naturalWidth: c.width, naturalHeight: c.height });
+    };
+    const markers = {
+      headX: 0.5, headY: 0.3, headR: 0.2, pivotX: 0.5, pivotY: 0.52, waistY: 0.78,
+      eyeL: [0.41, 0.27, 0.48, 0.32], eyeR: [0.52, 0.27, 0.59, 0.32], eyeAngle: 0,
+    };
+    const cases = {
+      colourless: (g) => { g.fillStyle = '#6a6a70'; g.fillRect(60, 30, 120, 190); },
+      allCloth: (g) => { g.fillStyle = '#d12029'; g.fillRect(40, 20, 160, 200); },
+      empty: () => {},
+      specks: (g) => { g.fillStyle = '#333'; for (let i = 0; i < 40; i++) g.fillRect(i * 5, i * 5, 2, 2); },
+    };
+    const out = {};
+    for (const [name, draw] of Object.entries(cases)) {
+      try {
+        const { parts } = cutParts(make(draw), markers);
+        out[name] = `${parts.length} parts: ${parts.map((p) => p.name).join('/') || 'none'}`;
+      } catch (err) {
+        out[name] = `THREW ${err.message}`;
+      }
+    }
+    return out;
+  });
+  for (const [name, verdict] of Object.entries(odd)) {
+    check(`unfamiliar artwork (${name}) cuts without throwing`, !verdict.startsWith('THREW'), verdict);
+  }
+
+  // --- the repair of a keyed-out drawing ----------------------------------------
+  const repaired = await page.evaluate(async (markers) => {
+    const { repairKeyedHoles } = await import('/scripts/bake/repair.js');
+    const { cutParts } = await import('/scripts/bake/cut.js');
+    const { detectMarkers, readPixels } = await import('/scripts/bake/markers.js');
+    const load = (src) => new Promise((done, fail) => {
+      const img = new Image();
+      img.onload = () => done(img);
+      img.onerror = () => fail(new Error(`could not load ${src}`));
+      img.src = src;
+    });
+    const view = await load('/art/views/head-front-open.png');
+    const countIn = (source, box, test) => {
+      const c = document.createElement('canvas');
+      c.width = 630; c.height = 630;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(source, 0, 0);
+      const d = g.getImageData(...box).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (test(d, i)) n++;
+      return n;
+    };
+    const white = (d, i) => d[i + 3] > 200 && d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200;
+    const opaque = (d, i) => d[i + 3] > 200;
+    const before = countIn(view, [380, 330, 160, 70], white);
+    const fixed = repairKeyedHoles(view);
+    const after = countIn(fixed.canvas, [380, 330, 160, 70], white);
+    const loopBefore = countIn(view, [120, 160, 220, 100], opaque);
+    const loopAfter = countIn(fixed.canvas, [120, 160, 220, 100], opaque);
+    const front = { ...markers, ...detectMarkers(readPixels(fixed.canvas)) };
+    const cut = cutParts(fixed.canvas, front, { minShard: 40 });
+    return {
+      before, after, filled: fixed.filled, holes: fixed.holes, loopBefore, loopAfter,
+      eyes: cut.parts.filter((p) => p.name.startsWith('eye')).map((p) => p.name),
+      sockets: cut.sockets?.length ?? 0,
+      fills: (cut.sockets ?? []).map((b) => +b.fill.toFixed(2)),
+    };
+  }, manifest.markers);
+  check('the keyed-out eyes come back into a head-on drawing',
+    repaired.after > repaired.before * 2 && repaired.filled > 100,
+    `${repaired.before}px of white eye before, ${repaired.after}px after (${repaired.filled}px over ${repaired.holes} patches)`);
+  check('a hole the drawing means to have is left alone',
+    repaired.loopAfter <= repaired.loopBefore + 40 && repaired.loopBefore < 12000,
+    `${repaired.loopBefore}px of paint in the box round the scarf's loop before, ${repaired.loopAfter}px after, of 22000`);
+  check('and the repaired drawing cuts into two eyes',
+    repaired.eyes.length === 2 && repaired.sockets === 2,
+    `${repaired.eyes.join('+') || 'none'}, ${repaired.sockets} sockets`);
+  check('and each socket knows how much of it is shard',
+    repaired.fills.length === 2 && repaired.fills.every((f) => f > 0.1 && f < 1), repaired.fills.join(', '));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
-  check('reassembly completed', false, err.stack);
+  check('browser checks completed', false, err.stack);
 } finally {
   await close();
 }

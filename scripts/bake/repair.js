@@ -27,7 +27,7 @@
  * background: inside the figure every pixel is paint, so anything short of
  * opaque that the background cannot reach is something that was taken out.
  */
-import { clamp } from '../../core/math.js';
+import { clamp } from '/src/core/math.js';
 import { fitBasis, robustRing } from './cut.js';
 
 const CLEAR = 8;  // alpha at or below this has no colour worth keeping

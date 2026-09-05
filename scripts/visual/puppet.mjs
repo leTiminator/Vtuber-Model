@@ -18,7 +18,7 @@ const context = await browser.newContext({ permissions: ['camera'], viewport: { 
 const page = await context.newPage();
 page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
 await page.goto('http://127.0.0.1:5205/', { waitUntil: 'load' });
-await page.waitForFunction(() => Boolean(window.__vtuber?.avatars?.parts2d?.image), null, { timeout: 25000 });
+await page.waitForFunction(() => Boolean(window.__vtuber?.avatar?.ready), null, { timeout: 25000 });
 await page.waitForFunction(() => window.__vtuber.avatars.parts2d.ready === true, null, { timeout: 25000 });
 
 await page.evaluate(() => {

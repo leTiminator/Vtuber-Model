@@ -140,17 +140,6 @@ export const DEFAULTS = {
   'stage.showPreview': true,
 
   // --- the parts model ------------------------------------------------
-  // Geometry is in UV space, 0..1 across the loaded image, so markup survives
-  // swapping the artwork for a different resolution.
-  'warp.headX': 0.5,
-  'warp.headY': 0.3,
-  'warp.headR': 0.2,
-  'warp.pivotX': 0.5,
-  'warp.pivotY': 0.52,
-  'warp.waistY': 0.78,
-  'warp.eyeL': '[0.41,0.27,0.48,0.32]',
-  'warp.eyeR': '[0.52,0.27,0.59,0.32]',
-  'warp.eyeAngle': 0, // radians; drawings rarely have level eyes
   'warp.eyesEnabled': true,
   // Depth between the layers: a soft dark shape laid behind each part so the
   // scarf reads as sitting in front of the arm rather than printed on it.

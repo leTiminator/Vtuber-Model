@@ -23,7 +23,6 @@ import { applyBackground, fitToWindow } from './core/stage.js';
 import { openRigLink } from './core/rigLink.js';
 import { Rig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
-import { loadImage } from './core/image.js';
 
 store.setPersistence(false);
 
@@ -44,19 +43,11 @@ avatar.onStatus = (text) => {
   reportDrawError();
 };
 
-/* The same two drawings the main page loads. Anything the tracker page has
- * for settings arrives over the link; nothing is read from this page's own
- * storage. */
-(async () => {
-  try {
-    const base = import.meta.env.BASE_URL;
-    const image = await loadImage(`${base}art/BA_Ninja_TPBG.png`);
-    try {
-      avatar.setHeadOnImage(await loadImage(`${base}art/views/pose-front-arms-out.png`));
-    } catch { /* the turned-away face still works without it */ }
-    avatar.setImage(image, false);
-  } catch { /* nothing to draw; the link may still bring settings */ }
-})();
+// The baked model, written by `npm run bake` into public/model/ninja.
+avatar.load(`${import.meta.env.BASE_URL}model/ninja/`).catch((err) => {
+  console.error(err);
+  avatar.onStatus(`The model could not be loaded: ${err.message}`);
+});
 
 avatar.mount(host);
 fitToWindow(avatar);

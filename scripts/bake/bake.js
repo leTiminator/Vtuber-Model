@@ -6,10 +6,10 @@
  * deterministic in its inputs: the two drawings, the marker detector and the
  * cut, with no clock, randomness or settings read.
  */
-import { cutParts } from '/src/avatars/parts/cut.js';
-import { repairKeyedHoles } from '/src/avatars/parts/repair.js';
-import { detectMarkers, readPixels } from '/src/avatars/parts/markers.js';
-import { extractSpine } from '/src/avatars/parts/spine.js';
+import { cutParts } from './cut.js';
+import { repairKeyedHoles } from './repair.js';
+import { detectMarkers, readPixels } from './markers.js';
+import { extractSpine } from './spine.js';
 
 const SPINE_NODES = 16;
 /** Rows in the cloth strip: it bends along its whole length. */

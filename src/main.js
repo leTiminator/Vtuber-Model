@@ -13,7 +13,6 @@ import { MicLevel } from './tracking/audio.js';
 import { SessionRecorder } from './tracking/recorder.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
-import { loadImage } from './core/image.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
 
@@ -373,7 +372,7 @@ dom.resetBtn.addEventListener('click', () => {
  * defaults on every machine, and listing them buries the handful that were
  * actually tuned — which is the only thing this line is for.
  */
-const MACHINE_SET = /^(warp\.(headX|headY|headR|pivotX|pivotY|waistY|eyeAngle|eyeL|eyeR)|camera\.(deviceId|neutral))$/;
+const MACHINE_SET = /^camera\.(deviceId|neutral)$/;
 
 const stamp = document.getElementById('build-stamp');
 function showStamp() {
@@ -670,9 +669,10 @@ function fitFraming(mode) {
 
   let box = { x0: 0, y0: 0, x1: 1, y1: 1 };
   if (mode === 'head') {
-    const cx = store.get('warp.headX');
-    const cy = store.get('warp.headY');
-    const r = store.get('warp.headR') * 1.9;
+    const m = avatar.model?.markers ?? { headX: 0.5, headY: 0.3, headR: 0.2 };
+    const cx = m.headX;
+    const cy = m.headY;
+    const r = m.headR * 1.9;
     box = { x0: cx - r / aspect, y0: cy - r, x1: cx + r / aspect, y1: cy + r * 1.5 };
   } else {
     box = avatar.contentBox();
@@ -687,24 +687,11 @@ window.addEventListener('resize', resize);
 avatar.mount(dom.host);
 resize();
 applyBackground();
-/* The model ships with its artwork: the drawing, and a second drawing of the
- * same character facing the camera, handed over first so the cut happens once
- * with both in hand. A missing head-on file leaves the turned-away face
- * working, and the readout says why. */
-(async () => {
-  try {
-    const image = await loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
-    try {
-      avatar.setHeadOnImage(
-        await loadImage(`${import.meta.env.BASE_URL}art/views/pose-front-arms-out.png`));
-    } catch (err) {
-      console.warn('head-on view could not be loaded', err);
-    }
-    avatar.setImage(image, true);
-  } catch (err) {
-    console.warn('bundled artwork could not be loaded', err);
-  }
-})();
+// The baked model, written by `npm run bake` into public/model/ninja.
+avatar.load(`${import.meta.env.BASE_URL}model/ninja/`).catch((err) => {
+  console.error(err);
+  avatar.onStatus(`The model could not be loaded: ${err.message}`);
+});
 
 // Dev-only handle, so the test suite can render a chosen pose and read the
 // pixels back without going through the camera.

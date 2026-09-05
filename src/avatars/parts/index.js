@@ -15,49 +15,6 @@ import { clamp, damp, lerp, makeSpring, smoothstep, spring } from '../../core/ma
 import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
-import { cutParts } from './cut.js';
-import { repairKeyedHoles } from './repair.js';
-
-/**
- * The two eye shards, each its own part.
- *
- * They were one part with one quad until now, which meant the near eye and the
- * far eye could only ever move together — and on a three-quarter face they are
- * not the same size, not the same distance from the centre, and do not travel
- * the same way as the head comes round. Cut apart they can, and a wink stops
- * being a shape the renderer has no way to draw.
- */
-const EYES = new Set(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn']);
-
-/**
- * The two faces: the head as it was drawn turned away, and the head as it was
- * drawn looking at the camera.
- *
- * Everything the head-on view used to be was synthesised — the near shard slid
- * onto the head's centre line and a mirrored copy of it stood in for the far
- * one. That synthesis is what "the eyes slide on the face" was, and no amount
- * of tuning removes a slide from something whose whole method is sliding. It
- * also never looked like a head that had turned, because the hood underneath
- * it had not: the same three-quarter cutout, wearing rearranged eyes.
- *
- * There is a drawing of this character facing the camera. It is a different
- * pose — a different hood, a symmetric visor, two matched shards — so the
- * head-on view is that drawing's head, put where this one's head is, and not
- * anything computed. Its eyes arrived keyed out to transparent holes and are
- * repaired on the way in; see repair.js.
- *
- * Only the head, the hair and the eyes are taken. The body, the arms and the
- * scarf stay as they are, because those are not what changes when somebody
- * looks up at the camera.
- */
-const TURNED_FACE = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
-const HEADON_FACE = new Set(['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn']);
-
-/** What each piece of the head-on face is called, and what it replaces. */
-const HEADON_OF = { head: 'headOn', tufts: 'tuftsOn', eyeNear: 'eyeNearOn', eyeFar: 'eyeFarOn' };
-
-/** Which of the four eye parts takes the right eye's blink and gaze. */
-const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
 
 /**
  * Where the head's turn stops being the head's, as multiples of the head's own
@@ -70,14 +27,6 @@ const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
  */
 const FOLLOW_FULL = 1.05;
 const FOLLOW_NONE = 2.30;
-
-/**
- * Parts that cast a contact shadow on what is behind them. The backmost part
- * has nothing to cast onto, and the eyes sit flush in the visor rather than
- * over it.
- */
-const SHADOWS = new Set(
-  ['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap', 'tuftsOn', 'headOn']);
 
 /**
  * The rig as it reads for a character facing the other way.
@@ -113,18 +62,7 @@ function facedRig(rig) {
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
 import { HeadInertia, LinkChain } from './cloth.js';
-import { detectMarkers, readPixels } from './markers.js';
-
-/** A marker rectangle saved as JSON text, or the fallback if it is unreadable. */
-function parseRect(value, fallback = [0.4, 0.27, 0.48, 0.33]) {
-  try {
-    const r = JSON.parse(value);
-    return Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) ? r : fallback;
-  } catch {
-    return fallback;
-  }
-}
-import { extractSpine } from './spine.js';
+import { loadModel } from './model.js';
 
 const UNIFORMS = [
   'u_model', 'u_modelFar', 'u_aspect', 'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
@@ -136,9 +74,6 @@ const UNIFORMS = [
 const SPINE_NODES = 16;
 /** How much invented margin a part may draw, in pixels of its texture. */
 const MARGIN_FULL = 32;
-/** The settings the cut reads; any other warp.* key is a render-time gain. */
-const CUT_KEYS = new Set(['warp.headX', 'warp.headY', 'warp.headR', 'warp.pivotX',
-  'warp.pivotY', 'warp.waistY', 'warp.eyeAngle', 'warp.eyeL', 'warp.eyeR']);
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -146,13 +81,6 @@ const CUT_KEYS = new Set(['warp.headX', 'warp.headY', 'warp.headR', 'warp.pivotX
  */
 const CLOTH_DRIVE = 1.0;
 const CLOTH_WIND = 0.5;
-const CLOTH_GRID = 26; // the cloth bends along its whole length, so it needs rows
-
-// The arms are held at both ends, glove and shoulder, so their follow weight
-// varies across the sleeve and they need rows to blend along. Every other
-// rigid part is a quad.
-const ARM_GRID = 12;
-const ARM_PARTS = new Set(['armLeft', 'armRight']);
 
 export class Parts2D {
   static id = 'parts2d';
@@ -162,7 +90,7 @@ export class Parts2D {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'avatar-canvas';
     this.gl = null;
-    this.image = null;
+    this.model = null;
     this.parts = [];
     this.ready = false;
     this.clock = 0;
@@ -194,11 +122,6 @@ export class Parts2D {
     this.headOnPhase = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
-    // Only the marker keys feed the cut. The other warp.* keys are per-frame
-    // gains, and rebuilding on those re-cut the whole model per slider tick.
-    this.unsubscribe = store.subscribe((key) => {
-      if (CUT_KEYS.has(key)) this.rebuild = true;
-    });
   }
 
   mount(container) {
@@ -259,219 +182,97 @@ export class Parts2D {
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(0, 0, 0, 0);
 
-    if (this.image) this.build();
+    if (this.model) this.setModel(this.model);
   }
 
-  setImage(image, placeMarkers = false) {
-    this.image = image;
-    this.aspect = image.naturalWidth / image.naturalHeight;
-
-    if (placeMarkers) {
-      const px = readPixels(image);
-      const found = px && detectMarkers(px);
-      if (found) {
-        store.patch({
-          'warp.headX': found.headX, 'warp.headY': found.headY, 'warp.headR': found.headR,
-          'warp.pivotX': found.pivotX, 'warp.pivotY': found.pivotY, 'warp.waistY': found.waistY,
-          'warp.eyeAngle': found.eyeAngle,
-          'warp.eyeL': JSON.stringify(found.eyeL), 'warp.eyeR': JSON.stringify(found.eyeR),
-        });
-      }
-    }
-    this.scarf.reset();
-    this.build();
+  /** Fetch the baked model under `base` (a URL ending in a slash) and show it. */
+  async load(base) {
+    this.setModel(await loadModel(base));
   }
 
   /**
-   * A second drawing, used only for the face it looks at the camera with.
-   *
-   * Handed the raw file: the repair and the cut both happen here, so a caller
-   * only has to know which picture it is. Nothing else in the drawing is used
-   * — the hood, the scarf and the body all still come from the main artwork,
-   * which is what makes the swap invisible.
+   * Take a decoded model (see model.js) and build every part's textures and
+   * geometry from it. Before mount() there is no context; the upload then
+   * happens when there is one.
    */
-  setHeadOnImage(image) {
-    this.headOnImage = image ?? null;
-    this.headOnFixed = null;
-    this.headOnNote = image ? 'not cut yet' : 'no drawing';
-    // Only if there is already a model to add it to. Set before the artwork —
-    // which is how it is loaded — this costs nothing, where rebuilding here
-    // would cut the whole character twice over on the way in.
-    if (this.image) this.build();
-  }
+  setModel(model) {
+    this.model = model;
+    this.imageSize = { width: model.width, height: model.height };
+    this.aspect = model.width / model.height;
+    this.headSpan = model.headSpan;
+    this.spine = model.spine ? { nodes: model.spine.nodes } : null;
+    this.spineSpan = model.spine?.span ?? 0;
+    this.headOnNote = model.headOn?.note ?? 'no drawing';
+    this.scarf.reset();
+    this.scarf.hasRest = false;
+    if (this.spine?.nodes?.length > 1) this.scarf.setRest(this.spine.nodes, this.aspect);
 
-  markers() {
-    return {
-      headX: store.get('warp.headX'),
-      headY: store.get('warp.headY'),
-      headR: Math.max(0.02, store.get('warp.headR')),
-      pivotX: store.get('warp.pivotX'),
-      pivotY: store.get('warp.pivotY'),
-      waistY: store.get('warp.waistY'),
-      eyeAngle: store.get('warp.eyeAngle'),
-      eyeL: parseRect(store.get('warp.eyeL')),
-      eyeR: parseRect(store.get('warp.eyeR')),
-    };
-  }
-
-  /** Cut the artwork and upload each piece as its own textured mesh. */
-  build() {
     const gl = this.gl;
-    if (!gl || !this.image) return;
-
-    const m = this.markers();
-    const { parts, width, height, sockets } = cutParts(this.image, m);
-    this.imageSize = { width, height };
-
-    /* Free what this renderer built, not whatever is currently being drawn.
-     *
-     * `parts` is a plain field, and a caller that swaps it to draw a subset —
-     * the test suite does, to look at one piece at a time — would otherwise
-     * have the rebuild free only that subset and orphan the rest, leaving the
-     * caller holding freed textures it then puts back.
-     */
-    for (const old of this.owned ?? this.parts) {
+    if (!gl) return;
+    for (const old of this.owned ?? []) {
       gl.deleteTexture(old.texture);
       gl.deleteTexture(old.marginTex);
       gl.deleteVertexArray(old.vao);
     }
-
-    const tails = parts.find((p) => p.name === 'tails');
-    this.spine = tails ? findSpine(tails, this.image, width, height, m) : null;
-    // How far apart the chain's links rest, for its bend limit. Measured off
-    // the spine that was actually found rather than assumed, because the run
-    // it lands on depends entirely on the drawing.
-    this.spineSpan = 0;
-    if (this.spine?.nodes?.length > 1) {
-      const ns = this.spine.nodes;
-      let total = 0;
-      for (let i = 1; i < ns.length; i++) {
-        total += Math.hypot(ns[i][0] - ns[i - 1][0], ns[i][1] - ns[i - 1][1]);
-      }
-      this.spineSpan = total / (ns.length - 1);
-    }
-    // The chain is laid along the spine that was found, with every link the
-    // length it was drawn. No spine, and there is nothing for it to hold.
-    this.scarf.hasRest = false;
-    if (this.spine?.nodes?.length > 1) this.scarf.setRest(this.spine.nodes, this.aspect);
-
-    /* The head's real extent, measured from the piece that was cut, not from
-     * the marker. The marker's radius comes from eye spacing, which on this
-     * drawing is less than half the hood — every distance judged against it
-     * would be wrong by the same factor.
-     */
-    const headPart = parts.find((p) => p.name === 'head');
-    this.headSpan = headPart ? {
-      cx: (headPart.x + headPart.inset + (headPart.w - 2 * headPart.inset) / 2) / width,
-      cy: (headPart.y + headPart.inset + (headPart.h - 2 * headPart.inset) / 2) / height,
-      r: Math.max(headPart.w - 2 * headPart.inset, headPart.h - 2 * headPart.inset) / 2 / height,
-    } : { cx: m.headX, cy: m.headY, r: m.headR };
-
-    this.parts = parts
-      .sort((a, b) => a.z - b.z)
-      .map((part) => this.upload(part, width, height, m, sockets));
-
-    // The face that looks at the camera, cut from its own drawing.
-    this.parts = this.parts.concat(this.buildHeadOnFace(width, height, m));
-    this.parts.sort((a, b) => a.z - b.z);
-
-    this.headOn = this.parts.some((p) => p.name === 'headOn');
-
+    this.parts = model.parts.map((part) => this.upload(part));
     this.owned = this.parts;
+    this.headOn = this.parts.some((p) => p.name === 'headOn');
     this.ready = this.parts.length > 0;
-    this.rebuild = false;
   }
 
-  /**
-   * How much of the head's turn a point takes.
-   *
-   * The shell is the head and takes all of it. Cloth starts as head where it
-   * crosses the face and stops being head as it reaches the shoulders. Because
-   * both sides of a cut ask this same question about the same point, they
-   * agree at the seam no matter where the cut fell.
-   */
-  followAt(name, px, py) {
-    if (TURNED_FACE.has(name) || HEADON_FACE.has(name)) return 1;
-    if (name === 'body') return 0;
-    /* Cloth is not blended toward the head. It was, and that was the stretch.
-     *
-     * Every part is placed by mixing two joints per vertex, and for the scarf
-     * those were the neck and the hips, weighted by this gradient. A mix of two
-     * transforms that differ by a rotation is not a rotation: it shears, by the
-     * gradient's slope times how far the head has swung the point. Measured on
-     * this drawing, an edge in the ribbon grew to more than twice its drawn
-     * length on a roll — the scarf "attached to the head and stretched", in
-     * exactly those words, every day for a week.
-     *
-     * So the ribbon is skinned to a chain of rigid links and takes none of the
-     * head's transform, and the neck scarf sits still on the body, behind the
-     * head, which moves over it as a cutout. A rigid collar that followed the
-     * chin by half was tried in between and turned inside the head on a roll;
-     * still and behind, there is nothing for it to get wrong.
-     */
-    if (name === 'wrap' || name === 'tails') return 0;
+  /** How much of the neck's motion a vertex at (px, py) takes: 1 on the head, 0 on the body. */
+  followAt(part, px, py) {
+    if (part.flags.follow === 'full') return 1;
+    if (part.flags.follow === 'none') return 0;
     const h = this.headSpan;
     const d = Math.hypot((px - h.cx) * this.aspect, py - h.cy) / Math.max(h.r, 1e-4);
     const t = clamp((d - FOLLOW_FULL) / (FOLLOW_NONE - FOLLOW_FULL), 0, 1);
     return 1 - t * t * (3 - 2 * t); // smoothstep, so there is no crease
   }
 
-  upload(part, width, height, m, sockets) {
+  /** One part: its two textures and its grid, from the manifest entry and its decoded PNGs. */
+  upload(part) {
     const gl = this.gl;
+    const { width, height } = this.imageSize;
 
-    /* The distance field beside the colour, so the invented margin can be cut
-     * back per draw. One byte a pixel, nearest-sampled — it is a measurement,
-     * not a picture, and interpolating it across the boundary between two
-     * parts would blur the very thing it is there to tell apart.
-     */
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+
+    // One byte per texel says how invented the paint there is; the shader
+    // reads the red channel.
     const marginTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, marginTex);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, part.w, part.h, 0, gl.RED,
-      gl.UNSIGNED_BYTE, part.margin ?? new Uint8Array(part.w * part.h));
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, part.marginImage);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
 
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, part.canvas);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, part.image);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-    // The cloth bends along its whole length and the arms blend between two
-    // joints, so both need rows; everything else is a quad.
-    const skinned = part.name === 'tails' && this.spine;
-    const n = skinned ? CLOTH_GRID : ARM_PARTS.has(part.name) ? ARM_GRID : 1;
+    // The grid: a quad for a rigid part, rows for the arms and the cloth.
+    // Cloth vertices bind to the nearest point of the spine and carry a flag
+    // saying whether they sit on the piece the chain runs through.
+    const skinned = part.flags.skinned && Boolean(this.spine);
+    const n = part.grid;
     const pos = [];
     const uv = [];
     const bindData = [];
     const followData = [];
     const onChainData = [];
     const idx = [];
-    // Which of this cloth the chain actually runs through — see ribbonMask.
-    const ribbon = skinned ? ribbonMask(part, this.spine, width, height) : null;
     for (let row = 0; row <= n; row++) {
       for (let col = 0; col <= n; col++) {
         const s = col / n;
         const t = row / n;
-        /* Image space: where this pixel actually sits in the whole artwork.
-         *
-         * `place` moves a piece taken from another drawing onto this one. The
-         * head-on face comes from a separate picture in a different pose, so
-         * its head sits somewhere else and is drawn at a different size —
-         * measured, 184 pixels across against this one's 281. Registered here,
-         * once, so everything downstream reads the position it will actually
-         * be drawn at: how much of the head's turn it takes, how deep it sits
-         * on the shell, and the radius the whole head shares.
-         */
         let px = (part.x + s * part.w) / width;
         let py = (part.y + t * part.h) / height;
         if (part.place) {
@@ -481,13 +282,9 @@ export class Parts2D {
         }
         pos.push(px, py);
         uv.push(s, t);
-        followData.push(this.followAt(part.name, px, py));
-        // Bind into the centreline's local frame at the nearest point.
+        followData.push(this.followAt(part, px, py));
         bindData.push(...(skinned ? bindToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0, 0]));
-        onChainData.push(ribbon
-          ? ribbon[Math.min(part.h - 1, Math.round(t * (part.h - 1))) * part.w
-            + Math.min(part.w - 1, Math.round(s * (part.w - 1)))]
-          : 1);
+        onChainData.push(part.onChain ? (part.onChain[row * (n + 1) + col] === '1' ? 1 : 0) : 1);
       }
     }
     for (let row = 0; row < n; row++) {
@@ -508,178 +305,17 @@ export class Parts2D {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
 
-    /* Eye sockets, in this part's texture space.
-     *
-     * Prefer the extent measured from the pixels that were actually cut out.
-     * The marker rectangle is only a hint about where to look for the shard,
-     * and anything the shard reaches past it stays uncovered at full blink —
-     * a permanent sliver of open eye. Fall back to the marker when the cut
-     * could not find two shards.
-     */
-    const fromBox = (b) => [
-      (b.cx * width - part.x) / part.w,
-      (b.cy * height - part.y) / part.h,
-      (b.hx * width) / part.w,
-      (b.hy * height) / part.h,
-    ];
-    const fromMarker = (rect) => [
-      (((rect[0] + rect[2]) / 2) * width - part.x) / part.w,
-      (((rect[1] + rect[3]) / 2) * height - part.y) / part.h,
-      (Math.abs(rect[2] - rect[0]) / 2) * width / part.w,
-      (Math.abs(rect[3] - rect[1]) / 2) * height / part.h,
-    ];
-
     return {
       ...part,
       texture, marginTex, vao, indexCount: idx.length, skinned,
-      // Skinning happens on the CPU — see skinCloth. The bind stays here
-      // because that is where it is now used.
+      // Skinning happens on the CPU (see skinCloth), so the cloth keeps its
+      // rest positions, its bind coordinates and a live copy it uploads.
       posBuffer,
       binds: skinned ? new Float32Array(bindData) : null,
       live: skinned ? new Float32Array(pos) : null,
-      // Where the cloth was drawn, and which of it the chain runs through —
-      // see skinCloth.
       rest: skinned ? new Float32Array(pos) : null,
       onChain: skinned ? new Float32Array(onChainData) : null,
-      ...this.socketOf(part, sockets, width, height, fromBox, fromMarker, m),
     };
-  }
-
-  /**
-   * Which socket belongs to a part, and where the other lid goes.
-   *
-   * Each eye is now its own part, so each carries one lid. Matching is by
-   * position rather than by order: both the cut and the socket measurement
-   * sort their shards biggest-first, but they sort at different stages — the
-   * cut before its mask is filled, the sockets after — and two shards close in
-   * size could come back swapped. Asking which socket lands inside this part's
-   * own box cannot be wrong.
-   *
-   * The unused lid is parked far outside the quad, where `lidded` returns
-   * early. Pointing it at the same socket instead would apply the sweep twice
-   * and square its soft edge.
-   */
-  socketOf(part, sockets, width, height, fromBox, fromMarker, m) {
-    const AWAY = [-9, -9, 1, 1];
-    if (!EYES.has(part.name)) {
-      return {
-        eyeL: sockets?.[0] ? fromBox(sockets[0]) : fromMarker(m.eyeL),
-        eyeR: sockets?.[1] ? fromBox(sockets[1]) : fromMarker(m.eyeR),
-        lidFill: sockets?.[0]?.fill ?? 1,
-      };
-    }
-    const cx = part.x + part.w / 2;
-    const cy = part.y + part.h / 2;
-    let best = null;
-    let bestD = Infinity;
-    for (const b of sockets ?? []) {
-      const d = Math.hypot(b.cx * width - cx, b.cy * height - cy);
-      if (d < bestD) { bestD = d; best = b; }
-    }
-    const own = best ? fromBox(best)
-      : fromMarker(FAR_EYES.has(part.name) ? m.eyeR : m.eyeL);
-    // How much of the socket is the shard, for the lid's sweep. The marker
-    // fallback is a hand-placed box with no ink ring in it, so it is all shard.
-    return { eyeL: own, eyeR: AWAY, lidFill: best?.fill ?? 1 };
-  }
-
-  /**
-   * The face that looks at the camera, taken from the drawing of it.
-   *
-   * Everything this replaces was synthesis. The near shard was slid onto the
-   * head's own centre line and a mirrored copy of it was grown into the far
-   * eye's place — assembled, as the note here used to say, "entirely out of
-   * pixels the artist drew". It was, and it still moved the eyes across the
-   * visor every time the view changed hands, because moving them is what it
-   * did. There is no version of that method that does not slide. It also never
-   * looked like a head that had turned, because the hood had not turned: the
-   * same three-quarter cutout, wearing rearranged eyes.
-   *
-   * There is a drawing of this character facing the camera, in a different
-   * pose — a rounder hood, a symmetric visor, two matched shards. So the
-   * head-on view is that drawing's head, and the only question is where to put
-   * it: both cuts measure their own head's centre and radius, and one similar
-   * transform lands the borrowed one exactly on the head it stands in for. No
-   * angle is solved and nothing is stretched to fit.
-   *
-   * Its markers are found for it rather than inherited. The head sits
-   * somewhere else in that picture and is drawn smaller — measured, 145 by 150
-   * at (326, 282) against this one's 177 by 188 at (446, 318), so the borrowed
-   * head is scaled by 1.25 on the way in — and this drawing's marker positions
-   * would seed the cut's flood into its shoulder.
-   *
-   * Returns an empty list, and says why in `headOnNote`, if anything is
-   * missing. Silence here was its own bug: a feature that had never loaded and
-   * one whose latch was thrashing looked identical from outside.
-   */
-  buildHeadOnFace(width, height, m) {
-    this.headOnNote = this.headOnImage ? 'not cut yet' : 'no drawing';
-    if (!this.headOnImage || !this.headSpan) return [];
-    try {
-      /* Repaired first, or there is nothing to cut.
-       *
-       * That drawing came off a white background that was keyed away, and its
-       * eyes are white, so they went with it: two patches of some six hundred
-       * pixels where the shards belong. Nothing downstream can see an eye that
-       * is not there, so the head-on face silently never loaded and several
-       * rounds went by arguing about a latch.
-       *
-       * Repaired once per drawing rather than once per cut — `build` runs
-       * again whenever a marker moves, and the file does not change when a
-       * slider does.
-       */
-      const fixed = this.headOnFixed
-        ?? (this.headOnFixed = repairKeyedHoles(this.headOnImage));
-      if (fixed.width !== width || fixed.height !== height) {
-        this.headOnNote = `drawn ${fixed.width}x${fixed.height}, not ${width}x${height}`;
-        return [];
-      }
-      const px = readPixels(fixed.canvas);
-      const found = px && detectMarkers(px);
-      if (!found) {
-        this.headOnNote = 'could not find a face in it';
-        return [];
-      }
-      /* A lower floor on what counts as a shard, for this cut only. The floor
-       * scales with the head, and this head is drawn four fifths the width of
-       * the one it stands in for, so its shards start out closer to it. */
-      const cut = cutParts(fixed.canvas, { ...m, ...found }, { minShard: 40 });
-      const head = cut.parts.find((p) => p.name === 'head');
-      const eyes = cut.parts.filter((p) => EYES.has(p.name));
-      if (!head || eyes.length < 2) {
-        this.headOnNote = `cut into ${cut.parts.map((p) => p.name).join('+') || 'nothing'}`;
-        return [];
-      }
-
-      // Where that head sits in its own picture, measured the same way this
-      // one is, so the two are the same measurement of the same thing.
-      const span = {
-        cx: (head.x + head.inset + (head.w - 2 * head.inset) / 2) / width,
-        cy: (head.y + head.inset + (head.h - 2 * head.inset) / 2) / height,
-        r: Math.max(head.w - 2 * head.inset, head.h - 2 * head.inset) / 2 / height,
-      };
-      const place = {
-        fromX: span.cx, fromY: span.cy,
-        toX: this.headSpan.cx, toY: this.headSpan.cy,
-        k: this.headSpan.r / Math.max(span.r, 1e-6),
-      };
-
-      // Each piece half a step above the one it stands in for, so it draws in
-      // the same slot: behind the neck scarf, in front of the shoulders.
-      const built = [];
-      for (const part of cut.parts) {
-        const name = HEADON_OF[part.name];
-        if (!name) continue;
-        built.push(this.upload({ ...part, name, z: part.z + 0.5, place },
-          width, height, { ...m, ...found }, cut.sockets));
-      }
-      this.headOnNote = `${built.length} pieces, ${fixed.filled}px repaired, `
-        + `scaled ${place.k.toFixed(2)}x`;
-      return built;
-    } catch (err) {
-      this.headOnNote = `failed: ${err?.message ?? err}`;
-      return [];
-    }
   }
 
   resize(width, height, dpr = window.devicePixelRatio || 1) {
@@ -698,7 +334,6 @@ export class Parts2D {
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (!this.ready) return;
-    if (this.rebuild) this.build();
 
     /* A zero step draws what is already there without advancing anything.
      *
@@ -714,7 +349,7 @@ export class Parts2D {
     this.clock += dt;
 
     const L = this.loc;
-    const m = this.markers();
+    const m = this.model.markers;
     gl.useProgram(this.program);
 
     /* Facing the other way: the picture through a mirror, the tracking too.
@@ -862,7 +497,6 @@ export class Parts2D {
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
     this.glowPulse = damp(this.glowPulse, 0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare, 9, dt);
 
-
     /* How far round to the camera the head has come.
      *
      * Off the size of the turn rather than its direction, so it is the same
@@ -955,7 +589,6 @@ export class Parts2D {
     this.faceOn = headOnT >= 0.5;
     const faceOn = this.faceOn;
 
-
     const shadowStrength = store.get('parts.contactShadow');
 
     const order = this.parts;
@@ -966,7 +599,6 @@ export class Parts2D {
       gl.uniformMatrix3fv(L.u_modelFar, false,
         joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
 
-
       /* Which of the two faces this part belongs to.
        *
        * Nothing is moved. Whichever head is showing is drawn where it was
@@ -975,9 +607,10 @@ export class Parts2D {
        * a mirrored copy of it into the far eye — and sliding the eyes across
        * the face was, precisely, the thing being reported.
        */
-      if (HEADON_FACE.has(part.name) ? !faceOn : TURNED_FACE.has(part.name) && faceOn) continue;
+      const face = part.flags.face;
+      if (face === 'headOn' ? !faceOn : face === 'turned' && faceOn) continue;
 
-      const carriesEyes = EYES.has(part.name);
+      const carriesEyes = part.flags.eyes;
       gl.uniform1f(L.u_eyesEnabled, carriesEyes && store.get('warp.eyesEnabled') ? 1 : 0);
       if (carriesEyes) {
         /* One part, one eye.
@@ -985,9 +618,9 @@ export class Parts2D {
          * The near shard takes the left channel and the far shard the right,
          * the same pairing the single eye layer used. Both lids are still
          * declared, because the shader has two; the second is parked outside
-         * the quad by `socketOf` and its blink is zero, so it does nothing.
+         * the quad by the bake and its blink is zero, so it does nothing.
          */
-        const far = FAR_EYES.has(part.name);
+        const far = part.flags.far;
         gl.uniform4fv(L.u_eyeL, part.eyeL);
         gl.uniform4fv(L.u_eyeR, part.eyeR);
         gl.uniform1f(L.u_eyeAngle, m.eyeAngle);
@@ -1056,7 +689,7 @@ export class Parts2D {
        * background; otherwise a transparent OBS source gets a black halo
        * around the whole character.
        */
-      if (shadowStrength > 0 && SHADOWS.has(part.name)) {
+      if (shadowStrength > 0 && part.flags.shadow) {
         gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
         gl.uniform1f(L.u_shadow, shadowStrength);
         gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
@@ -1224,7 +857,6 @@ export class Parts2D {
       rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
     );
 
-
     /* Arms hang off the hips rather than the neck: lifting a hand should not
      * inherit the head's tilt, and a shoulder that followed the head would
      * shear the sleeve every time you looked sideways.
@@ -1387,7 +1019,6 @@ export class Parts2D {
   }
 
   dispose() {
-    this.unsubscribe?.();
     this.canvas.remove();
   }
 }
@@ -1470,117 +1101,7 @@ function linkProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-
 /* ------------------------------------------------------------------ cloth */
-
-/**
- * Thin the cloth to its centreline and resample it into bones.
- *
- * Run on the real artwork's alpha, not the part's: the dilated margin is opaque
- * too, and including it would fatten the shape and bow the centreline outward.
- */
-function findSpine(part, image, width, height, m) {
-  const scale = 0.5; // thinning is iterative; half resolution is plenty
-  const mw = Math.round(width * scale);
-  const mh = Math.round(height * scale);
-
-  const partCanvas = document.createElement('canvas');
-  partCanvas.width = mw;
-  partCanvas.height = mh;
-  const pc = partCanvas.getContext('2d', { willReadFrequently: true });
-  pc.drawImage(part.canvas, part.x * scale, part.y * scale, part.w * scale, part.h * scale);
-  const pd = pc.getImageData(0, 0, mw, mh).data;
-
-  const artCanvas = document.createElement('canvas');
-  artCanvas.width = mw;
-  artCanvas.height = mh;
-  const ac = artCanvas.getContext('2d', { willReadFrequently: true });
-  ac.drawImage(image, 0, 0, mw, mh);
-  const ad = ac.getImageData(0, 0, mw, mh).data;
-
-  const mask = new Uint8Array(mw * mh);
-  for (let i = 0; i < mw * mh; i++) {
-    if (pd[i * 4 + 3] > 120 && ad[i * 4 + 3] > 40) mask[i] = 1;
-  }
-
-  return extractSpine(mask, mw, mh, { x: m.pivotX * mw, y: m.pivotY * mh }, SPINE_NODES);
-}
-
-/**
- * Which pixels of the cloth the chain runs through, as a mask over the part.
- *
- * The scarf label can hold more than one piece of cloth — here the ribbon and
- * the sash at the waist — and the chain is laid along only one of them. Every
- * pixel takes the connected piece nearest to it, so the empty grid vertices
- * between the pieces side with whichever cloth they will be stretched against,
- * and the invented margin round each piece counts as that piece.
- *
- * @returns {Uint8Array} 1 where the nearest painted cloth is the chain's own
- */
-function ribbonMask(part, spine, width, height) {
-  const { w, h } = part;
-  const n = w * h;
-  const d = part.canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
-  const label = new Int32Array(n).fill(-1);
-  const queue = new Int32Array(n);
-  const real = (i) => d[i * 4 + 3] > 40 && !(part.margin && part.margin[i] > 0);
-
-  // Connected pieces of real paint, eight-connected.
-  let pieces = 0;
-  for (let seed = 0; seed < n; seed++) {
-    if (!real(seed) || label[seed] >= 0) continue;
-    const id = pieces++;
-    let head = 0;
-    let tail = 0;
-    label[seed] = id;
-    queue[tail++] = seed;
-    while (head < tail) {
-      const i = queue[head++];
-      const x = i % w;
-      const y = (i - x) / w;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const j = ny * w + nx;
-          if (label[j] >= 0 || !real(j)) continue;
-          label[j] = id;
-          queue[tail++] = j;
-        }
-      }
-    }
-  }
-  const out = new Uint8Array(n);
-  if (!pieces || !spine?.nodes?.length) return out.fill(1);
-
-  // Grow every piece's label outward until the whole box is claimed, so each
-  // pixel belongs to the nearest paint.
-  let head = 0;
-  let tail = 0;
-  for (let i = 0; i < n; i++) if (label[i] >= 0) queue[tail++] = i;
-  while (head < tail) {
-    const i = queue[head++];
-    const x = i % w;
-    const y = (i - x) / w;
-    if (x > 0 && label[i - 1] < 0) { label[i - 1] = label[i]; queue[tail++] = i - 1; }
-    if (x < w - 1 && label[i + 1] < 0) { label[i + 1] = label[i]; queue[tail++] = i + 1; }
-    if (y > 0 && label[i - w] < 0) { label[i - w] = label[i]; queue[tail++] = i - w; }
-    if (y < h - 1 && label[i + w] < 0) { label[i + w] = label[i]; queue[tail++] = i + w; }
-  }
-
-  // The chain's piece is the one most of its nodes land in.
-  const votes = new Int32Array(pieces);
-  for (const [sx, sy] of spine.nodes) {
-    const x = Math.min(w - 1, Math.max(0, Math.round(sx * width - part.x)));
-    const y = Math.min(h - 1, Math.max(0, Math.round(sy * height - part.y)));
-    votes[label[y * w + x]]++;
-  }
-  let own = 0;
-  for (let i = 1; i < pieces; i++) if (votes[i] > votes[own]) own = i;
-  for (let i = 0; i < n; i++) out[i] = label[i] === own ? 1 : 0;
-  return out;
-}
 
 /**
  * The frame of the centreline at a given distance along it: a point, and the

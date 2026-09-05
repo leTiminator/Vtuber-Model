@@ -7,7 +7,7 @@
  * the anchor to the far tip, and resample that walk into a chain of bones. Every
  * pixel then binds to the nearest bone and follows it.
  */
-import { clamp } from '../../core/math.js';
+import { clamp } from '/src/core/math.js';
 
 /**
  * Zhang-Suen thinning: repeatedly peel boundary pixels that can go without

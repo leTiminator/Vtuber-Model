@@ -6,10 +6,8 @@
  * capture with one shared noise filter, installs the page-side helpers under
  * window.__t, and waits for the parts model to be ready.
  *
- * It also snapshots the marker settings the app detected at boot. store.reset()
- * restores generic defaults for those nine keys, which is not the model anyone
- * sees, so every check block goes through __t.resetStore(), which resets and
- * then puts the detected markers back.
+ * Every check block goes through __t.resetStore(), which puts the store back
+ * to its defaults and then applies whatever the block asks for.
  */
 import net from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -24,10 +22,6 @@ export const OUT = join(ROOT, 'test', 'out');
 
 /** Console errors that are MediaPipe or Chromium chatter, not faults. */
 export const NOISE = /favicon|404|^INFO:|XNNPACK delegate|GL Driver Message|OpenGL error checking/i;
-
-/** The settings the cut reads. Re-applied after every reset until the cut is baked. */
-export const MARKER_KEYS = ['warp.headX', 'warp.headY', 'warp.headR', 'warp.pivotX',
-  'warp.pivotY', 'warp.waistY', 'warp.eyeAngle', 'warp.eyeL', 'warp.eyeR'];
 
 /** Physics and framing held still, so a render is a function of the rig alone. */
 export const FROZEN = {
@@ -87,7 +81,6 @@ export function freePort() {
 /** Installed in every page before any script runs. */
 export const PAGE_HELPERS = `
 window.__t = {
-  MARKERS: {},
   app() { return window.__vtuber ?? window.__vtuberOutput; },
   store() { return this.app().store; },
   merge(target, src) {
@@ -163,22 +156,19 @@ window.__t = {
     }
     return count;
   },
-  // Defaults, then the markers the app detected at boot, then anything extra.
+  // Defaults, then anything extra.
   resetStore(extra) {
     const s = this.store();
     s.reset();
-    s.patch(this.MARKERS);
     if (extra) s.patch(extra);
   },
   // A renderer of our own, in a detached div, so the app's animation loop
   // never advances it between evaluate calls.
   async makeAvatar(size = 480) {
     const { Parts2D } = await import('/src/avatars/parts/index.js');
-    const src = this.app().avatars.parts2d;
     const a = new Parts2D();
     a.mount(document.createElement('div'));
-    if (src.headOnImage) a.setHeadOnImage(src.headOnImage);
-    a.setImage(src.image, false);
+    a.setModel(this.app().avatar.model); // the app's decoded PNGs; each renderer uploads its own textures
     a.resize(size, size, 1);
     return a;
   },
@@ -231,13 +221,6 @@ export async function boot({ page = 'index', viewport = { width: 480, height: 48
     await pg.addInitScript(PAGE_HELPERS);
     await pg.goto(which === 'output' ? `${base}output.html` : base, { waitUntil: 'load' });
     if (waitReady) await pg.waitForFunction(READY, null, { timeout: 60000 });
-    if (which === 'index' && waitReady) {
-      const markers = await pg.evaluate((keys) => {
-        const s = window.__vtuber.store;
-        return Object.fromEntries(keys.filter((k) => s.get(k) !== undefined).map((k) => [k, s.get(k)]));
-      }, MARKER_KEYS);
-      await pg.evaluate((m) => { window.__t.MARKERS = m; }, markers);
-    }
     return { page: pg, context };
   };
 

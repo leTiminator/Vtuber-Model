@@ -16,7 +16,7 @@
  * That is deliberate: a rig that works beautifully for one piece of art beats a
  * generic one that works adequately for none.
  */
-import { clamp } from '../../core/math.js';
+import { clamp } from '/src/core/math.js';
 
 const ALPHA_FLOOR = 40;
 

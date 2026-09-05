@@ -5,7 +5,7 @@
  * Eyes lead, because they are the most reliable landmark in character art:
  * small, bright, roughly level. Everything is measured on a downscaled copy.
  */
-import { clamp } from '../../core/math.js';
+import { clamp } from '/src/core/math.js';
 
 const ANALYSIS_WIDTH = 420;
 const ALPHA_FLOOR = 40;

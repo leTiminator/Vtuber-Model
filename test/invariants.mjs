@@ -99,6 +99,12 @@ try {
     const t = window.__t;
     const a = window.__a;
     const { computeFrame } = window.__framing;
+    const art = await new Promise((done, fail) => {
+      const img = new Image();
+      img.onload = () => done(img);
+      img.onerror = () => fail(new Error('artwork did not load'));
+      img.src = '/art/BA_Ninja_TPBG.png';
+    });
     t.resetStore({ ...frozen, 'stage.zoom': 1, 'parts.headOn': 0, 'warp.eyeGlow': 0, 'parts.contactShadow': 0 });
     a.reset();
     t.pose(a, t.app().emptyRig, {}, 60);
@@ -107,7 +113,7 @@ try {
     const ref = document.createElement('canvas');
     ref.width = shot.w; ref.height = shot.h;
     const g = ref.getContext('2d');
-    g.drawImage(a.image, f.ox * shot.w, f.oy * shot.h, f.sx * shot.w, f.sy * shot.h);
+    g.drawImage(art, f.ox * shot.w, f.oy * shot.h, f.sx * shot.w, f.sy * shot.h);
     const r = g.getImageData(0, 0, shot.w, shot.h).data;
     let solid = 0, wrong = 0;
     for (let i = 0; i < r.length; i += 4) {

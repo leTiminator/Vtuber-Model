@@ -310,22 +310,27 @@ install time, so the app has no CDN dependency and works offline.
 ## Tests
 
 ```bash
-npm test             # every suite
-npm run test:rig     # rig maths, headless, no camera needed
-npm run test:parts   # the cut: reassembly, and each part being the right part
-npm run test:motion  # behaviour, motion invariants, and how it looks
-npm run test:replay  # a recorded tracker session, if one has been added
-npm run test:warp    # mesh warp: head motion, blink, background key
+npm test                  # every suite, with a pass/fail table
+npm run test:rig          # rig maths in Node, no browser
+npm run test:cloth        # the scarf's link chain in Node
+npm run test:replay       # the recorded tracker session through the rig, in Node
+npm run test:model        # the baked model: manifest, reassembly, and a fresh bake reproducing it
+npm run test:invariants   # properties any correct renderer has, in Chromium
+npm run test:golden       # the canonical poses against test/golden/*.png
+npm run test:smoke        # the app boots against a fake webcam
+npm run test:output       # the OBS page and the relay
 ```
+
+The model is cut once, offline: `npm run bake` regenerates `public/model/ninja/`
+from the drawings in `public/art/`, and `npm run bake:check` fails if what is
+committed no longer matches a fresh bake.
 
 And to look at a change rather than assert it:
 
 ```bash
-npm run parts      # each cut part laid out separately, margins visible
 npm run puppet     # the model across a row of head poses
 npm run arms       # the arm channels swept, to check the shoulder pivots
 npm run scarf      # the scarf settling, frame by frame
-npm run warp-demo  # drives real artwork through the rig, with a control cell
 ```
 
 `test/rig.mjs` feeds synthetic frames straight into the rig and checks
@@ -333,28 +338,26 @@ mirroring, calibration, clamping, blink behaviour, arm angles and recovery from
 a stalled frame. `test/smoke.mjs` boots the real app in Chromium against a fake
 webcam and checks the whole pipeline comes up.
 
-`test/replay.mjs` drives the rig and the renderer with a **recorded tracker
-session** instead of a synthetic sweep, and skips when none has been added.
-Every other motion check here is a sweep somebody wrote by hand, so each one
-encodes an assumption about what a camera produces — smooth curves, one axis at
-a time, tidy extremes. Real tracking jitters, drops out, and reaches
-combinations no sweep tries.
+`test/replay.mjs` drives the rig with a **recorded tracker session** instead of
+a synthetic sweep. A sweep somebody wrote by hand encodes an assumption about
+what a camera produces — smooth curves, one axis at a time, tidy extremes.
+Real tracking jitters, drops out, and reaches combinations no sweep tries.
 
-To record one: start the camera, then **☰ → Camera & tracking → Record 20
+To record one: start the camera, then **☰ → Camera & tracking → Record 60
 seconds**. Move the way you normally would. It saves `tracker-session.json`;
 put that in `test/fixtures/` and the suite picks it up.
 
 The file holds numbers only — blendshape weights, head angles, body landmark
 coordinates, the same values the rig already works from. No video is captured
-and no image data is written. It is plain JSON, about 400 KB for 20 seconds,
-and you can read it.
+and no image data is written. It is plain JSON, and you can read it.
 
-`test/parts.mjs` is the one that guards the cut. Every part keeps image-space
-coordinates, so stacking them back at their stored positions has to reproduce
-the artwork pixel for pixel — that catches a part growing into its neighbour or
-a margin leaking into open space. It also asserts each part *is* what it claims,
+`test/model.mjs` guards the cut. Every baked part keeps image-space
+coordinates, so stacking the committed PNGs back at their stored positions has
+to reproduce the artwork — that catches a part growing into its neighbour or a
+margin leaking into open space. It also asserts each part *is* what it claims,
 because a cut can reassemble perfectly and still have the helmet in the hair
-layer. That is not hypothetical; it is what the cut used to do.
+layer, and it re-runs the bake to prove the committed files are what the cut
+produces today.
 
 The fake camera shows a test pattern rather than a face, so the smoke test
 proves the pipeline runs — it cannot prove tracking accuracy. That part needs
