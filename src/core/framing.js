@@ -1,23 +1,10 @@
-/**
- * Where the artwork sits in the output, and how big.
- *
- * Offsets are a fraction of the canvas's SHORTER side, not pixels. Pixels were
- * a bug: the same setting framed differently at different window sizes, so a
- * shot composed in a 1280-wide browser came out shifted when OBS rendered it at
- * 1920. A fraction is resolution-independent, and using the shorter side for
- * both axes means a nudge across feels the same size as a nudge down.
- *
- * One module because the renderers, the pointer handling and the fit presets
- * all have to agree; two copies of this maths would drift.
- */
+/** Where the artwork sits in the output, and how big. */
 import { clamp } from './math.js';
 
 export const ZOOM_MIN = 0.15;
 export const ZOOM_MAX = 6;
 
-/**
- * @returns {{sx,sy,ox,oy:number}} scale and offset in 0..1 canvas space
- */
+/** @returns {{sx,sy,ox,oy:number}} scale and offset in 0..1 canvas space */
 export function computeFrame(imageAspect, canvasW, canvasH, zoom, offX, offY) {
   const canvasAspect = canvasW / canvasH;
   let sx = zoom;

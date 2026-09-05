@@ -1,47 +1,11 @@
-/**
- * Puts back what a background key took out of a drawing.
- *
- * Every alternate view of this character arrived with its eyes missing. Not
- * dim, not mis-detected — gone: transparent holes where the shards had been.
- * The renders came out on a white background, that background was keyed away,
- * and the eyes are near-white, so they were keyed away with it. Measured on
- * arrival, the front-facing drawing held two holes of about three hundred
- * pixels each where its shards belong, and the cut could see only the white
- * anti-aliased fringe that survived around them.
- *
- * So the head-on face was never going to load, however the rest of the rig
- * behaved. This repairs the file rather than working around it, which is what
- * the views README promises anyone uploading art here.
- *
- * The rule is about topology, not colour: transparency the outside cannot reach
- * is damage, and damage small enough to be a feature is repaired from its own
- * boundary. Nothing about eyes, or white, is written down — a drawing whose
- * eyes were keyed out in some other colour repairs the same way.
- *
- * Partial transparency counts as damage too, and has to. A key does not cut a
- * clean hole: it thins the edges of what it takes, and it takes speckles out
- * of the middle. Filling only what it removed completely left the shard shot
- * through with grey dots and dashes where the visor showed through pixels the
- * key had left at a third alpha — clearly visible on the rendered face, and
- * invisible to a test counting holes. This is flat cel art on a transparent
- * background: inside the figure every pixel is paint, so anything short of
- * opaque that the background cannot reach is something that was taken out.
- */
+/** Puts back what a background key took out of a drawing. */
 import { clamp } from '/src/core/math.js';
 import { fitBasis, robustRing } from './cut.js';
 
 const CLEAR = 8;  // alpha at or below this has no colour worth keeping
 const SOLID = 250; // alpha at or above this is untouched paint
 
-/**
- * How big a hole may be and still be taken for damage.
- *
- * Enclosed transparency is not always a mistake. The front-facing drawing
- * loops its scarf over itself and encloses 12,997 pixels of genuine background
- * — paint that in and the scarf becomes a solid red slab. The eye holes across
- * every uploaded view are at most about 1,300 pixels, so an order of magnitude
- * sits between the two and the cut-off is not a fine judgement.
- */
+/** How big a hole may be and still be taken for damage. */
 const MAX_HOLE = 4000;
 
 /**
@@ -62,13 +26,7 @@ export function repairKeyedHoles(image, maxHole = MAX_HOLE) {
   const d = img.data;
   const n = w * h;
 
-  /* What the outside can reach, flooding through anything not fully opaque.
-   *
-   * That includes the drawing's own anti-aliased rim, which is exactly right:
-   * the rim borders the background, so the flood runs along it and stops at
-   * the first solid pixel. Nothing soft on the outline is touched, and
-   * everything soft that the background cannot get to is damage.
-   */
+  /* What the outside can reach, flooding through anything not fully opaque. */
   const outer = new Uint8Array(n);
   const queue = new Int32Array(n);
   let head = 0;

@@ -1,10 +1,6 @@
 /**
  * Cuts the character into parts and describes every one of them, in the
  * browser, for scripts/bake-model.mjs to write out as public/model/ninja/.
- *
- * The runtime renders what this produces and never cuts. Everything here is
- * deterministic in its inputs: the two drawings, the marker detector and the
- * cut, with no clock, randomness or settings read.
  */
 import { cutParts } from './cut.js';
 import { repairKeyedHoles } from './repair.js';

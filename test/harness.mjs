@@ -1,14 +1,4 @@
-/**
- * The one way every browser suite and visual script boots the app.
- *
- * boot() starts Vite on a free port (strictPort, so a leaked server cannot
- * serve a suite stale code), launches Chromium on software GL, wires error
- * capture with one shared noise filter, installs the page-side helpers under
- * window.__t, and waits for the parts model to be ready.
- *
- * Every check block goes through __t.resetStore(), which puts the store back
- * to its defaults and then applies whatever the block asks for.
- */
+/** The one way every browser suite and visual script boots the app. */
 import net from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

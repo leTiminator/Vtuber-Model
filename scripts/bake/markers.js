@@ -1,9 +1,6 @@
 /**
  * Finds the markers the cut needs in a piece of artwork: where the head is,
  * where the neck pivots, where the eyes are and how they tilt.
- *
- * Eyes lead, because they are the most reliable landmark in character art:
- * small, bright, roughly level. Everything is measured on a downscaled copy.
  */
 import { clamp } from '/src/core/math.js';
 

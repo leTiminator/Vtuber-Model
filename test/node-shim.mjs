@@ -1,7 +1,4 @@
-/**
- * A localStorage for Node, so the settings store can be imported by the
- * suites that never open a browser. Import this before src/core/store.js.
- */
+/** A localStorage for Node, so suites without a browser can import the store. Import it first. */
 const store = new Map();
 globalThis.localStorage = {
   getItem: (k) => (store.has(k) ? store.get(k) : null),

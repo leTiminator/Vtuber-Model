@@ -1,8 +1,6 @@
 /**
  * Unit tests for the rig's signal handling. These run headless, with no
  * camera and no browser, by feeding synthetic tracker frames straight in.
- *
- *   node test/rig.mjs
  */
 import './node-shim.mjs';
 
@@ -79,16 +77,7 @@ const run = (rig, n, f, tracked = true) => {
   check('mirroring flips head yaw', state.head.yaw < -0.1, `yaw ${state.head.yaw.toFixed(3)}`);
 }
 
-/* --- calibration zeroes a resting offset, within reason ------------------
- *
- * It used to be handed seventeen degrees of yaw and expected to swallow all of
- * it. That is not a resting pose — measured on a real session, a head at a
- * desk rests within a degree or two of square — and swallowing it whole is
- * what let one bad capture leave the model permanently turned past its own
- * flip. A baseline is bounded per axis now, so this asks for a pose somebody
- * could actually be sitting in: a little off square, and well down, because
- * that is where the screen is.
- */
+/* --- calibration zeroes a resting offset, within reason ------------------ */
 {
   settings.reset();
   const rig = new Rig();
@@ -431,19 +420,6 @@ const runPose = (rig, n, f, has = true) => {
  * This is the one thing a headless run cannot check by pointing a camera at a
  * person, and it is the easiest thing in the whole rig to get backwards. It is
  * decidable in code, though, because every step is known:
- *
- *   - A camera faces you, so your physical RIGHT hand lands on the LEFT of the
- *     raw image: a small x. MediaPipe labels that same hand `wristR` (16).
- *   - "Mirror me" means the avatar behaves like a reflection, and a reflection
- *     raises the hand on the same side of the image as the hand you raised.
- *     Raise your right hand at a mirror and the hand that goes up is on your
- *     right as you look at it.
- *   - So a raised wrist at small x must end up on the RIGHT of the screen.
- *
- * The renderer drives the screen-right arm (`armRight`, at x 0.87 in the
- * artwork) from `rig.arms.left`, because after mirroring `left` means the
- * character's own left — and a character facing you wears its left on your
- * right. So the assertion is: small x raised => arms.left.raise goes positive.
  */
 {
   const raisedOnRawLeft = {
@@ -519,22 +495,7 @@ const runPose = (rig, n, f, has = true) => {
     `yaw ${state.head.yaw.toFixed(3)} pitch ${state.head.pitch.toFixed(3)}`);
 }
 
-/* --- an off-axis camera is a normal setup, not a bad capture --------------
- *
- * This check used to say the opposite, and was wrong. It was written off one
- * recorded session that sat square to its lens — resting yaw a degree and a
- * third — which made any large baseline look like a capture taken mid-glance,
- * and it asserted that a thirty-one degree one must be thrown away.
- *
- * A second session, at the camera position its owner actually uses, rests at
- * twenty-six degrees round: the lens is beside the screen, so looking at the
- * screen is looking that far off it. Throwing that away leaves twenty-one
- * degrees of it standing and parks the model permanently past its own flip —
- * the very fault the clamp was added to prevent, caused by the clamp.
- *
- * What separates a resting pose from a glance is not how far round it is. It
- * is whether it holds still, which a glance cannot.
- */
+/* --- an off-axis camera is a normal setup, not a bad capture -------------- */
 {
   settings.reset();
   const offAxis = new Rig();

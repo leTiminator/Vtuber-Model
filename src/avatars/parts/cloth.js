@@ -1,13 +1,4 @@
-/**
- * The scarf's motion: a chain of rigid links, and the head inertia that
- * drives it.
- *
- * The ribbon is skinned to LinkChain's nodes. Every link keeps the length it
- * was drawn at; what moves is the angle at each joint, pulled back toward the
- * drawn direction by a spring and driven by the head's acceleration and a
- * little wind, heavier toward the tip. HeadInertia turns the head's position
- * into that acceleration.
- */
+/** The scarf's motion: a chain of rigid links, and the head inertia that drives it. */
 import { clamp } from '../../core/math.js';
 
 const FIXED_DT = 1 / 120;
@@ -65,28 +56,7 @@ export class HeadInertia {
   }
 }
 
-/**
- * A chain of rigid links: it bends, and it does not stretch.
- *
- * A displacement field knows nothing about length. Every node carries its own
- * displacement from the drawing and neighbours are tied by springs, so two
- * neighbours pulled apart simply are apart, and whatever cloth is skinned
- * between them is stretched by exactly that much. The only defence was a cap
- * on how far they may differ, which is the same fault with a ceiling on it.
- *
- * Here the nodes are positions, and after every step the drawn distance from
- * each node to the one before it is put back exactly, working outward from
- * the root. What is left free is the angle at each joint, which is the one
- * thing a chain has. A spring at every joint pulls the link back toward the
- * direction it was drawn at — relative to the world, not to its parent, so
- * the ribbon settles onto the artwork rather than onto a plumb line — a
- * weaker pull toward the drawn position keeps a long chain from wandering,
- * and the head's inertia and the wind drive it, heavier toward the tip.
- *
- * The first nodes are not simulated at all. They are placed by a transform:
- * the piece of cloth this ribbon grows out of. So the seam there is exact
- * whatever the chain is doing, and the lag begins at the first free joint.
- */
+/** A chain of rigid links: it bends, and it does not stretch. */
 export class LinkChain {
   /**
    * @param {object} opts
@@ -250,14 +220,6 @@ export class LinkChain {
 
     /* Every node reads the positions from before this step, so the coupling
      * is symmetric, and every joint pulls BOTH its nodes.
-     *
-     * The first version pulled each node toward where its parent's link said
-     * it should be, and nothing else — a follower chain, and the same runaway
-     * a displacement field has: each stage is underdamped, each overshoots the
-     * one before by half again, and fourteen stages of that put the tip a
-     * thousand pixels from the drawing and kept it there. A joint that pulls
-     * the parent back as hard as it pulls the child forward is conservative,
-     * so a wave travels down the ribbon and is spent, rather than grown.
      */
     for (let i = p; i < n; i++) {
       const t = i / (n - 1);
@@ -283,21 +245,7 @@ export class LinkChain {
       oy[i] = (py[i] - qy[i]) * keep + ay * h * h;
     }
 
-    /* Friction between neighbours, and a ceiling on how far any node may go
-     * in one step.
-     *
-     * Both exist for the root being yanked rather than moved — the mirror
-     * swaps the head forty pixels in a single frame, and the ribbon's root
-     * goes with it. A rigid link whose root jumps most of its own length
-     * swings its far end through nearly a right angle in that one step, and
-     * the velocity that implies is carried on by the integrator: measured, a
-     * nineteen-pixel jump put the tip six hundred pixels out, and it never
-     * came back, because a link that has folded right over sits against the
-     * bend limit on the wrong side. Rubbing neighbours together spends that
-     * energy where it is made; the ceiling keeps any one step from folding a
-     * link over in the first place. Neither touches ordinary motion, which is
-     * two orders of magnitude slower.
-     */
+    /* Friction between neighbours, and a ceiling on how far any node may go in one step. */
     const rub = clamp(this.friction * h, 0, 1) * 0.5;
     for (let i = p + 1; i < n; i++) {
       const dvx = (ox[i] - ox[i - 1]) * rub;
@@ -311,15 +259,7 @@ export class LinkChain {
       if (went > most) { ox[i] *= most / went; oy[i] *= most / went; }
       qx[i] = px[i]; qy[i] = py[i];
       px[i] += ox[i]; py[i] += oy[i];
-      /* And a ceiling on how far any node may leave the drawing.
-       *
-       * The joints' springs are one slider, and at its slackest with the
-       * drive at its strongest the ribbon would otherwise swing the width of
-       * the canvas — measured, it left the frame within a third of a second
-       * of idle wind. This is a backstop for the extremes of the panel, not
-       * something ordinary motion reaches; tightening afterwards keeps the
-       * links their drawn length under it.
-       */
+      /* And a ceiling on how far any node may leave the drawing. */
       const ex = px[i] - (rx[i] + dax);
       const ey = py[i] - (ry[i] + day);
       const far = Math.hypot(ex, ey);
@@ -332,17 +272,7 @@ export class LinkChain {
     this.tighten();
   }
 
-  /**
-   * Ease any joint folded too far past its drawn angle back toward it.
-   *
-   * A ribbon skinned to a chain has a width, and where two links fold right
-   * over on each other its two edges cross and the cloth pinches to nothing
-   * — measured at the panel's extremes as the character in two pieces, with
-   * the fold plainly visible in the saved frame. A hard stop on the angle was
-   * the first answer and jammed (see tighten). This is soft: a joint past the
-   * limit is turned part of the way back each step, so a spiral cannot lock
-   * itself against the stops, and the joints' own springs finish the job.
-   */
+  /** Ease any joint folded too far past its drawn angle back toward it. */
   unfold() {
     const n = this.nodes;
     const p = this.pinned;
@@ -363,24 +293,7 @@ export class LinkChain {
     }
   }
 
-  /**
-   * Put every link back to its drawn length, root outward.
-   *
-   * Root outward and one-sided: the root is held by something heavier than
-   * the ribbon, so it never gives. Two passes settle a chain this short well
-   * within a pixel, and the velocity implied by the moved positions is
-   * corrected for free, which is what makes a position-based chain stable
-   * where a clamped spring chain railed against its own limit.
-   *
-   * Length is the only thing enforced here. A hard limit on the angle at each
-   * joint was tried alongside it and taken out: once a yank had folded the
-   * ribbon into a spiral with every joint against its stop, unfolding any one
-   * joint refolded the next, so the stops made the whole tail one rigid body
-   * and it hung there, balanced, for good. The joints' own springs have a
-   * single resting shape — the drawing — and a soft pull toward it cannot be
-   * jammed the way a stop can; the fold limit in unfold() is soft for the
-   * same reason.
-   */
+  /** Put every link back to its drawn length, root outward. */
   tighten() {
     const n = this.nodes;
     const p = this.pinned;

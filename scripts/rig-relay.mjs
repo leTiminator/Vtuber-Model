@@ -1,21 +1,4 @@
-/**
- * Passes tracking from the window with the camera to the window OBS opens.
- *
- * A Vite plugin rather than a second server, because there is already a server
- * running and asking somebody to keep two terminals open to stream is a way to
- * have them keep one. It attaches to the same port, so the OBS side is the same
- * address with a different page on it.
- *
- * Deliberately almost nothing: it forwards the tracker's messages to whoever
- * is listening and tells the tracker how many that is, so it can stop sending
- * when nobody is.
- *
- * It keeps the last settings message and the last rig state. Without them an
- * output that connects second — which is every time OBS is opened after the
- * tracker — would sit on stock defaults in the rest pose until the tracker
- * happened to send again, and the shot you framed would not be the shot going
- * out.
- */
+/** Passes tracking from the window with the camera to the window OBS opens. */
 import { WebSocketServer } from 'ws';
 
 const PATH = '/__rig';

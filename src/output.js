@@ -1,23 +1,4 @@
-/**
- * The page OBS opens: the model, and nothing else.
- *
- * It has no camera, no controls and no tracking model. It is driven entirely
- * by the ordinary browser tab, which keeps the camera permission it already
- * has and a runtime current enough to run the tracker properly. See
- * core/rigLink.js for why the work is divided that way rather than pointing
- * OBS at the whole app.
- *
- * Two rules follow from what this page is, and both matter more than they
- * look:
- *
- *   - **It never draws anything but the model.** No status, no error text, no
- *     self-check. There is no corner of this page that is not on stream. What
- *     went wrong is reported on the other page, where somebody can read it.
- *   - **It never saves a setting.** OBS's browser keeps its own storage, so a
- *     snapshot written here would be read back on the next launch and win
- *     until the first message arrived — showing a shot nobody framed for a
- *     second or two at the top of every stream.
- */
+/** The page OBS opens: the model, and nothing else. */
 import * as store from './core/store.js';
 import { applyBackground, fitToWindow } from './core/stage.js';
 import { openRigLink } from './core/rigLink.js';
@@ -59,14 +40,7 @@ store.subscribe((key) => {
   }
 });
 
-/* What the tracker last said, held rather than consumed.
- *
- * Frames arrive at whatever rate the other tab is running at and this page
- * draws at its own, so the two do not line up — and when they stop arriving
- * altogether, because the tab was minimised or the server restarted, the last
- * pose is the right thing to keep showing. Falling back to neutral would put a
- * lurch on stream every time the link hiccupped.
- */
+/* What the tracker last said, held rather than consumed. */
 // The last solved rig the tracker sent. Held as-is when messages stop, so
 // a stalled tracker leaves the model where it was rather than snapping back.
 let latest = null;

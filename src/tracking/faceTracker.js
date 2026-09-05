@@ -1,10 +1,4 @@
-/**
- * Webcam capture + MediaPipe FaceLandmarker.
- *
- * Emits a raw frame object per detection: 52 ARKit-style blendshape scores,
- * plus head rotation and position decoded from the facial transformation
- * matrix. Everything downstream reads that object and never touches MediaPipe.
- */
+/** Webcam capture + MediaPipe FaceLandmarker. */
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { clamp, eulerFromMatrix, translationFromMatrix } from '../core/math.js';
 import * as store from '../core/store.js';
@@ -56,23 +50,7 @@ export class FaceTracker {
           numFaces: 1,
           outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
-          /* Hard to find, easy to keep.
-           *
-           * Measured on a recorded session at the camera position its owner
-           * actually uses: the face was there for seventy-one per cent of a
-           * minute, and the gaps were not flickers — twenty-eight of them, the
-           * longest a second and a half. Losing the lock for that long is the
-           * model freezing and then drifting back to its rest pose, over and
-           * over, which is far more visible than a slightly noisy landmark.
-           *
-           * The reason it is hard here is the geometry, not the distance: a
-           * lens off to one side of the screen and a head looking down at the
-           * screen is a compound angle of about thirty-five degrees, and that
-           * is where a face detector gets least confident.
-           *
-           * So finding a face still takes real evidence, and keeping one takes
-           * much less. The failure that costs is the second kind.
-           */
+          /* Hard to find, easy to keep. */
           minFaceDetectionConfidence: 0.5,
           minFacePresenceConfidence: 0.3,
           minTrackingConfidence: 0.3,
@@ -92,15 +70,7 @@ export class FaceTracker {
     return devices.filter((d) => d.kind === 'videoinput');
   }
 
-  /**
-   * Open the camera, relaxing the constraints until something works.
-   *
-   * Every resolution and frame-rate hint here is `ideal`, never `min`: a hard
-   * minimum makes getUserMedia throw OverconstrainedError outright on cameras
-   * that cannot promise it, which plenty cannot in dim light. Better a lower
-   * frame rate than no camera at all. A device the user explicitly picked
-   * stays `exact` throughout, so we never silently open the wrong camera.
-   */
+  /** Open the camera, relaxing the constraints until something works. */
   async openStream(deviceId) {
     // Without a chosen device, prefer the front camera: a phone would
     // otherwise open the rear one and track whatever the desk is facing.
@@ -178,21 +148,7 @@ export class FaceTracker {
     if (ts <= this.lastTimestamp) ts = this.lastTimestamp + 1;
     this.lastTimestamp = ts;
 
-    /* Give the model a close-up, not the whole room.
-     *
-     * MediaPipe finds a face by looking over a downscaled copy of whatever it
-     * is handed. Sitting back from the camera, a face is a small patch of a
-     * wide frame, so what the detector actually gets to work with is a face a
-     * few dozen pixels across — and everything downstream, the blendshapes
-     * especially, is only as good as that. It reads as a model that will not
-     * quite track, and no amount of tuning at this end fixes it, because the
-     * information was thrown away before the tuning.
-     *
-     * So the frame is cropped to a box around the face and the crop is handed
-     * over instead. The box comes from where the face was last seen, padded
-     * and eased, and it opens out to the whole frame whenever the face is lost
-     * so it can be found again.
-     */
+    /* Give the model a close-up, not the whole room. */
     const source = this.zoomed(now) ?? this.video;
 
     let result;
@@ -248,13 +204,7 @@ export class FaceTracker {
     this.loop();
   };
 
-  /**
-   * The cropped frame to hand the model, or null for the whole thing.
-   *
-   * Drawn into a canvas the size of the crop rather than a fixed one, so no
-   * resampling happens beyond what the crop itself is: the pixels the model
-   * sees are the camera's own.
-   */
+  /** The cropped frame to hand the model, or null for the whole thing. */
   zoomed() {
     const mode = store.get('camera.faceZoom');
     if (mode === 'off' || !this.crop) return null;
@@ -312,11 +262,7 @@ export class FaceTracker {
     want.x = Math.min(want.x, 1 - want.w);
     want.y = Math.min(want.y, 1 - want.h);
 
-    /* Eased, and never faster than the face moves.
-     *
-     * A crop that snaps is worse than no crop: the model sees a different
-     * framing every frame and the landmarks jitter against it, which is read
-     * downstream as the head shaking. */
+    /* Eased, and never faster than the face moves. */
     const k = this.crop ? 1 - Math.exp(-6 * Math.max((now - (this.cropAt ?? now)) / 1000, 0)) : 1;
     this.cropAt = now;
     this.crop = this.crop ? {
@@ -327,21 +273,7 @@ export class FaceTracker {
     } : want;
   }
 
-  /**
-   * Put the head's position back into the whole frame's terms.
-   *
-   * Without this, zooming would quietly switch off leaning altogether: the
-   * crop follows the face, so inside it the face is always in the middle, and
-   * a head that is always in the middle has not moved. The model would sit
-   * dead centre however far you leaned.
-   *
-   * Two corrections. Cropping to a fraction of the width makes the model
-   * believe in a longer lens, which scales what it reports; and the crop's own
-   * offset from the middle of the frame is displacement the model can no
-   * longer see. The second needs centimetres per unit of frame, which is depth
-   * times the lens's half-angle — a webcam is around fifty degrees, so half a
-   * unit of frame is about half the distance to the face.
-   */
+  /** Put the head's position back into the whole frame's terms. */
   uncrop(position, c = this.crop) {
     if (!c) return position;
     const depth = Math.abs(position.z) || 45;

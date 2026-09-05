@@ -1,14 +1,6 @@
 /**
  * Turns raw tracker frames into RigState: the normalised pose every avatar
  * backend renders from. Nothing below this file knows what MediaPipe is.
- *
- * Responsibilities, in order:
- *   1. mirror the signal so the avatar reads as your reflection
- *   2. subtract a calibrated neutral pose
- *   3. apply per-channel gain and shaping curves
- *   4. One Euro filter everything
- *   5. add the motion you never perform yourself — breathing, sway, blinks,
- *      and body follow-through
  */
 import { FilterBank } from '../core/oneEuro.js';
 /* How much further a wrist travels than an elbow on a raised arm, for reading
@@ -72,35 +64,10 @@ export function emptyRig() {
   };
 }
 
-/**
- * What a head can plausibly be resting at, per axis.
- *
- * These were five, twenty-five and ten degrees, off one recorded session that
- * happened to sit square to its camera — yaw median one and a third degrees,
- * so seemingly nothing to correct there and a bad capture the only way to get
- * a large one. A second session, taken at the camera position its owner
- * actually uses, has a resting yaw of twenty-six degrees: the lens is off to
- * one side of the screen, so looking at the screen genuinely is looking that
- * far from the camera. Extremely common, and the tight bound left twenty-one
- * degrees of it uncorrected — parking the model permanently past its own flip,
- * which is the fault the bound was added to prevent.
- *
- * So the bound cannot be what tells a resting pose from a glance. It is only
- * a backstop against a figure no camera placement explains, and the work of
- * telling the two apart belongs to the evidence: a pose has to hold still for
- * a stretch before it is believed. Nobody has to sit square to the lens.
- */
+/** What a head can plausibly be resting at, per axis. */
 const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
 
-/**
- * The saved rest pose, or null. Anything malformed is treated as none.
- *
- * Bounded on the way in as well as on the way out. A neutral saved before
- * these limits existed is still in the browser that saved it and outlives any
- * change to how one is captured — and a thirty-one degree yaw in there leaves
- * the model sitting permanently turned past its own flip, which reads as the
- * model being broken rather than the setup being wrong.
- */
+/** The saved rest pose, or null. Anything malformed is treated as none. */
 function readNeutral() {
   try {
     const raw = store.get('camera.neutral');
@@ -146,9 +113,7 @@ export class Rig {
 
     store.subscribe((key) => {
       if (key.startsWith('smooth.') || key === 'arms.smooth') this.applySmoothing();
-      // The OBS page builds its rig against an empty store and is told the
-      // settings afterwards. Without this it drew with no neutral for as long
-      // as the tracker page had one, and the two heads did not match.
+      // A neutral that arrives as a setting, from an import, is adopted.
       if (key === 'camera.neutral') this.neutral = readNeutral();
     });
     this.applySmoothing();
@@ -171,18 +136,6 @@ export class Rig {
   /**
    * Capture the resting pose.
    *
-   * Everything the head does is measured against this, so getting it wrong
-   * does not degrade the model gracefully — it parks it permanently in the
-   * worst part of its range. A neutral thirty degrees off means sitting
-   * straight reads as a hard turn: the head stays flipped, and the head-on
-   * face, which only shows within ten degrees of centre, is never reached at
-   * all. That is not hypothetical; it is what a session looked like.
-   *
-   * It used to take twelve frames — four tenths of a second — the instant the
-   * camera started, and average them. Nobody is looking at the lens four
-   * tenths of a second after clicking a button; they are looking at the
-   * button. So it waited, and now it also refuses.
-   *
    * @param {boolean} auto  Fired by the camera starting rather than by a
    *   person asking. An automatic capture has to earn its neutral: it waits,
    *   wants the head reasonably still and reasonably square, and gives up
@@ -203,13 +156,9 @@ export class Rig {
       // A second and a half at thirty frames, so a blink or a glance is a
       // minority of it rather than all of it.
       needed: 45,
-      /* Nothing is sampled until this. A second and a half for an automatic
-       * capture, so the camera has settled. Three seconds for a requested one,
-       * so whoever pressed the button can look where they mean to look rather
-       * than at the button: measured live, a neutral set from the button read
-       * thirty-eight degrees from the camera, because the button is on the
-       * screen and the camera was not.
-       */
+      // Nothing is sampled until this: a second and a half for an automatic
+      // capture, so the camera has settled; three seconds for a requested one,
+      // so whoever pressed the button can look where they mean to look.
       armAt: this.clock + (auto ? 1.5 : 3),
       auto,
       deadline: this.clock + (auto ? 12 : 0),
@@ -233,10 +182,6 @@ export class Rig {
   /**
    * Fold in upper-body landmarks. Kept separate from the face update because
    * pose runs on a stride and can be switched off entirely.
-   *
-   * Angles are measured against the torso's own axis — shoulders to hips — so
-   * they mean the same thing whether you are sitting straight or leaning.
-   * Measuring against the screen would turn a lean into a raised arm.
    */
   updatePose(frame, hasPose, dt) {
     const arms = this.state.arms;
@@ -294,27 +239,7 @@ export class Rig {
       return Math.atan2(cross, dot);
     };
 
-    /* The body, from the shoulders — not from the head.
-     *
-     * Until now `body.leanX/leanY/twist` were the head's own angles scaled
-     * down, so the body could only ever be a smaller copy of wherever the head
-     * was pointing. It could not sit square while the head looked away, or sit
-     * turned while the head came back to the camera, because it had nothing of
-     * its own to be turned by. The pose model has returned both shoulders on
-     * every stride the whole time; nothing read them.
-     *
-     * Three numbers, each from what a shoulder line actually does:
-     *
-     *  - **turn** from foreshortening. Face on, the shoulders are their full
-     *    width apart; turn, and they close up. Signed by which one is nearer
-     *    the camera, which the landmarks' own depth says.
-     *  - **lean** from where the middle of that line sits across the frame.
-     *  - **rise** from where it sits up and down — leaning in and out.
-     *
-     * All three are measured against a shoulder line captured at rest, for the
-     * same reason the head is: a camera off to one side, or shoulders that are
-     * not level, is a pose to measure from rather than one to correct.
-     */
+    /* The body, from the shoulders — not from the head. */
     const width = Math.hypot(shoulderL.x - shoulderR.x, shoulderL.y - shoulderR.y);
     const depth = (shoulderL.z ?? 0) - (shoulderR.z ?? 0);
     const torsoNow = {
@@ -324,14 +249,8 @@ export class Rig {
       rise: shoulders.y - 0.5,
       depth,
     };
-    /* Foreshortening is measured against the shoulder width captured with the
-     * rest pose, not the widest ever seen. The widest-ever was a ratchet: lean
-     * toward the camera once and the shoulders read wider than they ever will
-     * sitting back, so every pose after it read as turned. Measured live, the
-     * body held at a quarter turn for a whole session with its owner sitting
-     * square. Against the rest width, sitting square is square, and leaning
-     * in reads as nothing rather than as "even more square than square".
-     */
+    // Foreshortening against the shoulder width captured with the rest pose, so
+    // sitting square is square and leaning in reads as nothing.
     const restWidth = this.torsoNeutral?.width ?? width;
     if (restWidth > 0.02) {
       // cos of the turn, near enough, and the sign from which shoulder is nearer.
@@ -373,20 +292,7 @@ export class Rig {
       const upper = this.arms.filter(
         `${key}Upper`, clamp(signedAngle(axisX, axisY, ux, uy) * flip, -Math.PI, Math.PI), dt);
 
-      /* The wrist is the joint most often out of the picture.
-       *
-       * Measured on a real minute at a desk: one wrist absent in every frame,
-       * the other present in six per cent of them, the elbows below the
-       * bottom edge more than half the time. A missing wrist used to read as a
-       * wrist at zero — a measurement, not an absence — so an arm whose hand
-       * drifted out of frame jumped to wherever "zero minus the rest pose"
-       * put it, and an arm whose hand drifted back in jumped again. That is
-       * the twitch that was reported as arm tracking not working.
-       *
-       * What is not seen is not measured. The forearm angle and the wrist's
-       * height are null without a wrist; how high the elbow sits is always
-       * there, and says most of the same thing about a raised arm.
-       */
+      /* The wrist is the joint most often out of the picture. */
       let fore = null;
       let raise = null;
       if (wrist) {
@@ -404,14 +310,9 @@ export class Rig {
 
       measured[key] = { upper, fore, raise, lift };
 
-      // Everything downstream wants a *change* from how you normally sit, not
-      // an absolute angle: the artwork already has arms drawn somewhere, and
-      // the rig rotates them away from there. Without this, resting hands on
-      // the keyboard would hold the drawn arms permanently bent.
-      //
-      // Each quantity has its own rest, adopted the first time it is actually
-      // measured — a rest pose captured with the hands out of frame has no
-      // opinion about where the wrists sit until it has seen them.
+      // Everything downstream wants a change from how you normally sit, not an
+      // absolute angle. Each quantity has its own rest, adopted the first time
+      // it is measured.
       const rest = this.armNeutral?.[key];
       if (rest) {
         if (rest.fore == null && fore != null) rest.fore = fore;
@@ -473,24 +374,7 @@ export class Rig {
       const before = { ...s.head };
       this.applyTracked(shapes, head, pos, dt);
 
-      /* Limit how fast the head is allowed to move.
-       *
-       * A head has a top speed; a tracker does not. Recorded from a real
-       * session: the face was found at yaw -0.29, lost for a single frame,
-       * then found again at +1.14 — eighty-two degrees in a tenth of a second,
-       * and back again shortly after. It was a bad estimate on reacquisition,
-       * not a movement, but nothing downstream could tell the difference.
-       *
-       * The One Euro filter makes this worse rather than better: a large
-       * derivative is precisely what widens its cutoff, so the jump passes
-       * through almost untouched. That is the right behaviour for real fast
-       * motion and the wrong one for a glitch, and the filter cannot
-       * distinguish them.
-       *
-       * A speed cap can. It is set well above a brisk human head turn, so it
-       * costs nothing on real movement, and it turns a teleport into a short
-       * lean that unwinds as soon as good frames resume.
-       */
+      /* Limit how fast the head is allowed to move. */
       // Tighter while easing back in, because that is when a bad estimate is
       // most likely and when there is no recent history to judge it against.
       const trust = 0.25 + 0.75 * this.reacquire * this.reacquire;
@@ -523,11 +407,7 @@ export class Rig {
     cal.samples.push({ ...head, px: pos.x, py: pos.y, pz: pos.z });
     if (cal.samples.length < cal.needed) return;
 
-    /* The middle sample, not the average of them.
-     *
-     * An average is moved by anything that happens during the window; a median
-     * is not moved by a glance away unless the glance is most of the window.
-     */
+    /* The middle sample, not the average of them. */
     const mid = (k) => {
       const v = cal.samples.map((s) => s[k]).sort((a, b) => a - b);
       return v[v.length >> 1];
@@ -537,49 +417,20 @@ export class Rig {
       return Math.max(...v) - Math.min(...v);
     };
 
-    /* Steadiness is what separates a resting pose from a glance.
-     *
-     * Not how far round it is — a camera beside the screen puts a perfectly
-     * ordinary working pose twenty-six degrees off the lens, and refusing that
-     * is refusing the pose somebody actually sits in. What a glance cannot do
-     * is hold still, so that is the thing worth waiting for.
-     */
+    /* Steadiness is what separates a resting pose from a glance. */
     const STILL = 12 * DEG;
     const steady = spread('yaw') < STILL && spread('pitch') < STILL;
     if (cal.auto && !steady) {
       cal.samples = [];
       if (this.clock < cal.deadline) return;
-      /* Past the deadline it gives up, as promised above. It used to save the
-       * median of whatever it had at that point — a head that never held
-       * still — and that guess then stood as "forward" for the whole session,
-       * with no warning, because a guess inside the per-axis bounds looks
-       * exactly like a pose. Nothing is better than a guess here: with no
-       * neutral the model follows the camera's own frame, and the readout
-       * says what to do.
-       */
+      // Past the deadline it gives up: with no neutral the model follows the
+      // camera's own frame, and the readout says what to do.
       this.pendingCalibration = null;
       this.neutralWarning = 'no steady pose found to set as neutral — press C sitting the way you stream';
       return;
     }
 
-    /* Bounded to what a resting head can actually be, one axis at a time.
-     *
-     * Measured on a real session rather than assumed. Sitting at a desk, yaw
-     * comes out at a median of one and a third degrees — the tracker reads
-     * square when you are square, and there is nothing there to correct. Pitch
-     * does not: the median is seventeen degrees down, because that is where
-     * the screen is. Roll is half a degree.
-     *
-     * So a captured neutral is worth almost nothing on yaw and a great deal on
-     * pitch, and the failure that was actually reported — a neutral thirty-one
-     * degrees round, taken while the person was looking away, leaving the model
-     * permanently turned past its own flip — is a capture writing over a signal
-     * that was already right.
-     *
-     * Bounding each axis by what that axis plausibly rests at makes a bad
-     * capture harmless instead of ruinous, which is better than demanding a
-     * careful one. Nobody should have to hold still to be looked at.
-     */
+    /* Bounded to what a resting head can actually be, one axis at a time. */
     const held = (k) => clamp(mid(k), -REST_LIMIT[k], REST_LIMIT[k]);
     const raw = { yaw: mid('yaw'), pitch: mid('pitch'), roll: mid('roll') };
 
@@ -604,19 +455,7 @@ export class Rig {
 
     // --- head ----------------------------------------------------------
     const yaw = (head.yaw - (n?.yaw ?? 0)) * g('head.yawGain');
-    /* The tracker's pitch runs the opposite way to this rig's.
-     *
-     * Measured, finally, the only way that settles it: two photographs of the
-     * running app, one looking up and one looking down, with the head found by
-     * connected components rather than by a colour guess. Looking down put the
-     * head seventy-seven pixels HIGHER on screen than looking up. Every check
-     * I could run here said the sign was right, which only means none of them
-     * were testing the thing the person in front of the camera could see.
-     *
-     * Corrected here, in code, rather than by changing the default of a
-     * setting — a browser that has already saved a setting keeps its value
-     * forever, so a changed default reaches nobody who has run the app.
-     */
+    /* The tracker's pitch runs the opposite way to this rig's. */
     const PITCH_SIGN = -1;
     // Inverted here rather than at the renderer, so everything downstream —
     // the cloth's idea of where the head went, the hair's lag — agrees with
@@ -637,24 +476,7 @@ export class Rig {
     s.head.y = this.pose.filter('py', clamp(((pos.y - (n?.y ?? 0)) / 14) * pg, -1.5, 1.5), dt);
     s.head.z = this.pose.filter('pz', clamp(((pos.z - (n?.z ?? -45)) / 30) * pg, -1.5, 1.5), dt);
 
-    /* --- eyes ------------------------------------------------------------
-     *
-     * The lid follows the eye, and the tracker cannot tell the difference.
-     *
-     * Look down with your eyes wide open and the upper lid comes down with
-     * your gaze, covering the iris exactly as the start of a blink does — and
-     * the blink weight rises accordingly. Measured on a recorded session: the
-     * blink signal correlates +0.79 with the eyes looking down, climbing from
-     * 0.15 to 0.64 as the gaze drops, and every one of the twelve highest
-     * "blink" frames in that session is a wide-open eye looking down at
-     * something. It shut the model's eyes in 105 frames out of 247 — nearly
-     * half the time — with nobody blinking at all.
-     *
-     * So the part of the lid that the gaze accounts for is not a blink, and is
-     * taken back out. A real blink survives it: the strongest genuine one in
-     * that session still clears the shut threshold with room to spare, because
-     * a blink closes the lid much further than looking down ever does.
-     */
+    /* --- eyes ------------------------------------------------------------ */
     const lidFromGaze = (sh('eyeLookDownLeft') + sh('eyeLookDownRight')) / 2
       * clamp(g('eyes.gazeLid'), 0, 1);
     const deLid = (v) => Math.max(0, v - lidFromGaze);
@@ -717,20 +539,7 @@ export class Rig {
     const s = this.state;
     const rate = 2.2;
 
-    /* Hold the head where it was, before easing it back to neutral.
-     *
-     * Losing the face usually means the face went somewhere, not that the
-     * person left. Recorded from a real session — someone in a cap, whose brim
-     * hides their face whenever they look down — nine of eleven dropouts began
-     * from a downward pitch, and four of them lasted over a second. Decaying
-     * straight to neutral means the model looks *up* the moment they look
-     * down, then snaps back when tracking returns: the opposite of what they
-     * did, twice, every time they glance at the keyboard.
-     *
-     * So the pose is held while the absence is short, then let go gradually if
-     * it is not. Expressions are not held — a smile frozen on an empty chair
-     * is worse than a neutral face.
-     */
+    /* Hold the head where it was, before easing it back to neutral. */
     const letGo = clamp((this.lostFor - HOLD_SECONDS) / RELEASE_SECONDS, 0, 1);
     const headRate = rate * letGo * letGo;
     for (const k of ['yaw', 'pitch', 'roll', 'x', 'y', 'z']) {
@@ -831,16 +640,7 @@ export class Rig {
     const swayX = Math.sin(this.clock * 0.37) * 0.05 + Math.sin(this.clock * 0.19) * 0.03;
     const swayY = Math.sin(this.clock * 0.29 + 1.1) * 0.035;
 
-    /* The shoulders drive the body where they are seen; the head does where
-     * they are not.
-     *
-     * Blended by how confidently the pose model has them rather than switched,
-     * so losing the pose for a moment does not throw the body across the
-     * screen. Where it is seen, the head's own contribution goes away
-     * completely — that is the point: the body is meant to be able to sit at
-     * an angle the head is not at, and a head term left in would keep dragging
-     * it back to wherever the face is pointing.
-     */
+    /* The shoulders drive the body where they are seen; the head does where they are not. */
     const t = s.torso;
     const fromBody = clamp(t.seen, 0, 1);
     const leanTarget = lerp(s.head.yaw * follow, t.lean, fromBody) + swayX * swayAmt;

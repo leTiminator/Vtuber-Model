@@ -2,11 +2,6 @@
  * End-to-end smoke test: boots the real app in Chromium against a fake webcam
  * and checks the whole pipeline comes up — model download, camera start, the
  * render loop actually putting pixels on the canvas, and the hotkeys firing.
- *
- * The fake device shows a rolling test pattern rather than a face, so this
- * proves the pipeline runs; it cannot prove the tracking is accurate.
- *
- *   node test/smoke.mjs
  */
 import { boot } from './harness.mjs';
 
@@ -55,8 +50,7 @@ try {
   // handler. Capturing the pointer there once swallowed the click outright.
   await page.click('#toggle-panel');
   const hidden = await page.evaluate(() => document.body.classList.contains('panel-hidden'));
-  // On a desktop the HUD goes with the panel, for a clean capture; H brings
-  // both back. (A phone keeps the button instead — checked in test/mobile.mjs.)
+  // The HUD goes with the panel, for a clean capture; H brings both back.
   await page.keyboard.press('h');
   const shown = await page.evaluate(() => !document.body.classList.contains('panel-hidden'));
   check('the panel button is not swallowed by drag-to-pan', hidden && shown,
@@ -112,22 +106,10 @@ try {
   const fps = await page.locator('#fps').textContent();
   check('frame-rate counter is wired up', /^\d+ fps$/.test(fps ?? ''), fps ?? 'none');
 
-  /* Nothing of ours in the outgoing picture.
-   *
-   * Whatever is on this canvas is what OBS captures, so a debugging overlay
-   * left on screen once the camera is live is burned into the stream. It is
-   * only useful before going live anyway.
-   */
+  /* Nothing of ours in the outgoing picture. */
   await page.waitForFunction(() => document.getElementById('selfcheck')?.hidden === true,
     null, { timeout: 5000 }).catch(() => {});
-  /* The readout stays up while the camera runs, which is the change.
-   *
-   * It used to hide itself the instant tracking started, because everything on
-   * the page went out to OBS. OBS reads its own page now — and the time it was
-   * hidden was exactly the time it had anything to say. A week went into
-   * arguing about a head that sat turned, with the line naming the neutral
-   * pose one keypress away and switched off.
-   */
+  /* The readout stays up while the camera runs, which is the change. */
   check('the readout stays up once the camera is live',
     await page.locator('#selfcheck').isVisible(),
     'visible while tracking');
@@ -168,11 +150,7 @@ try {
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
-  /* A stage that cannot draw has to say so.
-   *
-   * With WebGL switched off the parts renderer gets no context. That used to
-   * be a blank page with no message anywhere; the status line now carries it.
-   */
+  /* A stage that cannot draw has to say so. */
   const noGl = await openBrowser(['--disable-3d-apis']);
   try {
     await noGl.page.waitForFunction(

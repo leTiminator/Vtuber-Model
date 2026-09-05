@@ -1,24 +1,4 @@
-/**
- * The wire between the window you sit in front of and the one OBS opens.
- *
- * OBS composites a Browser Source with real transparency, which is the only
- * way into a scene that needs no keying and has no window — so nothing to crop
- * and no title bar in shot. What it cannot reliably do is open a webcam: its
- * embedded browser needs a launch flag for that and fails silently without
- * one, and even given the flag it would be running a face-tracking model
- * beside your encoder in an older Chromium.
- *
- * So it does not. Tracking stays in a real browser tab, which already has the
- * camera and a current runtime, and sends the numbers here. What OBS loads has
- * no camera in it at all. This is the same shape the browser-based tools in
- * this space use, and the same division the native ones make when they hand a
- * texture to OBS rather than asking OBS to animate anything.
- *
- * What crosses is the solved rig: the sixty or so numbers the renderer reads,
- * about a kilobyte a frame, so both windows draw the same pose from the same
- * solve. No video, and nothing leaves the machine — the relay is the local dev
- * server that is already running.
- */
+/** The wire between the window you sit in front of and the one OBS opens. */
 
 const PATH = '/__rig';
 

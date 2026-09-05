@@ -256,24 +256,8 @@ const BUILDERS = {
     return field;
   },
 
-  /**
-   * Live read of what the pose model is actually seeing.
-   *
-   * Arms not moving has several possible causes that look identical from the
-   * outside — the model not loaded, your shoulders out of frame, the angles
-   * being read but scaled to nothing — and no way to tell them apart without
-   * looking. This shows which one it is.
-   */
-  /* What the tracker says your head is doing, in words.
-   *
-   * "Up and down are reversed" has two completely different causes with
-   * opposite fixes — the tracker reading the nod backwards for this camera, or
-   * the model drawing it backwards — and from the outside they look identical.
-   * This splits them: look down, read the line. If it says looking down, the
-   * tracker is right and the drawing is wrong; if it says looking up, the
-   * tracker is wrong and Invert nod is the fix. It lives in the panel rather
-   * than on the stage because the panel is not what OBS captures.
-   */
+  /** Live read of what the pose model is actually seeing. */
+  /* What the tracker says your head is doing, in words. */
   headStatus(spec, ctx) {
     if (!ctx.headStatus) return null;
     const field = el('div', 'field');
@@ -322,23 +306,10 @@ const BUILDERS = {
     return field;
   },
 
-  /**
-   * Record what the trackers see, for replaying in tests.
-   *
-   * The synthetic sweeps in the test suite are guesses about what a camera
-   * produces. This captures what one actually did.
-   */
+  /** Record what the trackers see, for replaying in tests. */
   record(spec, ctx) {
     if (!ctx.recorder || !ctx.startRecording) return null;
-    /* A minute, not twenty seconds.
-     *
-     * Twenty seconds is long enough to prove the recorder works and short
-     * enough to miss what it is for. The faults that have actually reached the
-     * screen came from the gap between a synthetic sweep and a person: holding
-     * still badly, glancing away and back, the tracker dropping out for a
-     * frame. Those live in the awkward middle of a session, and twenty seconds
-     * is nearly all beginning and end.
-     */
+    /* A minute, not twenty seconds. */
     const SECONDS = 60;
     const field = el('div', 'field');
     const button = el('button', 'btn', `Record ${SECONDS} seconds`);

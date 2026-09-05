@@ -1,21 +1,4 @@
-/**
- * Cuts the artwork into separate, independently movable parts.
- *
- * This is the step the single-mesh warp avoided. One continuous sheet can never
- * tear a hole, but it also means nothing can truly move on its own — the head
- * and arms end up sharing the scarf's motion because they share its sheet.
- * Real layers fix that, at the cost of having to answer "what is behind this?"
- *
- * The answer is dilation. Every part is grown outward past its visible edge by
- * flooding its own colours into the transparent margin. Move the head and there
- * is painted scarf behind it instead of a hole. Flat cel art dilates almost
- * perfectly, because the colour just past an edge is nearly always the colour
- * that edge sits on.
- *
- * Part rules are tuned to this specific character rather than being general.
- * That is deliberate: a rig that works beautifully for one piece of art beats a
- * generic one that works adequately for none.
- */
+/** Cuts the artwork into separate, independently movable parts. */
 import { clamp } from '/src/core/math.js';
 
 const ALPHA_FLOOR = 40;
@@ -26,15 +9,7 @@ const ALPHA_FLOOR = 40;
  * the head cannot drift off the neck because the neck carries it.
  */
 export const PART_SPECS = [
-  /* The cloth is held by the body, and never blended toward the head.
-   *
-   * Both pieces of scarf used to be blended between the neck and the hips per
-   * vertex, and a blend of two transforms that differ by a rotation shears —
-   * measured at more than twice an edge's drawn length on a roll. The ribbon
-   * hangs off the body and is moved by its chain; the neck scarf sits still on
-   * the chest, BEHIND the head, and the head moves over it as a cutout. See
-   * followAt in index.js and the note on the wrap below.
-   */
+  /* The cloth is held by the body, and never blended toward the head. */
   { name: 'tails', parent: 'root', joint: 'hips', z: 0 },
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
   { name: 'armLeft', parent: 'root', joint: 'neck', farJoint: 'shoulderLeft', z: 2 },
@@ -57,15 +32,7 @@ export const PART_SPECS = [
   // eye above every contact shadow. It is the one thing on the model that
   // emits light rather than receiving it, and the scarf's shadow reaching
   // across the visor greyed it out.
-  /* One shard each, not one layer holding both.
-   *
-   * They were a single piece because a single piece is all a lid needs. But
-   * the difference between this drawing's three-quarter face and a head-on one
-   * is almost entirely where the two shards sit and how big the far one is —
-   * so being able to move them independently is what lets the model turn
-   * toward the camera using nothing but its own pixels. It also makes a wink
-   * and a per-eye glance possible, which one shared quad could never do.
-   */
+  /* One shard each, not one layer holding both. */
   { name: 'eyeNear', parent: 'head', joint: 'eyes', z: 7 },
   { name: 'eyeFar', parent: 'head', joint: 'eyes', z: 8 },
 ];
@@ -111,31 +78,7 @@ const LABEL = {
   armLeft: 7, armRight: 8, eyeNear: 9, eyeFar: 10,
 };
 
-/**
- * Assign every opaque pixel to exactly one part.
- *
- * The first version of this asked "how far is this pixel from the head marker,
- * and what colour is it?" That fails on this drawing, because the head marker
- * is derived from eye spacing and the visor shards are small next to the
- * helmet: the estimated radius came out at 54px against a helmet 280px across.
- * Every distance rule downstream inherited that error, which is how `tufts`
- * ended up holding the back of the helmet and `body` became scattered debris.
- *
- * So the rules ask a better question: *what is connected to what*. On flat cel
- * art with a heavy ink line, connectivity is nearly ground truth. Three facts
- * about this drawing carry the whole cut:
- *
- *   - The scarf wraps the neck, so it separates the head from everything below.
- *     Flooding outward from the eyes through non-scarf pixels therefore lands
- *     exactly on the helmet, visor and hair, and stops on its own.
- *   - The gloves are the scarf's red but are not joined to it. As pixel
- *     components they fall out separately — no colour rule can do this, and no
- *     geometric one survives a figure diving at 45°.
- *   - An arm is whatever is joined to a glove. The legs touch no glove.
- *
- * What remains geometric is only what genuinely is: which side of the figure a
- * limb sits on, and where along the scarf the neck wrap ends.
- */
+/** Assign every opaque pixel to exactly one part. */
 function labelPixels(src, m, w, h, sockets, minShard = 0) {
   const n = w * h;
   const out = new Uint8Array(n);
@@ -231,21 +174,8 @@ function labelPixels(src, m, w, h, sockets, minShard = 0) {
    * rectangles. The auto-markup splits a single bright blob down its principal
    * axis and calls the halves two eyes, so both markers can land on the same
    * shard — and then the other eye is never looked for at all.
-   *
-   * That is exactly what happened here. The far eye of a 3/4 view, small and
-   * half hidden behind the hood's edge, stayed in the head layer and never
-   * blinked, and I mistook it for a highlight on the visor rim and wrote a
-   * test asserting it must not blink. Its own size is what identifies it, not
-   * a marker that was derived from the other eye in the first place.
    */
-  /* How small a bright patch may be and still be an eye.
-   *
-   * Derived from the head's own size, so it scales with the artwork — but a
-   * drawing may put a genuine shard under it. The head-on view's far eye is 69
-   * pixels against a floor of 57, which is close enough that a view is allowed
-   * to lower it rather than losing an eye to a rounding. Read again by the
-   * socket measurement below, so both agree on what counts as a shard.
-   */
+  /* How small a bright patch may be and still be an eye. */
   const shardFloor = minShard
     || Math.max(MIN_AREA, Math.round(headSpan.w * headSpan.h * 0.001));
 
@@ -379,11 +309,6 @@ function labelPixels(src, m, w, h, sockets, minShard = 0) {
 
   /* An arm is a glove plus whatever solid piece it is joined to across the ink
    * outline between them. Everything else solid is body.
-   *
-   * Two gloves can reach the same sleeve — the far hand crossing near the near
-   * arm, say. They then belong to one arm, so a second claim joins the first
-   * rather than replacing it; overwriting left the original glove stranded as
-   * an arm of its own.
    */
   const REACH = Math.max(6, Math.round(headSpan.w * 0.06));
   const armOf = new Map(); // piece id -> arm index
@@ -488,22 +413,7 @@ function labelPixels(src, m, w, h, sockets, minShard = 0) {
     out[i] = label;
   }
 
-  /* --- a stray of neck wrap belongs to the cloth around it ----------------
-   *
-   * The split above is a distance test, and the scarf is a ribbon that loops:
-   * it crosses that circle more than once, so a scrap of cloth far along its
-   * length can dip inside the radius and be labelled wrap while everything
-   * touching it stays tails. That scrap is then welded to the head in the
-   * middle of cloth that swings on the chain — invisible at rest, because the
-   * tails cover the seam, and a red chip left floating beside the ribbon the
-   * moment the scarf moves.
-   *
-   * Only scraps. What hugs the neck is genuinely more than one region — the
-   * head sits in the middle of it — and an earlier attempt at this kept just
-   * the largest and handed a real lobe of neck cloth to the swinging tails,
-   * which tore a boot off at rest. A fifteenth of the main region is the line
-   * between a lobe and a scrap.
-   */
+  /* --- a stray of neck wrap belongs to the cloth around it ---------------- */
   reassignScraps(out, w, h, LABEL.wrap, LABEL.tails, 0.15);
 
 
@@ -513,11 +423,6 @@ function labelPixels(src, m, w, h, sockets, minShard = 0) {
    * the scarf, say — and once dilated they read as debris floating beside the
    * character. Unlabelling anything too small to be a real piece lets pass 2
    * hand it to whichever neighbour actually surrounds it.
-   *
-   * Deliberately tiny. A speck is a handful of pixels; anything larger is real
-   * art, and unlabelling it shifts which part owns those pixels — which
-   * changes which dilated margins cover them and quietly corrupts the rest
-   * pose. Measured: a threshold of 139px took reassembly from 0.03% to 6.3%.
    */
   dropSmallByLabel(out, w, h, MIN_AREA);
 
@@ -581,9 +486,6 @@ function spanOf(mask, w, h) {
 /**
  * Morphological opening: erode, then dilate by the same radius. Whatever is
  * narrower than the brush does not survive.
- *
- * Both steps use a chamfer distance rather than N passes of a 3x3 kernel, so
- * the cost does not grow with the radius.
  */
 function opened(mask, w, h, radius) {
   const inside = distanceInside(mask, w, h);
@@ -690,12 +592,7 @@ function nearestPiece(from, candidates, reach) {
   return best;
 }
 
-/**
- * Fill anything the mask fully encloses.
- *
- * Found by flooding the *outside*: start from the border, and any gap the
- * flood cannot reach is surrounded, so it belongs to the mask.
- */
+/** Fill anything the mask fully encloses. */
 function fillEnclosed(mask, w, h) {
   const n = w * h;
   const outside = new Uint8Array(n);
@@ -749,10 +646,6 @@ function dropSmall(mask, w, h, min) {
 /** As dropSmall, but over a label map: unlabel runs too small to be real art. */
 /**
  * Give a label's small outlying regions to another label.
- *
- * For a label that means "the part of this shape nearest that point", a region
- * far too small to be that is something the distance test caught by accident,
- * and it belongs to whatever surrounds it.
  *
  * @param {number} share  keep regions at least this fraction of the largest
  */
@@ -815,16 +708,7 @@ function dropSmallByLabel(out, w, h, min) {
   }
 }
 
-/**
- * Where a part turns.
- *
- * An arm turns at the shoulder, and the shoulder is the end of the arm nearest
- * the neck. The joint itself is under the scarf and was never drawn, so the
- * pivot is pushed a little further that way — rotating about the visible end
- * of a sleeve makes the arm pull out of its socket.
- *
- * Everything else turns at its own joint in the hierarchy and needs no pivot.
- */
+/** Where a part turns. */
 function pivotFor(name, labels, m, w, h) {
   if (name !== 'armLeft' && name !== 'armRight') return null;
   const id = LABEL[name];
@@ -949,20 +833,7 @@ function extract(src, labels, name, w, h, zByLabel) {
         const b = i * 4;
         od[a] = od[b]; od[a + 1] = od[b + 1]; od[a + 2] = od[b + 2];
       }
-      /* Solid near the art, fading out toward the far edge.
-       *
-       * The margin is invented paint whose whole job is to sit under the part
-       * in front, so that when that part moves it reveals something rather
-       * than a hole. But it stops dead at the dilation radius, and a hard
-       * boundary on opaque paint is a hard boundary you can see: move a part
-       * far enough and the margin shows as a slab with a straight edge across
-       * it, in whatever colour the flood carried out there. That is the black
-       * block on the scarf and the arm.
-       *
-       * Holding it solid for the first stretch keeps small movements covered
-       * exactly as before — the case it was built for — and lets a large one
-       * fade out instead of presenting an edge.
-       */
+      /* Solid near the art, fading out toward the far edge. */
       const solid = DILATE * 0.45;
       od[a + 3] = step <= solid
         ? 255
@@ -975,24 +846,7 @@ function extract(src, labels, name, w, h, zByLabel) {
     if (y < ph - 1) spread(i + pw);
   }
 
-  /* Repaint holes the part fully encloses.
-   *
-   * The eye is cut out of the head, so the head is left with a hole where the
-   * slit used to be. Whatever fills it is what shows when the eye closes, and
-   * getting it wrong is what made a shut eye look like a smudge: the flood's
-   * nearest-pixel copy drew streaks out of the ink around the socket, and
-   * diffusing instead only converges after roughly width-squared sweeps, which
-   * is slow and still left the hole a shade off.
-   *
-   * But the surface being reconstructed is a visor: a smooth ramp of one
-   * colour, not arbitrary texture. Fitting that ramp is both exact and cheap.
-   * A least-squares plane through the real pixels ringing the hole extends the
-   * gradient across it seamlessly, with no mottling and no edge to see.
-   *
-   * Only enclosed holes get this. The outer margins exist to sit under other
-   * parts and are never looked at directly, so the flood's colours are fine
-   * there — and a plane fitted to a part's whole silhouette would be wrong.
-   */
+  /* Repaint holes the part fully encloses. */
   fillEnclosedHoles(od, dist, pw, ph);
 
   const canvas = document.createElement('canvas');
@@ -1000,18 +854,7 @@ function extract(src, labels, name, w, h, zByLabel) {
   canvas.height = ph;
   canvas.getContext('2d').putImageData(out, 0, 0);
 
-  /* How far each pixel is from real art, kept rather than thrown away.
-   *
-   * The margin is invented paint, and the renderer has no way to tell it from
-   * the drawing once both are in the same texture — alpha cannot say, because
-   * an anti-aliased edge of real art is translucent too. Which means the only
-   * choice available was to draw all of it or none of it, and drawing all of
-   * it is what puts a soft dark slab beside the head when the head flips
-   * across and stops covering its neighbours.
-   *
-   * One byte a pixel says how invented each one is, and then the renderer can
-   * keep the few pixels that hide a seam and drop the rest.
-   */
+  /* How far each pixel is from real art, kept rather than thrown away. */
   const margin = new Uint8Array(pw * ph);
   for (let i = 0; i < margin.length; i++) margin[i] = dist[i] > 0 ? dist[i] : 0;
 
@@ -1025,14 +868,7 @@ function extract(src, labels, name, w, h, zByLabel) {
   };
 }
 
-/**
- * Repaint each hole a part encloses with a plane fitted to its surroundings.
- *
- * `dist` marks real art as 0 and invented margin as > 0. A hole is invented
- * pixels that cannot reach the edge of the part's box without crossing real
- * art — which is exactly the case that gets revealed when the part in front
- * moves away.
- */
+/** Repaint each hole a part encloses with a plane fitted to its surroundings. */
 function fillEnclosedHoles(od, dist, pw, ph) {
   const n = pw * ph;
   const outer = new Uint8Array(n);
@@ -1222,15 +1058,6 @@ function fitPlaneOf(samples, pw, value) {
  * The true extent of each eye, measured from the pixels that were actually
  * cut out rather than from the marker rectangle.
  *
- * The lid closes across a box, and sizing that box from the marker leaves
- * whatever the shard reaches past it permanently uncovered — a sliver of open
- * eye at full blink, which is exactly what a shut eye must not have. The
- * marker is a hint about where to look; the shard's own pixels are the answer.
- *
- * Measured in the lid's own rotated frame, because that is the frame the
- * shader tests in. An axis-aligned box around a slanted shard is far larger
- * than the shard, and a lid sized to it would sweep across half the visor.
- *
  * @returns {Array<{cx,cy,hx,hy}>|null} left then right, in image UV
  */
 function socketsFor(shardMask, m, w, h, pad, minShard = MIN_AREA) {
@@ -1286,13 +1113,6 @@ function socketsFor(shardMask, m, w, h, pad, minShard = MIN_AREA) {
     }
     /* Pad out to cover the ink ring that was handed to the eye with it, plus
      * a shade more so the sweep clears the anti-aliased edge.
-     *
-     * `fill` is how much of that padded box the shard itself is. The pad is a
-     * fixed width — it covers an ink outline, which is drawn at one weight
-     * whatever it is drawn around — so on a small shard it is most of the box,
-     * and a lid sweeping the box sweeps mostly padding. The head-on eyes are a
-     * third the area of the turned-away ones, and a half blink shut them
-     * completely.
      */
     return {
       cx: cx / w, cy: cy / h, hx: (hx + pad) / w, hy: (hy + pad) / h,
@@ -1304,14 +1124,7 @@ function socketsFor(shardMask, m, w, h, pad, minShard = MIN_AREA) {
   return boxes;
 }
 
-/**
- * Least squares over an arbitrary basis, solved by Gaussian elimination with
- * partial pivoting.
- *
- * Falls back to progressively simpler fits when the samples cannot support the
- * full basis — a hole ringed by a thin arc has no information about curvature,
- * and forcing six terms through it produces wild extrapolation inside the gap.
- */
+/** Least squares over an arbitrary basis, solved by Gaussian elimination with partial pivoting. */
 export function fitBasis(samples, pw, basis, value) {
   const probe = basis(0, 0);
   const n = probe.length;

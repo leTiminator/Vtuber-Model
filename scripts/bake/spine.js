@@ -1,11 +1,6 @@
 /**
  * Finds the centreline running through a piece of cloth, so it can be driven by
  * bones instead of shoved around as a block.
- *
- * A displacement field can move a scarf but never change its shape. To contort,
- * the strip needs a skeleton: thin the mask to a one-pixel path, walk it from
- * the anchor to the far tip, and resample that walk into a chain of bones. Every
- * pixel then binds to the nearest bone and follows it.
  */
 import { clamp } from '/src/core/math.js';
 
@@ -58,29 +53,12 @@ export function thin(mask, w, h) {
 /**
  * Walk the skeleton from the anchor and return the longest path through it.
  *
- * Cloth skeletons branch — a ribbon that crosses itself leaves spurs — so the
- * farthest reachable point is taken as the tip and the path traced back to the
- * anchor. Spurs are simply never on that path.
- *
  * @returns {{path: number[][], length: number}|null} path in pixel coords
  */
 export function longestPath(skeleton, w, h, anchorX, anchorY) {
   const n = w * h;
 
-  /* Follow the cloth, not whatever happens to be nearest the body.
-   *
-   * This used to seed from the skeleton pixel closest to the anchor and flood
-   * from there, which cannot leave that pixel's connected component — and a
-   * ribbon that crosses itself is not one component. On this drawing the
-   * anchor sits under the visor and the nearest piece of scarf is the little
-   * drape over the hip, fifty pixels away; the great sweeping arc that is
-   * visually the entire scarf is two hundred away and was never reached. So
-   * all sixteen bones landed on a bar a hundred and seventy pixels long in the
-   * bottom corner, and nine tenths of the ribbon hung off its ends as one
-   * rigid slab. It could not read as a chain because there was no chain in it.
-   *
-   * The piece with the most skeleton in it is the piece the cloth is made of.
-   */
+  /* Follow the cloth, not whatever happens to be nearest the body. */
   const label = new Int32Array(n).fill(-1);
   const queue = new Int32Array(n);
   const sizes = [];
@@ -166,11 +144,7 @@ export function longestPath(skeleton, w, h, anchorX, anchorY) {
     path.push([x, (i - x) / w]);
   }
 
-  /* Anchor end first, because node zero is the one the chain pins.
-   *
-   * Which end that is depends on the drawing, so it is asked rather than
-   * assumed: whichever end of the run is nearer the body leads.
-   */
+  /* Anchor end first, because node zero is the one the chain pins. */
   const head0 = path[0];
   const tail0 = path[path.length - 1];
   const near = (p) => (p[0] - anchorX) ** 2 + (p[1] - anchorY) ** 2;
