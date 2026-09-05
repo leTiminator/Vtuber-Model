@@ -12,11 +12,8 @@ import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { SessionRecorder } from './tracking/recorder.js';
 import { Rig, emptyRig } from './tracking/rig.js';
-import { Layered2D } from './avatars/layered2d/index.js';
-import { Warp2D } from './avatars/warp2d/index.js';
 import { Parts2D } from './avatars/parts/index.js';
-import { RigEditor } from './avatars/warp2d/editor.js';
-import * as artwork from './avatars/warp2d/artwork.js';
+import { loadImage } from './core/image.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
 
@@ -44,42 +41,23 @@ const mic = new MicLevel();
 const rig = new Rig();
 const recorder = new SessionRecorder();
 
-const avatars = {
-  layered2d: new Layered2D(),
-  warp2d: new Warp2D(),
-  parts2d: new Parts2D(),
-};
-let current = null;
-// Why the stage cannot draw, when it cannot. Wired before the first mount,
-// because a missing WebGL2 context is reported from inside it.
+const avatar = new Parts2D();
+// Why the stage cannot draw, when it cannot. Wired before the mount, because a
+// missing WebGL2 context is reported from inside it.
 let avatarError = null;
-for (const avatar of Object.values(avatars)) {
-  avatar.onStatus = (text) => {
-    avatarError = text;
-    console.error(text);
-    updateStatus();
-  };
-}
-const rigEditor = new RigEditor();
-// The overlay draws whatever the backend actually segmented, not a re-guess.
-rigEditor.setMaskSource(() => avatars.warp2d.masks);
+avatar.onStatus = (text) => {
+  avatarError = text;
+  console.error(text);
+  updateStatus();
+};
 
 /* ------------------------------------------------------------- rendering */
-
-function mountAvatar(id) {
-  const next = avatars[id] ?? avatars.parts2d;
-  if (next === current) return;
-  dom.host.replaceChildren();
-  current = next;
-  current.mount(dom.host);
-  resize();
-}
 
 // Sizing and the stage's background live in core/stage.js, because the page
 // OBS opens has to do both exactly as this one does or the shot you framed is
 // not the shot that goes out.
 function resize() {
-  fitToWindow(current);
+  fitToWindow(avatar);
 }
 
 /* The window OBS opens, if one is listening.
@@ -122,7 +100,7 @@ function frame(now) {
   if (pose.enabled && tracker.running) pose.detect(tracker.video, now);
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
-  current?.render(rig.state, dt);
+  avatar.render(rig.state, dt);
 
   // Only when somebody is drawing it. A kilobyte a frame is nothing over
   // loopback, but sending it to no one is still sending it.
@@ -299,29 +277,7 @@ buildPanel(dom.panelBody, {
     store.set('camera.deviceId', deviceId);
     if (tracker.running) await startCamera();
   },
-  loadLayers: (files) => avatars.layered2d.loadFiles(files),
   fitFraming,
-  loadArtwork: async (file) => {
-    const { image, dataURL } = await artwork.readFile(file);
-    mountAvatar('warp2d');
-    avatars.warp2d.setImage(image, true); // fresh art: re-place the markers
-    avatars.parts2d.setImage(image, true);
-    // The parts model is the one this project is built around, so new art gets
-    // it too. Its rules are tuned to the bundled ninja and degrade to one big
-    // part on artwork they do not fit; the whole-image warp stays in the panel
-    // for exactly that case.
-    store.set('stage.avatar', 'parts2d');
-    const saved = artwork.remember(dataURL);
-    rigEditor.open(image);
-    return { saved, found: { head: true, eyes: avatars.warp2d.markerConfidence === true } };
-  },
-  openRigEditor: () => {
-    const image = avatars.warp2d.image;
-    if (!image) return false;
-    rigEditor.open(image);
-    return true;
-  },
-  hasArtwork: () => Boolean(avatars.warp2d.image),
   recorder,
   startRecording: (seconds) => {
     if (!tracker.running) return false;
@@ -417,7 +373,7 @@ dom.resetBtn.addEventListener('click', () => {
  * defaults on every machine, and listing them buries the handful that were
  * actually tuned — which is the only thing this line is for.
  */
-const MACHINE_SET = /^(warp\.(headX|headY|headR|pivotX|pivotY|waistY|eyeAngle|eyeL|eyeR)|camera\.(deviceId|neutral)|stage\.avatarChosen)$/;
+const MACHINE_SET = /^(warp\.(headX|headY|headR|pivotX|pivotY|waistY|eyeAngle|eyeL|eyeR)|camera\.(deviceId|neutral))$/;
 
 const stamp = document.getElementById('build-stamp');
 function showStamp() {
@@ -567,7 +523,7 @@ function liveLines() {
 
 function runSelfCheck() {
   if (!selfcheckEl || selfcheckOff) return;
-  const r = current?.selfCheck?.();
+  const r = avatar.selfCheck();
   // Not cut yet, or a backend with nothing to measure. Ask again shortly.
   if (!r) { selfcheckEl.hidden = true; selfcheckDue = performance.now() + 700; return; }
   const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
@@ -613,7 +569,6 @@ window.addEventListener('orientationchange', scheduleSelfCheck);
 scheduleSelfCheck();
 
 installHotkeys({
-  rig,
   onCalibrate: () => rig.calibrate(),
   onToggleUI: toggleUI,
   onToggleMirror: () => store.set('camera.mirror', !store.get('camera.mirror')),
@@ -628,7 +583,6 @@ installHotkeys({
 });
 
 store.subscribe((key) => {
-  if (key === 'stage.avatar') mountAvatar(store.get(key));
   if (key.startsWith('stage.background') || key === 'stage.chroma' || key === 'stage.color') applyBackground();
   if (key === 'stage.showPreview' || key === 'camera.mirror') applyPreview();
   if (key === 'mouth.source') applyMicSource();
@@ -648,8 +602,8 @@ store.subscribe((key) => {
  */
 function installFraming() {
   const stage = dom.stage;
-  const artAspect = () => current?.aspect ?? 1;
-  const size = () => [current?.canvas?.width ?? 1, current?.canvas?.height ?? 1];
+  const artAspect = () => avatar.aspect ?? 1;
+  const size = () => [avatar.canvas.width ?? 1, avatar.canvas.height ?? 1];
   const locked = () => store.get('stage.lockFraming');
 
   let dragging = null;
@@ -711,8 +665,8 @@ installFraming();
  * otherwise it frames the head from the marker already placed on it.
  */
 function fitFraming(mode) {
-  const [w, h] = [current?.canvas?.width ?? 1, current?.canvas?.height ?? 1];
-  const aspect = current?.aspect ?? 1;
+  const [w, h] = [avatar.canvas.width ?? 1, avatar.canvas.height ?? 1];
+  const aspect = avatar.aspect ?? 1;
 
   let box = { x0: 0, y0: 0, x1: 1, y1: 1 };
   if (mode === 'head') {
@@ -720,8 +674,8 @@ function fitFraming(mode) {
     const cy = store.get('warp.headY');
     const r = store.get('warp.headR') * 1.9;
     box = { x0: cx - r / aspect, y0: cy - r, x1: cx + r / aspect, y1: cy + r * 1.5 };
-  } else if (current?.contentBox) {
-    box = current.contentBox();
+  } else {
+    box = avatar.contentBox();
   }
 
   const next = fitTo(aspect, w, h, box, mode === 'head' ? 0.94 : 0.9);
@@ -730,56 +684,33 @@ function fitFraming(mode) {
 
 window.addEventListener('resize', resize);
 
-mountAvatar(store.get('stage.avatar'));
+avatar.mount(dom.host);
+resize();
 applyBackground();
-// Bring back artwork rigged in a previous session before the first frame, so
-// the model does not flash the built-in character on the way in.
-// The model ships with its artwork. Anything saved locally wins, but a fresh
-// browser — including the separate one inside OBS, which keeps its own storage —
-// falls back to the bundled art rather than to an empty stage.
-artwork.recall().then(async (saved) => {
-  if (saved) {
-    // Restoring a save: keep whatever markers the user already adjusted.
-    avatars.warp2d.setImage(saved.image, false);
-    avatars.parts2d.setImage(saved.image, false);
-  } else {
+/* The model ships with its artwork: the drawing, and a second drawing of the
+ * same character facing the camera, handed over first so the cut happens once
+ * with both in hand. A missing head-on file leaves the turned-away face
+ * working, and the readout says why. */
+(async () => {
+  try {
+    const image = await loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
     try {
-      const image = await artwork.loadImage(`${import.meta.env.BASE_URL}art/BA_Ninja_TPBG.png`);
-      /* The second drawing: the same character, drawn facing the camera.
-       *
-       * Handed over before the artwork, so the model is cut once with both in
-       * hand rather than cut for the artwork and then cut again to take this.
-       *
-       * Only alongside the bundled art. It is a drawing of this character's
-       * face and belongs to it — laid over somebody else's uploaded artwork it
-       * would cut two eyes out of a picture it has never seen and paste them
-       * wherever they happened to land.
-       *
-       * Its failure is not the model's failure, so it is loaded separately and
-       * a missing or unreadable file leaves the turned-away face working
-       * exactly as before. What went wrong shows up in the self-check readout
-       * rather than only in the console.
-       */
-      try {
-        avatars.parts2d.setHeadOnImage(
-          await artwork.loadImage(`${import.meta.env.BASE_URL}art/views/pose-front-arms-out.png`));
-      } catch (err) {
-        console.warn('head-on view could not be loaded', err);
-      }
-      avatars.warp2d.setImage(image, true);
-      avatars.parts2d.setImage(image, false);
+      avatar.setHeadOnImage(
+        await loadImage(`${import.meta.env.BASE_URL}art/views/pose-front-arms-out.png`));
     } catch (err) {
-      console.warn('bundled artwork could not be loaded', err);
+      console.warn('head-on view could not be loaded', err);
     }
+    avatar.setImage(image, true);
+  } catch (err) {
+    console.warn('bundled artwork could not be loaded', err);
   }
-  mountAvatar(store.get('stage.avatar'));
-});
+})();
 
 // Dev-only handle, so the test suite can render a chosen pose and read the
 // pixels back without going through the camera.
 if (import.meta.env.DEV) {
-  window.__vtuber = { rig, avatars, tracker, pose, recorder, store, emptyRig, link,
-    get current() { return current; } };
+  window.__vtuber = { rig, avatar, avatars: { parts2d: avatar }, tracker, pose, recorder, store,
+    emptyRig, link, get current() { return avatar; } };
 }
 
 requestAnimationFrame(frame);

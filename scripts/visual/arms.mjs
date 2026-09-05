@@ -21,7 +21,6 @@ await page.goto('http://127.0.0.1:5202/', { waitUntil: 'load' });
 
 const dataURL = await page.evaluate(async () => {
   const { store, avatars, emptyRig } = window.__vtuber;
-  store.set('stage.avatar', 'parts2d');
   const avatar = avatars.parts2d;
   store.patch({ 'stage.zoom': 1.15, 'stage.offsetX': 0, 'stage.offsetY': 0 });
   await new Promise((r) => setTimeout(r, 400));

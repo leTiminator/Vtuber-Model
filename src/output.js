@@ -22,10 +22,8 @@ import * as store from './core/store.js';
 import { applyBackground, fitToWindow } from './core/stage.js';
 import { openRigLink } from './core/rigLink.js';
 import { Rig } from './tracking/rig.js';
-import { Layered2D } from './avatars/layered2d/index.js';
-import { Warp2D } from './avatars/warp2d/index.js';
 import { Parts2D } from './avatars/parts/index.js';
-import * as artwork from './avatars/warp2d/artwork.js';
+import { loadImage } from './core/image.js';
 
 store.setPersistence(false);
 
@@ -33,67 +31,42 @@ const stage = document.getElementById('stage');
 const host = document.getElementById('avatar-host');
 
 const rig = new Rig();
-const avatars = {
-  layered2d: new Layered2D(),
-  warp2d: new Warp2D(),
-  parts2d: new Parts2D(),
-};
-let current = null;
+const avatar = new Parts2D();
 
 /* The one thing this page may say: that it could not draw. It cannot say it
  * here — everything on this page is on the stream — so it goes back over the
  * link to the tracker's status line, once the link is up. */
 let drawError = null;
 let reportDrawError = () => {}; // replaced once the link exists
-for (const avatar of Object.values(avatars)) {
-  avatar.onStatus = (text) => {
-    drawError = text;
-    console.error(text);
-    reportDrawError();
-  };
-}
+avatar.onStatus = (text) => {
+  drawError = text;
+  console.error(text);
+  reportDrawError();
+};
 
-function mountAvatar(id) {
-  const next = avatars[id] ?? avatars.parts2d;
-  if (next === current) return;
-  host.replaceChildren();
-  current = next;
-  current.mount(host);
-  fitToWindow(current);
-}
-
-/* The artwork, the same way the main page loads it — including the drawing of
- * this character facing the camera, which is a second file and not something
- * the cut can invent. Anything the user loaded themselves comes back from
- * storage; reading it is fine, it is only writing that is off. */
-artwork.recall().then(async (saved) => {
-  if (saved) {
-    avatars.warp2d.setImage(saved.image, false);
-    avatars.parts2d.setImage(saved.image, false);
-  } else {
+/* The same two drawings the main page loads. Anything the tracker page has
+ * for settings arrives over the link; nothing is read from this page's own
+ * storage. */
+(async () => {
+  try {
+    const base = import.meta.env.BASE_URL;
+    const image = await loadImage(`${base}art/BA_Ninja_TPBG.png`);
     try {
-      const base = import.meta.env.BASE_URL;
-      const image = await artwork.loadImage(`${base}art/BA_Ninja_TPBG.png`);
-      try {
-        avatars.parts2d.setHeadOnImage(
-          await artwork.loadImage(`${base}art/views/pose-front-arms-out.png`));
-      } catch { /* the turned-away face still works without it */ }
-      avatars.warp2d.setImage(image, false);
-      avatars.parts2d.setImage(image, false);
-    } catch { /* nothing to draw; the link may still bring settings */ }
-  }
-  mountAvatar(store.get('stage.avatar'));
-});
+      avatar.setHeadOnImage(await loadImage(`${base}art/views/pose-front-arms-out.png`));
+    } catch { /* the turned-away face still works without it */ }
+    avatar.setImage(image, false);
+  } catch { /* nothing to draw; the link may still bring settings */ }
+})();
 
-mountAvatar(store.get('stage.avatar'));
+avatar.mount(host);
+fitToWindow(avatar);
 applyBackground(stage);
-window.addEventListener('resize', () => fitToWindow(current));
+window.addEventListener('resize', () => fitToWindow(avatar));
 
 store.subscribe((key) => {
   if (key.startsWith('stage.background') || key === 'stage.chroma' || key === 'stage.color') {
     applyBackground(stage);
   }
-  if (key === 'stage.avatar') mountAvatar(store.get('stage.avatar'));
 });
 
 /* What the tracker last said, held rather than consumed.
@@ -115,8 +88,7 @@ const link = openRigLink({
   onSettings: (values) => {
     store.patch(values);
     applyBackground(stage);
-    mountAvatar(store.get('stage.avatar'));
-    fitToWindow(current);
+    fitToWindow(avatar);
   },
   onFrame: (msg) => {
     received++;
@@ -139,11 +111,11 @@ function frame(now) {
   last = now;
   rig.update(latest.face, latest.hasFace, dt);
   rig.updatePose(latest.pose, latest.hasPose, dt);
-  current?.render(rig.state, dt);
+  avatar.render(rig.state, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
-  window.__vtuberOutput = { rig, avatars, store, link, seen: () => ({ ...latest, received }) };
+  window.__vtuberOutput = { rig, avatar, avatars: { parts2d: avatar }, store, link, seen: () => ({ ...latest, received }) };
 }

@@ -69,8 +69,6 @@ export function emptyRig() {
      * from the head. `seen` is how much the pose model is currently supplying
      * it; where that falls to zero the head takes over again. */
     torso: { turn: 0, lean: 0, rise: 0, seen: 0 },
-    expression: { blush: 0, anger: 0, sparkle: 0, sweat: 0, shock: 0 },
-    viseme: 'rest',
   };
 }
 
@@ -143,7 +141,6 @@ export class Rig {
     this.lostFor = 0; // seconds since the face was last seen
     this.clock = 0;
     this.blink = { timer: 1.4, value: 0, phase: 'idle' };
-    this.overrides = new Map(); // expression name -> weight, driven by hotkeys
     this.micLevel = 0;
     this.lastFrame = null;
 
@@ -227,11 +224,6 @@ export class Rig {
     this.pendingCalibration = null;
     this.armNeutral = null;
     store.set('camera.neutral', '');
-  }
-
-  setOverride(name, weight) {
-    if (weight <= 0) this.overrides.delete(name);
-    else this.overrides.set(name, weight);
   }
 
   setMicLevel(rms) {
@@ -520,9 +512,7 @@ export class Rig {
 
     this.applyMouthSource(dt);
     this.applyAutoBlink(dt, tracked);
-    this.applyOverrides(dt);
     this.applyBody(dt);
-    s.viseme = pickViseme(s.mouth);
     return s;
   }
 
@@ -828,13 +818,6 @@ export class Rig {
     }
   }
 
-  applyOverrides(dt) {
-    const e = this.state.expression;
-    for (const key of Object.keys(e)) {
-      e[key] = damp(e[key], this.overrides.get(key) ?? 0, 9, dt);
-    }
-  }
-
   /**
    * Secondary motion. The torso trails the head, the chest breathes, and the
    * whole body drifts on a slow lissajous so a still pose is never frozen.
@@ -908,14 +891,4 @@ function mirrorShapes(shapes) {
 function shapeBlink(raw, threshold, gain) {
   const scaled = remap(raw * gain, threshold, 0.92, 0, 1);
   return clamp(Math.pow(scaled, 0.72), 0, 1);
-}
-
-/** Coarse viseme classification, for avatars that swap discrete mouth art. */
-function pickViseme(m) {
-  if (m.open < 0.12) return m.smile > 0.35 ? 'smile' : 'rest';
-  if (m.pucker > 0.4 || m.funnel > 0.45) return 'U';
-  if (m.open > 0.6) return 'A';
-  if (m.wide > 0.35 || m.smile > 0.4) return 'I';
-  if (m.open > 0.32) return 'E';
-  return 'O';
 }

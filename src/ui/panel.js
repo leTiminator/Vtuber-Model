@@ -139,19 +139,11 @@ export function buildPanel(root, ctx) {
       ],
     },
     {
-      title: 'Your own artwork',
+      title: 'Model',
       controls: [
-        { type: 'select', key: 'stage.avatar', label: 'Model', options: [
-          ['parts2d', 'My artwork (cut into parts)'],
-          ['warp2d', 'My artwork (whole-image warp)'],
-          ['layered2d', 'My PNG layers'],
-        ] },
-        { type: 'artwork' },
-
         { type: 'heading', label: 'Head' },
         { type: 'slider', key: 'warp.turn', label: 'Turn left/right', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.nod', label: 'Nod up/down', min: 0, max: 2.5, step: 0.01, format: x },
-        { type: 'slider', key: 'warp.parallax', label: 'Face depth', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'parts.contactShadow', label: 'Layer depth', min: 0, max: 1, step: 0.01, format: x,
           hint: 'Shades where one layer sits over another, so the parts read as stacked rather than flat.' },
         { type: 'slider', key: 'parts.nodTurn', label: 'Head turn on nod', min: 0, max: 1.2, step: 0.01, format: x,
@@ -199,13 +191,6 @@ export function buildPanel(root, ctx) {
         { type: 'toggle', key: 'warp.eyesEnabled', label: 'Blink and squint' },
         { type: 'slider', key: 'warp.squint', label: 'Squint amount', min: 0, max: 2.5, step: 0.01, format: x },
         { type: 'slider', key: 'warp.eyeGlow', label: 'Glow', min: 0, max: 1.5, step: 0.01, format: x },
-
-        { type: 'heading', label: 'Body' },
-        { type: 'slider', key: 'warp.lowerDamping', label: 'Waist-down movement', min: 0, max: 1, step: 0.01, format: x },
-        { type: 'slider', key: 'warp.mesh', label: 'Mesh detail', min: 8, max: 56, step: 1, format: (v) => `${v | 0}` },
-        { type: 'slider', key: 'warp.keyWhite', label: 'Cut white background', min: 0, max: 1, step: 0.01, format: (v) => (v > 0 ? v.toFixed(2) : 'off') },
-        { type: 'layersHeading' },
-        { type: 'layers' },
       ],
     },
     {
@@ -423,12 +408,7 @@ const BUILDERS = {
       select.append(option);
     }
     const sync = () => { select.value = store.get(spec.key); };
-    select.addEventListener('change', () => {
-      store.set(spec.key, select.value);
-      // Picking a model by hand outranks the migration that moved old saves
-      // off the retired default.
-      if (spec.key === 'stage.avatar') store.set('stage.avatarChosen', true);
-    });
+    select.addEventListener('change', () => store.set(spec.key, select.value));
     store.subscribe((key) => key === spec.key && sync());
     sync();
     field.append(labelledRow(spec.label), select);
@@ -477,92 +457,6 @@ const BUILDERS = {
     return field;
   },
 
-  layers(_spec, ctx) {
-    const field = el('div', 'field');
-    const input = el('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*,application/json';
-    input.webkitdirectory = true;
-    input.style.display = 'none';
-
-    const button = el('button', 'btn', 'Choose a folder of PNGs…');
-    button.type = 'button';
-    button.addEventListener('click', () => input.click());
-
-    const status = el('p', 'note', 'Name your files body.png, head.png, eyes-open.png, eyes-closed.png, mouth-a.png … and pick the folder.');
-    input.addEventListener('change', async () => {
-      try {
-        const count = await ctx.loadLayers([...input.files]);
-        status.className = 'note';
-        status.textContent = `Loaded ${count} layer${count === 1 ? '' : 's'}.`;
-        store.set('stage.avatar', 'layered2d');
-      } catch (err) {
-        status.className = 'note note--error';
-        status.textContent = err.message;
-      }
-    });
-
-    field.append(button, input, status);
-    return field;
-  },
-
-  artwork(_spec, ctx) {
-    const field = el('div', 'field');
-
-    const input = el('input');
-    input.type = 'file';
-    input.accept = 'image/png,image/jpeg,image/webp';
-    input.style.display = 'none';
-
-    const load = el('button', 'btn btn--primary', 'Load my artwork…');
-    load.type = 'button';
-    load.addEventListener('click', () => input.click());
-
-    const markup = el('button', 'btn', 'Mark up the rig');
-    markup.type = 'button';
-    markup.addEventListener('click', () => {
-      if (!ctx.openRigEditor()) {
-        status.className = 'note note--error';
-        status.textContent = 'Load an image first.';
-      }
-    });
-
-    const status = el('p', 'note',
-      'One flat PNG is enough — no layers needed. Load it, then drag the head, ' +
-      'neck and eye markers onto your art. It turns, nods, tilts, breathes and blinks from there.');
-
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const { saved, found } = await ctx.loadArtwork(file);
-        status.className = 'note';
-        const placed = !found.head
-          ? 'Drag the head, neck and eye markers onto your art.'
-          : found.eyes
-            ? 'Found the head and both eyes — check the markers and adjust anything that looks off.'
-            : 'Found the head; the eye boxes are a guess, so drag them over the real eyes.';
-        status.textContent = saved
-          ? placed
-          : `${placed} (Too large to remember, so you will need to re-pick it next time.)`;
-      } catch (err) {
-        status.className = 'note note--error';
-        status.textContent = err.message;
-      }
-      input.value = '';
-    });
-
-    field.append(load, markup, input, status);
-    return field;
-  },
-
-  layersHeading() {
-    const note = el('p', 'note note--divider');
-    note.textContent = 'Already have your art cut into separate layers? Load them instead:';
-    return note;
-  },
-
   heading(spec) {
     const node = el('h4', 'group__heading');
     node.textContent = spec.label;
@@ -609,11 +503,6 @@ const BUILDERS = {
   hotkeys() {
     const wrap = el('div', 'keycaps');
     const rows = [
-      ['1', 'Blush'],
-      ['2', 'Angry'],
-      ['3', 'Sparkle'],
-      ['4', 'Nervous'],
-      ['5', 'Shocked'],
       ['C', 'Set neutral pose (3-second countdown)'],
       ['D', 'Show or hide the readout'],
       ['H', 'Hide the interface'],
@@ -624,9 +513,8 @@ const BUILDERS = {
       row.append(el('kbd', null, key), el('span', null, label));
       wrap.append(row);
     }
-    const note = el('p', 'note', 'Hold 1–5 while streaming to trigger a reaction.');
     const box = el('div', 'field');
-    box.append(wrap, note);
+    box.append(wrap);
     return box;
   },
 };
