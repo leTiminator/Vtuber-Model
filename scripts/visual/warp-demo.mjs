@@ -9,7 +9,7 @@ import { createServer } from 'vite';
 const out = process.argv[2] ?? 'warp-demo.png';
 const art = process.argv[3] ?? '/art/BA_Ninja_TPBG.png';
 
-const server = await createServer({ server: { port: 5193 }, logLevel: 'error' });
+const server = await createServer({ server: { port: 5194, strictPort: true }, logLevel: 'error' });
 await server.listen();
 
 const browser = await chromium.launch({
@@ -19,7 +19,7 @@ const browser = await chromium.launch({
 const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
 page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
-await page.goto('http://127.0.0.1:5193/', { waitUntil: 'load' });
+await page.goto('http://127.0.0.1:5194/', { waitUntil: 'load' });
 await page.waitForFunction(() => Boolean(window.__vtuber), null, { timeout: 15000 });
 
 const detected = await page.evaluate(async (src) => {

@@ -35,7 +35,7 @@ check('the recording has frames', Array.isArray(session.samples) && session.samp
 check('the recording saw a face', (session.withFace ?? 0) > session.samples.length * 0.5,
   `${session.withFace} of ${session.samples.length} frames`);
 
-const server = await createServer({ server: { port: 5193 }, logLevel: 'error' });
+const server = await createServer({ server: { port: 5193, strictPort: true }, logLevel: 'error' });
 await server.listen();
 const browser = await chromium.launch({
   executablePath: chromeBin(),

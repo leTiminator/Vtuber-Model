@@ -175,7 +175,7 @@ function buildMergedEyeFixture() {
 
 /* ------------------------------------------------------------------ test */
 
-const server = await createServer({ server: { port: 5191 }, logLevel: 'error' });
+const server = await createServer({ server: { port: 5190, strictPort: true }, logLevel: 'error' });
 await server.listen();
 
 const browser = await chromium.launch({
@@ -229,7 +229,7 @@ const shoot = (pose) => page.evaluate((p) => {
 }, pose);
 
 try {
-  await page.goto('http://127.0.0.1:5191/', { waitUntil: 'load' });
+  await page.goto('http://127.0.0.1:5190/', { waitUntil: 'load' });
   await page.waitForFunction(() => Boolean(window.__vtuber), null, { timeout: 15000 });
 
   await page.locator('summary', { hasText: 'Your own artwork' }).click();

@@ -21,7 +21,7 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const server = await createServer({ server: { port: 5188 }, logLevel: 'error' });
+const server = await createServer({ server: { port: 5188, strictPort: true }, logLevel: 'error' });
 await server.listen();
 
 const browser = await chromium.launch({

@@ -196,6 +196,9 @@ const UNIFORMS = [
 ];
 
 const SPINE_NODES = 16;
+/** The settings the cut reads; any other warp.* key is a render-time gain. */
+const CUT_KEYS = new Set(['warp.headX', 'warp.headY', 'warp.headR', 'warp.pivotX',
+  'warp.pivotY', 'warp.waistY', 'warp.eyeAngle', 'warp.eyeL', 'warp.eyeR']);
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -247,8 +250,10 @@ export class Parts2D {
     this.headOnPhase = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
+    // Only the marker keys feed the cut. The other warp.* keys are per-frame
+    // gains, and rebuilding on those re-cut the whole model per slider tick.
     this.unsubscribe = store.subscribe((key) => {
-      if (key.startsWith('warp.')) this.rebuild = true;
+      if (CUT_KEYS.has(key)) this.rebuild = true;
     });
   }
 
@@ -865,7 +870,9 @@ export class Parts2D {
      * axis. Anything holding on to the head has to go the same distance or the
      * seam opens, which is what the neck wrap was doing.
      */
-    const flipSlide = this.mirrored && this.headSpan
+    // Gated on the mirror actually being on, not on the latch alone: with the
+    // mirror off the slide fired on its own past 40 degrees and jerked the head.
+    const flipSlide = mirror > 0.5 && this.headSpan
       ? 2 * (this.flipAxis - this.headSpan.cx) : 0;
 
     // --- joints ----------------------------------------------------------
