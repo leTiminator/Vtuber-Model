@@ -15,6 +15,7 @@ import { Rig, emptyRig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
 import { buildPanel } from './ui/panel.js';
 import { installHotkeys } from './ui/hotkeys.js';
+import { buildId, readoutText, stampText } from './ui/readout.js';
 
 const dom = {
   body: document.body,
@@ -59,13 +60,7 @@ function resize() {
   fitToWindow(avatar);
 }
 
-/* The window OBS opens, if one is listening.
- *
- * This tab keeps the camera and the tracking; the other one only draws. It is
- * told the settings — including the neutral pose, which lives in the store —
- * whenever they change and once on connect, and then a frame at a time. See
- * core/rigLink.js.
- */
+/* The window OBS opens, if one is listening. */
 let outputs = 0;
 // What the OBS page reported it could not do, while it is attached.
 let outputError = null;
@@ -110,18 +105,7 @@ function frame(now) {
   }
   if (link.wanted) link.send({ t: 'state', seq: ++stateSeq, at: now, state: rig.state });
 
-  /* The readout stays up while the camera runs, which is the whole point.
-   *
-   * It used to hide itself the instant tracking started, because everything on
-   * this canvas went out to OBS. OBS reads its own page now, so that reason is
-   * gone — and the time it was hidden was exactly the time it had anything to
-   * say. A day went into arguing about a head that sat turned, with the line
-   * naming the neutral pose sitting one keypress away and switched off.
-   *
-   * Refreshed a few times a second while live, so the numbers move; and in the
-   * same turn as the draw, because reading pixels from a timer returns
-   * whatever survived compositing. Press D to put it away.
-   */
+  /* The readout stays up while the camera runs, which is the whole point. */
   if (!selfcheckDue) selfcheckDue = now + 1000;
   if (now >= selfcheckDue) {
     selfcheckDue = 0;
@@ -148,13 +132,7 @@ function setStatus(text, kind) {
   dom.status.className = `status status--${kind}`;
 }
 
-/* The window was hidden, and for how long.
- *
- * A hidden or fully covered tab gets about one animation frame a second, so
- * OBS is starved for exactly as long as the tracker sits behind a game. The
- * pill says so for a few seconds after the window comes back, which is the
- * only time anyone is looking at it.
- */
+/* The window was hidden, and for how long. */
 let hiddenSince = 0;
 let starvedFor = 0;
 let starvedUntil = 0;
@@ -177,13 +155,7 @@ function updateStatus() {
     return setStatus(`This window was hidden for ${Math.round(starvedFor)} s, and OBS gets about `
       + 'one frame a second while it is. Keep it visible while streaming.', 'error');
   }
-  /* Whether the output window is listening, said here rather than there.
-   *
-   * That page is what OBS captures, so it has nowhere to put a message —
-   * anything drawn on it is on the stream. This is the only screen where
-   * "OBS is not actually receiving anything" can be read, and not knowing
-   * that is the failure people spend an evening on.
-   */
+  /* Whether the output window is listening, said here rather than there. */
   const out = outputs > 0 ? ` · to OBS ×${outputs}` : '';
   switch (tracker.status) {
     case 'requesting-camera': return setStatus('Asking for the camera…', 'busy');
@@ -299,13 +271,7 @@ async function startCamera() {
     applyPreview();
     await applyMicSource();
     await applyPoseSource();
-    /* A fresh start deserves a fresh neutral pose — but not this instant.
-     *
-     * Taken straight away it captures whoever is still looking at the button
-     * they just pressed, and that pose then becomes "facing forward" for the
-     * whole session. See rig.calibrate: an automatic capture waits, wants the
-     * head still and roughly square, and declines rather than saving a guess.
-     */
+    /* A fresh start deserves a fresh neutral pose — but not this instant. */
     rig.calibrate(true);
   } catch {
     /* status line already carries the reason */
@@ -350,205 +316,33 @@ dom.resetBtn.addEventListener('click', () => {
   if (confirm('Reset every setting to its default?')) store.reset();
 });
 
-/* Which build is on screen, and what it is running with.
- *
- * Without the build, "the fix is not there" and "the fix is there and did not
- * work" look identical from a photograph. Without the settings, so do "the
- * model is broken" and "the model is doing what these sliders ask of it" —
- * settings persist across every visit, so a session tuned weeks ago is still
- * in force, and the one fault that reached the user needed three of them away
- * from their defaults at once. A phone has no console; this line is the only
- * way that state can be read off a screenshot.
- */
-/* Settings nobody chose: the marker geometry the rig places for itself when
- * artwork loads, and the camera it happened to pick. They differ from their
- * defaults on every machine, and listing them buries the handful that were
- * actually tuned — which is the only thing this line is for.
- */
-const MACHINE_SET = /^camera\.(deviceId|neutral)$/;
-
+// Which build is on screen and which settings differ from default, on the
+// stage, so both can be read off a screenshot.
 const stamp = document.getElementById('build-stamp');
 function showStamp() {
-  if (!stamp) return;
-  const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
-  const now = store.snapshot();
-  const changed = Object.keys(store.DEFAULTS)
-    .filter((k) => now[k] !== store.DEFAULTS[k] && !MACHINE_SET.test(k))
-    .map((k) => `${k} ${now[k]}`);
-  const shown = changed.slice(0, 6).join(', ');
-  const rest = changed.length > 6 ? ` +${changed.length - 6} more` : '';
-  stamp.textContent = changed.length
-    ? `build ${build} · changed: ${shown}${rest}`
-    : `build ${build} · all settings default`;
+  if (stamp) stamp.textContent = stampText();
 }
 showStamp();
-
-/* The on-device readout.
- *
- * The suite runs on a software renderer on a build server; the phone has a
- * different driver and a different compiler, and every fault that actually
- * reached the user was visible on the phone and nowhere else. So the model
- * measures itself where it is being looked at, and says so on screen: the
- * artwork is a single connected shape, and anything other than one piece is
- * it coming apart. Tap to dismiss.
- */
-const selfcheckEl = document.getElementById('selfcheck');
 {
-  // On the stage, not in the panel. Set once: it cannot change while running.
   const el = document.getElementById('hud-build');
-  if (el) el.textContent = typeof __BUILD__ === 'string' ? __BUILD__.slice(0, 7) : 'dev';
+  if (el) el.textContent = buildId(true);
 }
+
+// The D readout: what the renderer drew, what the tracker sees, where forward
+// is. Read inside the frame, because pixels read from a timer may be gone.
+const selfcheckEl = document.getElementById('selfcheck');
 let selfcheckDue = 0;
 let selfcheckOff = false;
-const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}\u00b0`;
-
-/* What the tracker is reading, right now, while it is reading it.
- *
- * Everything above this line describes a still model. None of it can answer
- * the questions that actually cost days: why the head sits turned when you are
- * square, whether a neutral was captured or quietly refused, whether the pose
- * model is running at all, whether it can see both arms. Those are properties
- * of a live session, and a live session was the one thing there was no way to
- * look at — this readout used to switch itself off the moment the camera
- * started.
- *
- * Raw and corrected are both here on purpose. Raw is what your camera sees;
- * corrected is what the model is driven by; the neutral is the difference. If
- * corrected is large while you are looking down the lens, the neutral is
- * wrong, and that one line says so in a way no amount of describing the
- * symptom over chat can.
- */
-/* Where "forward" is, in words.
- *
- * The number alone was read for a week as the model being broken. A neutral
- * taken from the button is taken looking at the screen, and a camera beside
- * the screen makes that a permanent turn — thirty-eight degrees, measured
- * live — so looking at the camera afterwards read as a hard turn away and the
- * head sat at its limit. Nothing was broken; forward was the screen. Which is
- * right for streaming, and needs saying.
- */
-function neutralLine() {
-  const n = rig.neutral;
-  const cal = rig.pendingCalibration;
-  const wait = cal ? Math.max(0, cal.armAt - rig.clock) : 0;
-  const capturing = !cal ? ''
-    : wait > 0 ? ` · setting neutral in ${Math.ceil(wait)}… look where you stream`
-      : ' · capturing — hold still';
-  if (!n) {
-    return (cal ? 'neutral: not set yet' : 'NEUTRAL NOT SET — press C sitting how you stream')
-      + capturing;
-  }
-  const off = Math.abs(n.yaw) * 180 / Math.PI;
-  const where = off > 8
-    ? `forward is where you looked when you set the pose, ${Math.round(off)}° from the camera`
-    : 'forward is the camera';
-  return `${where} · neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
-    + (off > 8 && !cal ? ' — C resets it, 3-second countdown' : '') + capturing;
-}
-
-function liveLines() {
-  if (!tracker.running) return [];
-  const out = [];
-  const head = tracker.frame?.head;
-  if (head && tracker.hasFace) {
-    /* In the rig's own terms — mirrored, when the camera is — so this line,
-     * the neutral and the driven angles can be read against each other. The
-     * camera's raw reading has the opposite sign on yaw and roll, and a line
-     * that printed it beside a mirrored neutral could not be subtracted by
-     * eye, which is what it was there for.
-     */
-    const mirror = store.get('camera.mirror');
-    const seen = mirror ? { yaw: -head.yaw, pitch: head.pitch, roll: -head.roll } : head;
-    const s = rig.state.head;
-    out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
-      + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`);
-  } else {
-    out.push('no face in frame');
-  }
-
-  // The pose model is a separate model on a separate stride, and "the arms do
-  // not move" has three different causes that look identical from outside:
-  // not running, running too rarely, or running and not seeing a wrist.
-  const a = rig.state.arms;
-  const z = tracker.crop;
-  out.push(z
-    ? `face zoom ${(1 / Math.max(z.w, 1e-3)).toFixed(1)}× on the camera`
-    : `face zoom off — whole frame${store.get('camera.faceZoom') === 'off' ? '' : ' (looking for a face)'}`);
-  out.push(store.get('arms.track')
-    ? `pose ${pose.enabled ? `${pose.rate.toFixed(0)}/s stride ${pose.stride}` : 'loading…'}`
-      + ` · arms L ${a.left.seen.toFixed(2)} R ${a.right.seen.toFixed(2)}`
-      + ` · wrists L ${a.left.wrist.toFixed(2)} R ${a.right.wrist.toFixed(2)}`
-      + ` · lift L ${a.left.raise.toFixed(2)} R ${a.right.raise.toFixed(2)}`
-      + `\nbody from shoulders ${rig.state.torso.seen.toFixed(2)}`
-      + ` · turn ${rig.state.torso.turn.toFixed(2)}`
-      + ` lean ${rig.state.torso.lean.toFixed(2)}`
-    : 'arm tracking off');
-  /* Framing, said in words, because it is the fix and it is not in the code.
-   *
-   * On the recorded minute this project has, the wrists were out of the
-   * picture in every frame and the elbows below its bottom edge in most, with
-   * the shoulders sitting at eighty per cent of the frame's height. No rig
-   * tracks an arm the camera cannot see, and nothing on screen said so.
-   */
-  const j = pose.frame?.joints;
-  if (store.get('arms.track') && pose.enabled && j?.shoulderL && j?.shoulderR) {
-    const shoulderY = (j.shoulderL.y + j.shoulderR.y) / 2;
-    const where = `shoulders at ${Math.round(shoulderY * 100)}% of the frame's height`;
-    // Per arm. A desk camera crops one side long before it crops both, and a
-    // warning that waited for both was silent exactly when it was needed.
-    const gone = [];
-    for (const [side, arm] of [['left', a.left], ['right', a.right]]) {
-      if (arm.seen < 0.3) gone.push(`${side} elbow`);
-      else if (arm.wrist < 0.3) gone.push(`${side} wrist`);
-    }
-    if (gone.length) {
-      const joint = (g) => g.split(' ')[1];
-      const what = gone.length === 2 && joint(gone[0]) === joint(gone[1])
-        ? `both ${joint(gone[0])}s` : gone.join(' and ');
-      const why = gone.some((g) => g.endsWith('elbow'))
-        ? 'move the camera back or down' : 'lift is read off the elbow';
-      out.push(`  ⚠ ${what} out of frame — ${why}; ${where}`);
-    }
-  }
-  return out;
-}
-
 function runSelfCheck() {
   if (!selfcheckEl || selfcheckOff) return;
-  const r = avatar.selfCheck();
-  // Not cut yet, or a backend with nothing to measure. Ask again shortly.
+  const r = readoutText({ avatar, rig, tracker, pose });
   if (!r) { selfcheckEl.hidden = true; selfcheckDue = performance.now() + 700; return; }
-  const build = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
-  const now = store.snapshot();
-  const changed = Object.keys(store.DEFAULTS)
-    .filter((k) => now[k] !== store.DEFAULTS[k] && !MACHINE_SET.test(k))
-    .map((k) => `${k.split('.').pop()} ${now[k]}`);
-  const torn = r.pieces !== 1;
-  selfcheckEl.classList.toggle('selfcheck--torn', torn);
-  selfcheckEl.textContent = [
-    `${build} · ${r.pieces} piece${r.pieces === 1 ? '' : 's'}` +
-      (torn ? ` (stray ${r.strays.join(', ')})` : ''),
-    `${r.buffer} buffer · dpr ${r.dpr} · skinning ${r.skinning}`,
-    // Where "facing forward" is. Sitting off to one side reads as a permanent
-    // yaw, so this is the difference between a model at rest and one parked
-    // in the worst part of its range.
-    neutralLine() + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
-    r.drawn,
-    // Which face is showing, and whether the head-on drawing loaded at all.
-    r.headOn ? `head-on: ${r.headOn}` : null,
-    ...liveLines(),
-    changed.length
-      ? `changed: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` +${changed.length - 6}` : ''}`
-      : 'all settings default',
-  ].filter(Boolean).join('\n');
+  selfcheckEl.classList.toggle('selfcheck--torn', r.torn);
+  selfcheckEl.textContent = r.text;
   selfcheckEl.hidden = false;
 }
-/* Due at a time, read inside the frame.
- *
- * Reading pixels from a timer returns whatever is in the drawing buffer after
- * compositing, which the browser is free to have cleared — so the check has to
- * happen in the same turn as the draw that it is asking about.
- */
+
+/* Due at a time, read inside the frame. */
 function scheduleSelfCheck() {
   selfcheckDue = performance.now() + 700;
 }
@@ -585,13 +379,7 @@ store.subscribe((key) => {
 
 /* ---------------------------------------------------------------- framing */
 
-/**
- * Drag the character around and scroll to zoom, right on the stage.
- *
- * Sliders alone are not control — composing a shot means pushing the model
- * where you want it and watching it land. Zoom anchors on the pointer, so you
- * magnify what you are aiming at rather than chasing it away from the centre.
- */
+/** Drag the character around and scroll to zoom, right on the stage. */
 function installFraming() {
   const stage = dom.stage;
   const artAspect = () => avatar.aspect ?? 1;

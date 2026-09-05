@@ -1,13 +1,10 @@
 /**
  * Run every suite and report all of them, rather than stopping at the first
  * failure the way an && chain does.
- *
- *   node test/run-all.mjs            every suite
- *   node test/run-all.mjs rig smoke  just those
  */
 import { spawnSync } from 'node:child_process';
 
-export const SUITES = ['rig', 'cloth', 'replay', 'model', 'invariants', 'golden', 'smoke', 'output'];
+export const SUITES = ['lint-comments', 'rig', 'cloth', 'replay', 'model', 'invariants', 'golden', 'smoke', 'output'];
 
 const wanted = process.argv.slice(2);
 const list = wanted.length ? wanted : SUITES;

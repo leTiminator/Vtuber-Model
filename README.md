@@ -8,7 +8,8 @@ The built-in character is a masked ninja: charcoal helmet, glowing visor eyes,
 spiky tufts, and a red scarf that flies on its own physics.
 
 **Everything runs on your machine.** No video, no audio, and no tracking data
-leaves the browser. There is no server and no account.
+leaves the browser. The only server is the local one that serves the page and
+carries the pose to OBS; there is no account.
 
 ---
 
@@ -53,14 +54,10 @@ If the model download is blocked or interrupted, re-run it on its own with
 
 1. **Start camera**, and allow access when the browser asks. The first start
    takes a few seconds while the tracking model loads.
-2. **Load your character.** Open **Your own artwork → Load my artwork…** and pick
-   your PNG. It places the markers for you; check them, then hit **Done**. See
-   [Rigging one flat image](#rigging-one-flat-image) for what each marker does.
-   Skip this if you are happy with the built-in ninja.
-3. **Sit how you normally stream** — straight on, head level — and press
+2. **Sit how you normally stream** — straight on, head level — and press
    **Set neutral pose** (or `C`). Everything is measured relative to that pose,
    so this is what stops the model sitting at a permanent angle.
-4. Open **Head** and turn the gains up until it feels right. Most people want
+3. Open **Head** and turn the gains up until it feels right. Most people want
    more than reality: `1.5x`–`2x` reads far better on stream than `1x`, which
    looks stiff.
 
@@ -175,132 +172,40 @@ settings** writes a JSON file worth keeping once you have it dialled in.
 
 ---
 
-## Changing how it looks
-
-Everything under **Look** is live — colours, visor eye shape, and accessories.
-There are four colour presets to start from. Scarf length and how hard the
-tails billow live under **Body & scarf**.
-
-Since the design is masked, there is no mouth. Expression is carried entirely
-by the visor eyes: they narrow, slant with your brows, flare when you are
-surprised and burn red when angry. Your speech drives the glowing vent along
-the bottom of the visor instead.
-
-### Rigging one flat image
-
-The quickest way to use your own character: **one PNG, no layers, no redrawing.**
-Open **Your own artwork → Load my artwork…**, pick the file, and check the five
-markers it places for you:
-
-| Marker | Where it goes |
-| --- | --- |
-| **head** (blue circle) | Around the whole head. Drag the corner dot to resize |
-| **neck** (pink dot) | Where the head pivots when you tilt |
-| **waist** (green line) | Below this, the body barely moves — for when you crop to a bust |
-| **left / right eye** (yellow boxes) | Over each eye, with a little face around it |
-
-Tick **Show regions** to see what it worked out — cloth in red, hair in blue,
-face plate in yellow, torso in green, legs in purple. If something is in the
-wrong region, move the head circle or the waist line until it isn't.
-
-Hit **Done**. It then turns, nods, tilts, leans, breathes, blinks and squints,
-and the cloth and hair trail behind the motion.
-
-**What it does, and how**
-
-- **Turn and nod** — the head is rotated on a cylinder, so the side turning away
-  compresses and the side turning toward you spreads. On top of that the face
-  plate is treated as sitting in front of the skull, so it slides across as you
-  turn. That parallax is what sells the rotation.
-- **Tilt** — a real rotation about the neck marker.
-- **Overshoot** — head angles run through a spring, so the head settles instead
-  of stopping dead.
-- **Cloth and hair** — solved as a displacement field along each piece: nodes
-  pull toward the one before them, which sends a wave outward, and back toward
-  the drawn pose, which returns them home. Driven by the head's own inertia plus
-  a little wind, so the scarf still moves when you hold still.
-- **Blink and squint** — lids sweep across each eye box in a flat colour sampled
-  from the face around the socket. They bow, travelling further at the middle
-  than the corners, and they follow the eyes' own angle — drawings rarely have
-  level eyes.
-- **Glow** — rides on whatever is bright inside each socket, pulsing slowly and
-  flaring when you move sharply.
-
-**Tuning**, all in the same panel: head turn/nod, face depth, overshoot, scarf
-travel and stiffness, tuft travel and stiffness, idle drift, squint, glow,
-waist-down movement, mesh detail, and a white-background key for art saved
-without transparency.
-
-Your image is remembered in the browser between sessions. Very large files may
-not fit, in which case the panel says so and you re-pick it next time.
-
-**Limits worth knowing**
-
-- Past roughly ±30° the turn starts to smear. There is no hidden far side of a
-  flat drawing. It is at its best in the range people actually move in.
-- Nothing can pass in front of anything else — it is one continuous sheet, which
-  is also why it can never tear a hole.
-- Hair sticking off a hood is usually the same colour as the hood and sits inside
-  the head's own radius, so the split between them is approximate. Tufts get
-  their own lag layered on top of the head's motion rather than being cleanly
-  separated.
-- A neutral, front-facing bust rigs better than a dynamic full-body pose.
-
-### Using layered artwork
-
-If your art is already cut into layers, you get sharper results. Name the
-files as below, put them in one folder, and use
-**Your own artwork → Choose a folder of PNGs**.
-
-| File | What it does |
-| --- | --- |
-| `body.png` | Torso — leans, twists and breathes |
-| `head.png` | Head — turns, nods, tilts |
-| `hair-back.png`, `hair-front.png` | Swing behind and in front, with lag |
-| `eyes-open.png`, `eyes-closed.png` | Swapped on blink |
-| `eyes-half.png` | Optional mid-blink frame |
-| `brows.png` | Rides the brow channel |
-| `mouth-rest.png` | Fallback mouth |
-| `mouth-a/e/i/o/u.png` | Viseme set, chosen from your speech |
-| `mouth-smile.png` | Used while smiling |
-| `blush.png` | Fades in with the blush expression |
-
-Only `body.png` and `head.png` are required; anything missing simply will not
-animate. Add a `manifest.json` beside them to override pivots and draw order.
-
----
-
 ## How it works
 
 ```
-camera ─> FaceTracker ─> Rig ─> avatar backend ─> canvas ─> OBS
+camera ─> FaceTracker / PoseTracker ─> Rig ─> Parts2D ─> canvas
+                                        └─ rig state over the relay ─> output.html in OBS
 ```
 
 - **`src/tracking/faceTracker.js`** — webcam capture plus MediaPipe
-  FaceLandmarker. Produces 52 ARKit-style blendshape scores and a head
-  transformation matrix per frame. Tries the GPU delegate, falls back to CPU.
-- **`src/tracking/rig.js`** — the interesting part. Mirrors the signal so the
-  model reads as your reflection, subtracts your calibrated neutral pose,
-  shapes and filters each channel, then adds the motion you never perform
-  yourself: breathing, idle sway, tuft lag and auto-blink.
-- **`src/core/oneEuro.js`** — a One Euro filter. Face tracking has to be dead
-  still when you hold still and instant when you move; a fixed low-pass can
-  only do one of those, so this widens its own cutoff as the signal speeds up.
-- **`src/avatars/procedural2d/`** — the built-in character, drawn entirely in
-  code so it needs no art and recolours live. Head turn is faked by rotating
-  each feature rigidly about the helmet's axis, so features crowd together the
-  way a real face does rather than just sliding sideways.
-- **`src/avatars/procedural2d/ribbon.js`** — the scarf. A Verlet chain with
-  hard length constraints, which stays stable however fast you whip your head.
-- **`src/avatars/warp2d/`** — rigs a single flat image. A deformation mesh is
-  laid over the artwork and bent in a vertex shader, each vertex carrying six
-  region weights so parts move independently without ever tearing a hole.
-  `segment.js` works out those regions from the picture; `cloth.js` solves the
-  scarf and hair as a displacement field rather than as geometry, so the rest
-  state is exactly the drawing; `shader.js` owns the cylindrical head turn and
-  the eyelids.
-- **`src/avatars/layered2d/`** — drives your own PNG artwork from the same rig,
-  when it is already cut into layers.
+  FaceLandmarker, cropped to your face so sitting back from the camera costs
+  nothing. Produces 52 blendshape scores and a head pose per frame.
+  `poseTracker.js` runs the pose model on a stride for shoulders, elbows and
+  wrists.
+- **`src/tracking/rig.js`** — mirrors the signal so the model reads as your
+  reflection, subtracts your neutral pose, shapes and filters each channel
+  (`src/core/oneEuro.js`), and adds the motion you never perform yourself:
+  breathing, idle sway and auto-blink.
+- **`scripts/bake/`** — the cut. Run once by `npm run bake`, in headless
+  Chromium: it finds the head, neck and eyes in the drawing, cuts it into
+  thirteen parts by connectivity and colour, paints an invented margin under
+  every seam, traces the scarf's centreline into sixteen bones, repairs the
+  head-on drawing's keyed-out eyes and cuts that too, and writes
+  `public/model/ninja/`: a PNG and a margin PNG per part and a manifest that
+  says how they fit.
+- **`src/avatars/parts/`** — the renderer. It loads the manifest and draws the
+  parts in WebGL2: a rigid head cutout that slides for a turn and rotates for a
+  nod, swapped for the head-on drawing when you face the camera; eyes with
+  lids, glow and gaze in the fragment shader; a contact shadow behind each
+  part; the scarf skinned to a chain of rigid links (`cloth.js`) that bends and
+  does not stretch.
+- **`src/main.js`** and **`src/output.js`** — the tracker page and the page OBS
+  opens. The tracker sends the solved rig, about a kilobyte a frame, over the
+  WebSocket relay in `scripts/rig-relay.mjs`; the OBS page has no camera and no
+  rig of its own, draws the last state it received, and holds it when the
+  tracker goes quiet.
 
 Libraries are vendored from npm and the tracking model is downloaded once at
 install time, so the app has no CDN dependency and works offline.
@@ -325,13 +230,8 @@ The model is cut once, offline: `npm run bake` regenerates `public/model/ninja/`
 from the drawings in `public/art/`, and `npm run bake:check` fails if what is
 committed no longer matches a fresh bake.
 
-And to look at a change rather than assert it:
-
-```bash
-npm run puppet     # the model across a row of head poses
-npm run arms       # the arm channels swept, to check the shoulder pivots
-npm run scarf      # the scarf settling, frame by frame
-```
+The golden run also writes a contact sheet of every pose to `test/out/golden/`,
+which is the quickest way to look at the model in all its poses after a change.
 
 `test/rig.mjs` feeds synthetic frames straight into the rig and checks
 mirroring, calibration, clamping, blink behaviour, arm angles and recovery from
@@ -369,11 +269,11 @@ a real face in front of a real camera.
 
 - Tracking needs reasonable light on your face. Backlighting is the usual
   culprit when it feels unreliable.
-- The **cut into parts** is written for the bundled ninja, as asked. It leans on
-  facts about that drawing — a scarf whose colour separates the head from the
-  body, gloves that are the scarf's colour but not joined to it. Other artwork
-  will not crash it, but it may hand you one big part instead of eight; use the
-  **whole-image warp** model for that art, which makes no such assumptions.
+- The **cut into parts** is written for the bundled ninja. It leans on facts
+  about that drawing — a scarf whose colour separates the head from the body,
+  gloves that are the scarf's colour but not joined to it. Other artwork is
+  out of scope for now: the bake would run, but it may hand you one big part
+  instead of thirteen.
 - Arm tracking needs your shoulders in frame. Hips are not required — it falls
   back to measuring against the screen when you are sitting at a desk.
 - Winks need good light; they are linked by default because half-detected

@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [rig, cloth, replay, model, invariants, golden, smoke, output]
+        suite: [lint-comments, rig, cloth, replay, model, invariants, golden, smoke, output]
     name: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v4

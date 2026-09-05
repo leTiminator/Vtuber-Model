@@ -11,10 +11,11 @@ Every fault reported this week turned out to be measurable, and every one was
 first "fixed" by a change that a harness said was fine and a person could see
 was not. The rule from here:
 
-1. **A complaint becomes a measurement before it becomes a change.** The
-   scarf's stretch was reported for a week as a feel; measured, it was an edge
-   of cloth growing to 116% of its drawn length. That number is now a check
-   that fails if it comes back.
+1. **A complaint becomes a golden pose or a fixture before it becomes a
+   change.** `test/harness.mjs` holds the poses; `test/golden/` holds what they
+   look like; `test/invariants.mjs` holds the properties any correct renderer
+   has. A look that changes fails a golden; a property that breaks fails an
+   invariant. Neither is tuned to make a run pass (see `CLAUDE.md`).
 2. **The live readout is the shared instrument.** Press `D` on the tracker
    page. It shows the raw angles beside the driven ones, the neutral pose
    between them, which face is showing, whether the pose model is running and
@@ -24,7 +25,8 @@ was not. The rule from here:
 3. **The build stamp is on the stage.** The corner shows the commit. If it
    does not match the link, the browser is holding an old build.
 4. **Green is every suite, locally and in CI**, and nothing ships red. The
-   suites run on every push; the deployed link always carries the commit.
+   suites run on every push, each in a few minutes; the deployed link always
+   carries the commit.
 
 ## Where we are
 
@@ -36,30 +38,35 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   the tracker sees it, so sitting back from the webcam no longer costs the
   tracker its input; the body driven by the shoulders where they are seen,
   so it can sit turned while the head looks at the camera.
-- **The model** — the original drawing cut into thirteen parts by
-  connectivity and colour, reassembled exactly at rest. A rigid head cutout
-  that slides for a turn and turns for a nod; a mirrored view past about
-  thirty-five degrees; the frontal drawing's head swapped in when you face
-  the camera, with its keyed-out eyes repaired on the way in. Eyes with lids,
-  glow, gaze and blink; contact shadows; invented margins under every seam.
-  Hair that lags. Breathing and idle sway.
+- **The model** — the original drawing cut once, offline, into thirteen parts
+  by connectivity and colour (`npm run bake`), committed as PNGs and a
+  manifest, and reassembled exactly at rest. A rigid head cutout that slides
+  for a turn and turns for a nod; the frontal drawing's head swapped in when
+  you face the camera, with its keyed-out eyes repaired on the way in. Eyes
+  with lids, glow, gaze and blink; contact shadows; invented margins under
+  every seam. Hair that lags. Breathing and idle sway. Speech lifts the visor
+  glow and bobs the head.
 - **The scarf** — a chain of rigid links rooted on the shoulder. It bends and
   it does not stretch: 5% at worst held, against 116%; one piece at every
   extreme. The lag down the ribbon is the chain-like movement that was asked
   for. The neck scarf sits still on the chest, drawn *behind* the head, and
   the head moves over it as a cutout — the collar's painted margin shows
   wherever the head moves away, and nothing ever lands on the visor.
-- **The head** — turns as far as 42°, tilts to 25° (its own limit), and never
-  mirrors unless you switch the mirror on: a hard glance used to swap the whole
-  head for its reflection.
+- **The head** — turns as far as 42° and tilts to 25° (its own limit). There
+  is no mirror and no cylinder bend any more: both were tried, both read as
+  distortion, and the drawn three-quarter view plus the head-on drawing cover
+  the range.
 - **Output** — a model-only page for OBS as a Browser Source, with real
-  transparency and no window to crop; the tracker page feeds it over the dev
-  server; settings and pose cross, nothing persists on the OBS side, the last
-  pose holds when frames stop.
-- **Testing** — seven suites covering the rig, the cut, motion over the whole
-  range, a replay of a real minute of tracking, boot, the warp backend and the
-  OBS link; visual harnesses for the scarf, the faces,
-  the dynamics; all of it in CI on push.
+  transparency and no window to crop. The tracker page sends it the solved
+  rig over the dev server; settings cross too; nothing persists on the OBS
+  side; the last state holds when the tracker goes quiet, and a window opened
+  late gets the last of both. The canvas is declared premultiplied, so soft
+  edges composite cleanly on a light scene.
+- **Testing** — goldens plus invariants on one harness: the rig and the scarf
+  chain in Node, the recorded session replayed through the rig, the baked
+  model against a fresh bake, sixteen renderer invariants, eighteen golden
+  poses, the app booting against a fake webcam, and the OBS link; every job a
+  few minutes, all of it in CI on push.
 
 ## What is still in the way, in order
 
@@ -99,42 +106,22 @@ Two fixes, both needed:
   should hold; and the readout should say *wrists out of frame* in those
   words, because that is the fix and it is not in the code.
 
-### 3. Edges for streaming
-
-The blend writes premultiplied colour into a canvas declared straight, so
-soft edges composite toward black. Against this character's own ink outline
-it is hard to see; on a light OBS scene it is a dark fringe round the whole
-figure. It touches the blend, the shader and the shadow pass across three
-backends, and needs a check against a light background rather than the
-transparent one the suite uses.
-
-### 4. The sash over the hip
+### 3. The sash over the hip
 
 The scarf's waist piece is drawn behind the body, and nothing is painted
 under it, so any movement of the body shows a slice of background through the
 sash. It no longer swings with the ribbon (connectivity keeps it with the
-body), so this is now purely a draw-order and margin question.
+body), so this is now purely a draw-order and margin question, and a
+bake-side one: the margin is painted by `scripts/bake/cut.js`.
 
-### 5. Golden images
-
-A handful of canonical poses rendered and diffed in CI, so a change that
-alters the look without breaking a measurement is caught. Cheap now that the
-harnesses exist; it would have caught two of this week's regressions early.
-
-### 6. Blinks from drawings
+### 4. Blinks from drawings
 
 `public/art/views/head-front-closed.png` is the three-quarter head with the
 eyes genuinely shut; the frontal pose has no shut-eye drawing yet. Both faces
 still blink by erasing the shard. With shut-eye drawings for both, a blink
 becomes a swap plus a half-state rather than an erase, and reads as a lid.
 
-### 7. Speaking
-
-The mouth is under the scarf, so there is nothing to lip-sync — but the
-tracker's jaw-open weight is there, and a small bob of the head and neck scarf
-on speech would read as talking where a still face reads as a recording.
-
-### 8. Views for a real nod
+### 5. Views for a real nod
 
 A nod is a rigid turn of the cutout, which is a cheat that works up to about
 thirty degrees. A frontal head drawn looking up and one looking down would
