@@ -158,12 +158,12 @@ try {
 
   // Settings must survive a reload: flip a real control, come back, check it
   // stuck. Reading localStorage alone would not prove the store reloads it.
-  const mirror = page.locator('.check input').first();
+  const mirror = page.locator('input[data-key="camera.mirror"]');
   const before = await mirror.isChecked();
   await mirror.click();
   await page.waitForTimeout(500); // the store debounces its writes
   await page.reload({ waitUntil: 'load' });
-  const after = await page.locator('.check input').first().isChecked();
+  const after = await page.locator('input[data-key="camera.mirror"]').isChecked();
   check('a changed setting survives a reload', after === !before, `${before} -> ${after}`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

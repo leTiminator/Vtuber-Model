@@ -152,7 +152,6 @@ server, since that is what carries tracking between them.
 | `C` | Set neutral pose — press this after sitting down |
 | `H` | Hide or show the interface |
 | `M` | Mirror the camera |
-| `1`-`5` | Hold for blush / angry / sparkle / nervous / shocked (built-in character) |
 
 ---
 

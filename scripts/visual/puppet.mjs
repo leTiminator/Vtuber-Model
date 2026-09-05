@@ -19,7 +19,6 @@ const page = await context.newPage();
 page.on('pageerror', (e) => console.error('PAGEERROR', e.message));
 await page.goto('http://127.0.0.1:5205/', { waitUntil: 'load' });
 await page.waitForFunction(() => Boolean(window.__vtuber?.avatars?.parts2d?.image), null, { timeout: 25000 });
-await page.evaluate(() => window.__vtuber.store.set('stage.avatar', 'parts2d'));
 await page.waitForFunction(() => window.__vtuber.avatars.parts2d.ready === true, null, { timeout: 25000 });
 
 await page.evaluate(() => {

@@ -149,27 +149,13 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'parts.nodTurn', label: 'Head turn on nod', min: 0, max: 1.2, step: 0.01, format: x,
           hint: 'How far the head cutout rotates as you nod. It turns rather than bending, '
             + 'because the drawing only ever shows the face from one angle.' },
-        { type: 'slider', key: 'parts.bendHead', label: 'Bend the head instead', min: 0, max: 1, step: 0.01, format: x,
-          hint: 'The old behaviour: bends the drawing to fake a turn. The two sliders below only do '
-            + 'anything above zero.' },
-        { type: 'slider', key: 'parts.turnShell', label: '— as a solid', min: 0, max: 1, step: 0.01, format: x },
-        { type: 'slider', key: 'parts.shellDepth', label: '— head roundness', min: 0, max: 0.9, step: 0.01, format: x },
-        { type: 'slider', key: 'parts.flipTurn', label: 'Flip to the other side', min: 0, max: 1, step: 0.01, format: x,
-          hint: 'Swaps the head for its mirror image once you turn far enough. For a character '
-            + 'drawn at three-quarters, the mirror is the opposite three-quarter view.' },
-        { type: 'slider', key: 'parts.mirrorStart', label: 'Flip at', min: 0.05, max: 0.5, step: 0.005, format: (v) => `${Math.round(v * 57)}°` },
-        { type: 'slider', key: 'parts.flipMargin', label: '— trim after flipping', min: 0, max: 32, step: 1, format: (v) => `${Math.round(v)}px`,
-          hint: 'Each piece is painted a little past its own edge so the piece in front has '
-            + 'something to move off. After a flip that paint is in the wrong place, and shows '
-            + 'as a haze; this is how much of it survives.' },
-        { type: 'slider', key: 'parts.headOn', label: 'Face the camera', min: 0, max: 1, step: 0.01, format: x,
-          hint: 'Builds the head-on view the artwork does not contain: as you turn back to centre, '
-            + 'the eyes slide onto the middle of the head and the far one is replaced by a '
-            + 'mirrored copy of the near one. Same ink, so nothing drifts in style.' },
-        // Printed as real head degrees. The value is in avatar space, which is
-        // the tracked angle already multiplied by head.yawGain — so the slider
-        // used to promise ten degrees of movement and deliver eight and a half.
-        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0.05, max: 0.6, step: 0.005, format: (v) => `${Math.round(v * 57 / 1.15)}°`,
+        { type: 'toggle', key: 'parts.headOn', label: 'Face the camera',
+          hint: 'Shows the drawing of the head facing the camera while you look at it, and '
+            + 'the drawn three-quarter view as you turn away.' },
+        // Printed as real head degrees: the value is in avatar space, which is
+        // the tracked angle already multiplied by head.yawGain.
+        { type: 'slider', key: 'parts.headOnHold', label: '— hold it until', min: 0.05, max: 0.6, step: 0.005,
+          format: (v) => `${Math.round(v * 57 / store.get('head.yawGain'))}°`,
           hint: 'How far you can turn before the face gives way to the drawn three-quarter '
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
             + 'so talking does not walk the eyes across the visor.' },
@@ -234,6 +220,7 @@ const BUILDERS = {
     const value = el('span', 'field__value');
     const input = el('input');
     input.type = 'range';
+    input.dataset.key = spec.key;
     input.min = spec.min;
     input.max = spec.max;
     input.step = spec.step;
@@ -258,6 +245,7 @@ const BUILDERS = {
     const label = el('label', 'check');
     const input = el('input');
     input.type = 'checkbox';
+    input.dataset.key = spec.key;
     const sync = () => { input.checked = Boolean(store.get(spec.key)); };
     input.addEventListener('change', () => store.set(spec.key, input.checked));
     store.subscribe((key) => key === spec.key && sync());
@@ -480,7 +468,7 @@ const BUILDERS = {
       button.type = 'button';
       button.addEventListener('click', () => {
         if (mode === 'reset') {
-          store.patch({ 'stage.zoom': 0.86, 'stage.offsetX': 0, 'stage.offsetY': 0 });
+          store.patch({ 'stage.zoom': store.DEFAULTS['stage.zoom'], 'stage.offsetX': 0, 'stage.offsetY': 0 });
         } else {
           ctx.fitFraming?.(mode);
         }

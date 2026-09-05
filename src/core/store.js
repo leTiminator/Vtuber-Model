@@ -139,7 +139,7 @@ export const DEFAULTS = {
   'stage.lockFraming': false,
   'stage.showPreview': true,
 
-  // --- rigged artwork (warp2d) -----------------------------------------
+  // --- the parts model ------------------------------------------------
   // Geometry is in UV space, 0..1 across the loaded image, so markup survives
   // swapping the artwork for a different resolution.
   'warp.headX': 0.5,
@@ -152,62 +152,9 @@ export const DEFAULTS = {
   'warp.eyeR': '[0.52,0.27,0.59,0.32]',
   'warp.eyeAngle': 0, // radians; drawings rarely have level eyes
   'warp.eyesEnabled': true,
-  // Turning a 3/4 character by mirroring its head is closer to the truth than
-  // warping toward a view the drawing does not contain.
-  // Mirroring the cutout is the opposite 3/4 view, which beats warping toward
-  // one. It went black before because both copies were drawn semi-transparent
-  // and "over" blending bottoms out at 0.75 alpha halfway through; the far
-  // copy is painted solid now and the near one dissolves over it.
   // Depth between the layers: a soft dark shape laid behind each part so the
   // scarf reads as sitting in front of the arm rather than printed on it.
   'parts.contactShadow': 0.34,
-  /* Swapping the head for its mirror image once the turn commits.
-   *
-   * Renamed from parts.mirrorTurn, which had been turned off by hand while the
-   * head still bent and the swap still cross-faded. A saved value outlives any
-   * change of default, so the only way to hand back a setting somebody
-   * switched off for a reason that no longer applies is to ask again under a
-   * new name.
-   */
-  /* Off. The head can be driven to head.limitDeg and the mirror fired just
-   * under it, so a hard glance to the side swapped the whole head for its
-   * reflection — "it just flips between left and right" — and every swap is a
-   * seam somewhere. A drawn three-quarter view sliding as far as it can is
-   * less true to the turn and far less noticeable than a face changing hands.
-   * Left as a setting for anyone who wants the swap back.
-   */
-  'parts.flipTurn': 0,
-  // Radians of yaw before the mirror starts blending. Late on purpose: cross-
-  // fading hard-edged line art ghosts, so the swap belongs where the far side
-  // of the face is already hidden by the turn and there is least to see.
-  /* Pushed out from 0.30 to leave the head-on handover somewhere to happen.
-   *
-   * The square-on face gives way at 0.26 and the flip fired at 0.30, so the
-   * two landed on top of each other — the eyes crossed the visor and the head
-   * swapped sides in almost the same movement, which reads as one lurching
-   * event rather than two decisions.
-   */
-  /* Raised well past where a person sits, because the swap costs more than it
-   * pays inside that range.
-   *
-   * At twenty-three degrees it fired constantly — "it just flips between left
-   * and right even if I'm looking directly at the camera" — and every firing
-   * takes the chin off the scarf, because the head reflects and the neck cloth
-   * only slides. There is a real drawing of the head-on face now and a drawn
-   * three-quarter either side of it, so the range a person actually works in
-   * is covered without ever reflecting anything. The mirror is left for a
-   * genuine turn away, where a bad seam matters far less than a face pointing
-   * the wrong way would.
-   *
-   * Reachable, which the first number chosen was not. The rig scales the head
-   * by head.yawGain and THEN clamps at head.limitDeg, so the most yaw the
-   * renderer ever sees is limitDeg itself — 0.733 rad at the default — and a
-   * threshold above that is a mirror that never fires. This sits just under
-   * it, so a head driven to its limit flips; which is also why the mirror is
-   * now off by default (parts.flipTurn).
-   */
-  'parts.mirrorStart': 0.70,
-
   /* How much of the head-on face shows when the head is square to the camera.
    *
    * The artwork shows the face from one angle, and it is not the angle anybody
@@ -222,9 +169,9 @@ export const DEFAULTS = {
    * onto the head's centre line and mirrored it into the far eye's place,
    * which is what read as the eyes coming off the face.
    *
-   * Below a half this never reaches the swap, which is how it is switched off.
+   * Off keeps the drawn three-quarter face at every angle.
    */
-  'parts.headOn': 1.0,
+  'parts.headOn': true,
   /* How far the head can turn before the head-on face starts giving way.
    *
    * Nobody streaming holds their head still. Talking is a constant ten or
@@ -279,14 +226,6 @@ export const DEFAULTS = {
    */
   'stage.faceFlip': false,
 
-  /* How much of a part's invented margin survives the flip, in pixels.
-   *
-   * Enough to hide the hairline between two pieces that were one drawing, and
-   * no more. The margin is a guess about what sits under a neighbour, and the
-   * flip moves the head clear of every neighbour it had, so past a couple of
-   * pixels the guess is just paint on the background.
-   */
-  'parts.flipMargin': 3,
   /* How much invented paint the swinging cloth may draw, in pixels.
    *
    * Every part is grown outward so the piece in front has something to move
@@ -302,10 +241,6 @@ export const DEFAULTS = {
    */
   'parts.clothMargin': 8,
 
-  /* Turning the head as a rounded surface rather than bending it on a
-   * cylinder. See shell.js: the cylinder slides pixels inside an outline that
-   * never changes, and has no coherent answer for turning and nodding at once.
-   */
   /* How far the head cutout turns as it nods, in radians per radian of pitch.
    *
    * The drawing shows one view of a face and cannot be made to show another,
@@ -313,15 +248,6 @@ export const DEFAULTS = {
    * available here, and the only one that has ever read unambiguously.
    */
   'parts.nodTurn': 0.55,
-  // The old bending, off. Kept so the two can be compared rather than argued
-  // about; at zero the head is a rigid cutout.
-  'parts.bendHead': 0,
-
-  'parts.turnShell': 1.0,
-  // How deep the shell stands off the drawing, as a fraction of the head's own
-  // radius. Past about 0.6 the surface folds over itself inside the rig's own
-  // turn limit, which reads as the head turning inside out.
-  'parts.shellDepth': 0.55,
 
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,

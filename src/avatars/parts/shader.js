@@ -1,9 +1,9 @@
 /**
  * Shaders for the layered puppet.
  *
- * Every part is drawn with the same program. Simple parts are a single quad
- * carrying a transform; the head is a small grid so the cylindrical turn can
- * bend it; the scarf is a strip whose vertices are rebuilt from its bone chain.
+ * Every part is drawn with the same program. Rigid parts are a single quad
+ * carrying a transform; the arms are a grid so they can blend between two
+ * joints; the scarf is a strip whose vertices are rebuilt from its bone chain.
  *
  * Positions arrive in image space — 0..1 across the whole artwork, not across
  * the part — so a part sits where it was cut from until a transform moves it.
@@ -13,143 +13,27 @@
 export const VERTEX_SHADER = `#version 300 es
 precision highp float;
 
-in vec2 a_pos;   // image space, 0..1 across the whole artwork
-in vec2 a_uv;    // into this part's own texture
-in float a_follow; // how much of the head's turn this vertex takes, 0..1
-in float a_depth;  // how far this vertex stands off the drawing, 0..1
+in vec2 a_pos;     // image space, 0..1 across the whole artwork
+in vec2 a_uv;      // into this part's own texture
+in float a_follow; // how much of the near joint this vertex takes, 0..1
 
-uniform mat3 u_model;      // the joint this part's head end hangs off
-/* The joint its far end hangs off, blended in by the same follow weight.
- *
- * The torso was cut into the scarf piece, and that piece hangs off the neck —
- * so tilting the head swung the whole trunk and left a boot standing on its
- * own. A part is not attached at one point: the scarf is held by the neck
- * where it crosses the face and by the hips where it reaches the waist, and
- * which of those a vertex answers to is a question about where it sits, not
- * about which piece the cut put it in. Same weight as the turn, so a point
- * cannot take the head's rotation without taking the head's joint.
- *
- * Equal to u_model for parts held at one joint, which is most of them.
- */
-uniform mat3 u_modelFar;
-uniform float u_aspect;    // image width / height
-
-// Head turn. Applied before the joint transform, so it bends the art in place.
-/* Mirroring, about the head's axis rather than about each part's own.
- *
- * This used to flip the texture coordinate inside whichever part was being
- * drawn, which mirrors that part about the middle of its own box. For the head
- * that is very nearly the head's axis, so it looked right. For the eyes it is
- * not: their box is a small patch off to one side of the face, so flipping
- * inside it left the eye exactly where it was while the face it belongs to
- * moved across. The face did not follow the head.
- *
- * Reflecting the drawing itself about one shared axis is what a mirror does,
- * and it puts every part where its mirror image belongs whatever shape its
- * own box happens to be. Applied before the joints, so a mirrored head still
- * tilts and nods the way its owner does rather than the opposite way.
- */
-uniform float u_flip;      // 1 mirrors this part about u_flipAxis
-uniform float u_flipAxis;  // in image space, 0..1 across the artwork
-
-/* How far the swap carries the head, for everything that is not swapping.
- *
- * The mirror reflects the head about the axis its group balances on, which
- * turns the group without moving it — but the head itself is not that group,
- * and its own middle lands about forty pixels to the side. The neck wrap does
- * not swap with it, and must not: it is cloth that runs on into the scarf, and
- * mirroring half a scarf tears it off the shoulders. So the wrap stayed put
- * while the face slid out from under it, which is the glitch at the neck.
- *
- * It travels instead. The same distance the head's middle moved, taken per
- * vertex through the weight that already says how much of the head's turn a
- * point takes — full where the cloth crosses the face, nothing at the
- * shoulders. Nothing is reversed, so no drawing ends up back to front, and
- * every seam holds because both sides of it answer this same question.
- */
-uniform float u_flipSlide;
-
-uniform float u_warp;      // 0 disables the whole block
-uniform vec2 u_headCenter;
-uniform float u_cylR;
-uniform float u_yaw;
-uniform float u_pitch;
-uniform float u_shell;  // 0 bends on the old cylinder, 1 turns the shell
-uniform float u_depth;  // how deep the shell is, in the same units as x
+uniform mat3 u_model;    // the joint this part's near end hangs off
+uniform mat3 u_modelFar; // the joint its far end hangs off; equal to u_model for most parts
+uniform float u_aspect;  // image width / height
 
 uniform vec2 u_viewScale;
 uniform vec2 u_viewOffset;
 
 out vec2 v_uv;
 
-/**
- * Rotate a point on a cylinder of radius R and read off its new position.
- * The centreline term is subtracted, or the head translates by R*sin(a) as well
- * as rotating — which at a 25 degree turn slides it most of its own width.
- */
-float cylinder(float x, float R, float angle) {
-  return R * (sin(asin(clamp(x / R, -0.999, 0.999)) + angle) - sin(angle));
-}
-
 void main() {
-  /* Cloth arrives already on its bones.
-   *
-   * This used to look each bone up out of a uniform array with a per-vertex
-   * index. It is done on the CPU now — see skinCloth — because that indexing
-   * is a known way to get wrong geometry out of a mobile driver, and the
-   * scarf was the only part breaking on a phone that matched this machine in
-   * every other respect.
-   */
-  vec2 p = a_pos;
-  if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
-  else p.x += u_flipSlide * a_follow;
-
-  /* The head's turn, taken per vertex rather than per part.
-   *
-   * A cut cannot express a gradient. The scarf is one continuous surface that
-   * should follow the head fully where it crosses the face and barely at all
-   * where it hangs off the shoulder — but it is cut in two, and giving each
-   * piece a single follow factor makes them disagree at the seam. The bend
-   * maps a point differently for different angles, so at a 42-degree turn the
-   * same point on that seam landed tens of pixels apart in the two parts and
-   * the scarf came away from the head.
-   *
-   * Both sides of the seam compute this from the same function of where the
-   * vertex sits, so they cannot disagree there however the parts are cut.
-   */
-  if (u_warp > 0.5 && a_follow > 0.001) {
-    vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);
-    float yaw = u_yaw * a_follow;
-    float pitch = u_pitch * a_follow;
-
-    // The old mapping: a fixed-radius arc, kept so the two can be compared and
-    // so the turn can be dialled back to it if the shell reads badly.
-    vec2 arc = vec2(cylinder(local.x, u_cylR, yaw),
-                    cylinder(local.y, u_cylR * 0.82, pitch));
-
-    /* The shell: an actual rotation of a surface that has depth.
-     *
-     * Rotating about the vertical axis and then the horizontal one, in that
-     * order, is a head turning and then nodding — which is the order a neck
-     * does it in, and the reason yaw and pitch stop fighting each other. A
-     * vertex at the outline stands at zero depth, so it foreshortens instead
-     * of sliding, and the silhouette turns with the surface.
-     */
-    float z = a_depth * u_depth;
-    float cy = cos(yaw), sy = sin(yaw);
-    float cp = cos(pitch), sp = sin(pitch);
-    vec3 P = vec3(local, z);
-    P = vec3(P.x * cy + P.z * sy, P.y, P.z * cy - P.x * sy);
-    P = vec3(P.x, P.y * cp - P.z * sp, P.y * sp + P.z * cp);
-
-    p = u_headCenter + mix(arc, P.xy, u_shell) / vec2(u_aspect, 1.0);
-  }
-
-  // Blend the transformed points, not the matrices: two rotations averaged
-  // element-wise are not a rotation, and the error shows as a squash.
-  vec2 near = (u_model * vec3(p, 1.0)).xy;
-  vec2 far = (u_modelFar * vec3(p, 1.0)).xy;
-  p = mix(far, near, a_follow);
+  // Cloth arrives already on its bones (see skinCloth); every other part is
+  // placed by its joints. Blend the transformed points, not the matrices: two
+  // rotations averaged element-wise are not a rotation, and the error shows
+  // as a squash.
+  vec2 near = (u_model * vec3(a_pos, 1.0)).xy;
+  vec2 far = (u_modelFar * vec3(a_pos, 1.0)).xy;
+  vec2 p = mix(far, near, a_follow);
 
   v_uv = a_uv;
   vec2 ndc = (p * u_viewScale + u_viewOffset) * 2.0 - 1.0;

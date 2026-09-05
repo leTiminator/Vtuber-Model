@@ -60,20 +60,6 @@ const HEADON_OF = { head: 'headOn', tufts: 'tuftsOn', eyeNear: 'eyeNearOn', eyeF
 const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
 
 /**
- * The parts that take the head's cylindrical bend. They have to share one
- * radius — see the note where it is computed.
- *
- * The eyes belong here for the plainest reason there is: they are painted on
- * the visor. Left out, they stayed pinned to where the artist drew them while
- * the shell turned out from under them, so by forty degrees one shard was
- * hanging off the chin and the other was in open space beside the glove. They
- * are not a separate object from the face; they are the face.
- */
-const BENDS_WITH_HEAD = new Set(
-  ['head', 'tufts', 'wrap', 'tails', 'eyeNear', 'eyeFar',
-    'headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'armLeft', 'armRight']);
-
-/**
  * Where the head's turn stops being the head's, as multiples of the head's own
  * radius. Full inside the first, none beyond the second, smooth between.
  *
@@ -92,59 +78,6 @@ const FOLLOW_NONE = 2.30;
  */
 const SHADOWS = new Set(
   ['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap', 'tuftsOn', 'headOn']);
-
-/**
- * What the mirrored view takes with it: the head cutout and what is drawn on
- * it. The hair is part of the head; the neck wrap is cloth that continues into
- * the scarf, and mirroring half a scarf would tear it off the shoulders.
- *
- * The raised fist goes too, and has to. It is drawn against the cheek, and the
- * drawing tucks the rest of that arm behind the hood and never draws it — so
- * once the head swaps sides there is nothing joining the glove to anything,
- * and it hangs in mid-air beside a face turned the other way. Mirrored, it
- * lands where the opposite three-quarter view puts it: on the far side of the
- * head, behind the scarf. The other arm reaches down across the body and stays
- * where it is.
- */
-const FLIPS_WITH_HEAD = new Set(
-  ['head', 'tufts', 'eyeNear', 'eyeFar',
-    'headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'armRight']);
-/* The neck scarf does NOT flip, and here is what that costs and why.
- *
- * The chin tear happens in the frame the mirror fires: the head reflects, the
- * wrap only slides, and a translation cannot stand in for a reflection — the
- * jaw that was on one side is now on the other and the cloth shaped for the
- * old side is left behind. Rendered across the swap it is unmistakable: the
- * scarf lets go of the chin and hangs beside a bare face.
- *
- * Mirroring the wrap with the head fixes that exactly, and was tried. It also
- * tears the character into two and three separate pieces past forty degrees,
- * because the rest of the scarf is not mirrored and the two halves end up on
- * opposite sides of the neck — caught by the checks, not by looking, which is
- * the only reason it is not shipping.
- *
- * So the flip is moved out of the way instead; see parts.mirrorStart. The
- * proper fix is for the whole scarf to mirror together, which is a change to
- * how the cloth is bound rather than to which set a part is in.
- */
-
-/**
- * Whose weight decides where the mirror's axis falls.
- *
- * The head, the hair and the eyes — the thing a viewer watches. Reflecting a
- * group about its own centre of mass turns it without moving it, and that is
- * the whole reason the axis is measured rather than taken as the head's own
- * middle: measured wrong, the swap slides the face sideways mid-turn.
- *
- * The fist rides along but does not get a vote. It is a small piece far off to
- * one side, and letting it pull the axis moved the head sixteen pixels in the
- * single degree where the swap happens — a lurch on the part of the model
- * people are looking at, to keep a glove company.
- */
-const FLIP_AXIS = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
-/* The head-on face is left out on purpose. Only one of the two is ever drawn,
- * and it is registered onto the other's place — so weighing both would count
- * one head twice and pull the axis toward whichever happens to be heavier. */
 
 /**
  * The rig as it reads for a character facing the other way.
@@ -192,16 +125,12 @@ function parseRect(value, fallback = [0.4, 0.27, 0.48, 0.33]) {
   }
 }
 import { extractSpine } from './spine.js';
-import { depthAt, flipAxisOf, shellFrom } from './shell.js';
 
 const UNIFORMS = [
-  'u_model', 'u_modelFar', 'u_aspect', 'u_warp', 'u_headCenter', 'u_cylR', 'u_yaw', 'u_pitch',
-  'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
+  'u_model', 'u_modelFar', 'u_aspect', 'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
-  'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax',
-  'u_flip', 'u_flipAxis', 'u_flipSlide', 'u_lidFill',
-  'u_shell', 'u_depth',
+  'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax', 'u_lidFill',
 ];
 
 const SPINE_NODES = 16;
@@ -219,7 +148,11 @@ const CLOTH_DRIVE = 1.0;
 const CLOTH_WIND = 0.5;
 const CLOTH_GRID = 26; // the cloth bends along its whole length, so it needs rows
 
-const HEAD_GRID = 12; // the head bends, so it needs more than a quad
+// The arms are held at both ends, glove and shoulder, so their follow weight
+// varies across the sleeve and they need rows to blend along. Every other
+// rigid part is a quad.
+const ARM_GRID = 12;
+const ARM_PARTS = new Set(['armLeft', 'armRight']);
 
 export class Parts2D {
   static id = 'parts2d';
@@ -287,7 +220,6 @@ export class Parts2D {
     this.headOnPhase = 1;
     this.squareSince = 0;
     this.yawHeld = undefined;
-    this.mirrored = false;
     this.faceOn = true;
     this.scarf.reset();
     this.inertia.reset();
@@ -321,7 +253,6 @@ export class Parts2D {
       pos: gl.getAttribLocation(program, 'a_pos'),
       uv: gl.getAttribLocation(program, 'a_uv'),
       follow: gl.getAttribLocation(program, 'a_follow'),
-      depth: gl.getAttribLocation(program, 'a_depth'),
     };
 
     gl.enable(gl.BLEND);
@@ -436,15 +367,6 @@ export class Parts2D {
       r: Math.max(headPart.w - 2 * headPart.inset, headPart.h - 2 * headPart.inset) / 2 / height,
     } : { cx: m.headX, cy: m.headY, r: m.headR };
 
-    /* The shell, before anything is uploaded, because every part reads its
-     * depth from it. One field for the whole model, taken from the head's
-     * outline — see shell.js for why it is not one dome per piece.
-     */
-    this.shell = headPart ? shellFrom(headPart, width, height) : null;
-    // The axis a mirror pivots on: the weight of everything that mirrors.
-    this.flipAxis = flipAxisOf(parts.filter((p) => FLIP_AXIS.has(p.name)), width)
-      ?? this.headSpan.cx;
-
     this.parts = parts
       .sort((a, b) => a.z - b.z)
       .map((part) => this.upload(part, width, height, m, sockets));
@@ -452,26 +374,6 @@ export class Parts2D {
     // The face that looks at the camera, cut from its own drawing.
     this.parts = this.parts.concat(this.buildHeadOnFace(width, height, m));
     this.parts.sort((a, b) => a.z - b.z);
-
-    /* One cylinder radius for the whole head, not one per part.
-     *
-     * The bend maps x to R*(sin(asin(x/R) + yaw) - sin(yaw)), which depends on
-     * R. Give the hood, the hair and the neck wrap their own radius — each
-     * sized to its own reach — and they agree only at yaw 0. Past that they
-     * rotate at different rates and slide apart: the wrap climbs over the
-     * visor and the scarf tears away from the shoulders, worse the further you
-     * turn. Radius is a property of the head being turned, not of the piece
-     * being drawn.
-     *
-     * The largest keeps everything inside the cylinder, which is what the
-     * per-part sizing was for — anything reaching beyond R gets clamped and
-     * distorts.
-     */
-    let headCylR = 0;
-    for (const part of this.parts) {
-      if (BENDS_WITH_HEAD.has(part.name)) headCylR = Math.max(headCylR, part.cylR);
-    }
-    this.headCylR = headCylR || 1;
 
     this.headOn = this.parts.some((p) => p.name === 'headOn');
 
@@ -544,23 +446,14 @@ export class Parts2D {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-    // The head bends and the cloth bends along its whole length, so both need
-    // a grid; everything else is a quad.
+    // The cloth bends along its whole length and the arms blend between two
+    // joints, so both need rows; everything else is a quad.
     const skinned = part.name === 'tails' && this.spine;
-    /* Anything that bends needs rows to bend along.
-     *
-     * Only the head had them. The neck wrap and the hair took the same
-     * cylindrical bend across a single quad — four corners, linearly
-     * interpolated — which cannot follow a curve. Against the head's twelve
-     * rows the two disagreed by more the further the head turned, and that
-     * disagreement is at the seam where the scarf meets the hood.
-     */
-    const n = skinned ? CLOTH_GRID : BENDS_WITH_HEAD.has(part.name) ? HEAD_GRID : 1;
+    const n = skinned ? CLOTH_GRID : ARM_PARTS.has(part.name) ? ARM_GRID : 1;
     const pos = [];
     const uv = [];
     const bindData = [];
     const followData = [];
-    const depthData = [];
     const onChainData = [];
     const idx = [];
     // Which of this cloth the chain actually runs through — see ribbonMask.
@@ -589,7 +482,6 @@ export class Parts2D {
         pos.push(px, py);
         uv.push(s, t);
         followData.push(this.followAt(part.name, px, py));
-        depthData.push(depthAt(this.shell, px, py));
         // Bind into the centreline's local frame at the nearest point.
         bindData.push(...(skinned ? bindToSpine(px, py, this.spine.nodes, this.aspect) : [0, 0, 0]));
         onChainData.push(ribbon
@@ -611,24 +503,10 @@ export class Parts2D {
       skinned ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
     bind(gl, this.attr.uv, new Float32Array(uv), 2);
     bind(gl, this.attr.follow, new Float32Array(followData), 1);
-    bind(gl, this.attr.depth, new Float32Array(depthData), 1);
     const ib = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
-
-    // The cylinder clamps anything beyond its radius, which silently distorts
-    // a part that reaches further out than the head does. Size the radius to
-    // whatever this part actually spans, never smaller than the head's own.
-    let reachX = 0;
-    let reachY = 0;
-    // Measured from the same centre everything turns about, or the radius
-    // describes a circle around a different point than the one being used.
-    for (let k = 0; k < pos.length; k += 2) {
-      reachX = Math.max(reachX, Math.abs((pos[k] - this.headSpan.cx) * this.aspect));
-      reachY = Math.max(reachY, Math.abs(pos[k + 1] - this.headSpan.cy));
-    }
-    const cylR = Math.max(this.headSpan.r * 1.85, reachX / 0.98, reachY / 0.803);
 
     /* Eye sockets, in this part's texture space.
      *
@@ -653,7 +531,7 @@ export class Parts2D {
 
     return {
       ...part,
-      texture, marginTex, vao, indexCount: idx.length, skinned, cylR,
+      texture, marginTex, vao, indexCount: idx.length, skinned,
       // Skinning happens on the CPU — see skinCloth. The bind stays here
       // because that is where it is now used.
       posBuffer,
@@ -869,41 +747,6 @@ export class Parts2D {
     const pitch = lerp(pitchTarget, this.springs.pitch.value, overshoot);
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
 
-    // How far into the mirrored view this yaw has taken us. Nothing happens
-    // until the turn is committed enough that a flip reads as rotation rather
-    // than as the face suddenly changing.
-    const start = store.get('parts.mirrorStart');
-    /* Hysteresis, so a head held near the threshold does not flicker.
-     *
-     * A snap needs it and a fade did not: sitting at the angle where the swap
-     * happens, the smallest wobble in the tracker would hand the drawing back
-     * and forth several times a second. Once flipped it stays flipped until
-     * the turn comes well back, which is also how a real turn behaves — you
-     * do not un-turn by two degrees.
-     */
-    /* Signed, not absolute.
-     *
-     * This latched on how far the head had turned and then applied the mirror
-     * only when it had turned the wrong way, which are two different questions.
-     * Turning right past the threshold armed it, and swinging back through
-     * centre then flipped the head at eleven degrees instead of seventeen —
-     * an early flip in the middle of an ordinary look around the room. Only
-     * one direction needs the mirror, so only that direction should arm it.
-     */
-    this.mirrored = this.mirrored ? yaw < -start * 0.55 : yaw < -start;
-    const mirror = this.mirrored ? store.get('parts.flipTurn') : 0;
-    /* How far the swap moves the head, for everything left behind to follow.
-     *
-     * The mirror is about the group's balance point, so the group does not
-     * move — but the head's own middle does, by twice its offset from that
-     * axis. Anything holding on to the head has to go the same distance or the
-     * seam opens, which is what the neck wrap was doing.
-     */
-    // Gated on the mirror actually being on, not on the latch alone: with the
-    // mirror off the slide fired on its own past 40 degrees and jerked the head.
-    const flipSlide = mirror > 0.5 && this.headSpan
-      ? 2 * (this.flipAxis - this.headSpan.cx) : 0;
-
     // --- joints ----------------------------------------------------------
     const joints = this.solveJoints(rig, roll, pitch, yaw, m);
 
@@ -1086,9 +929,9 @@ export class Parts2D {
      */
     const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
     this.headOnPhase = clamp(this.headOnPhase + (this.squareOn ? step : -step), 0, 1);
-    const headOnT = this.headOn
-      ? smoothstep(this.headOnPhase) * clamp(store.get('parts.headOn'), 0, 1)
-      : 0;
+    // A saved value from when this was a slider reads as on above a half.
+    const headOnT = this.headOn && Number(store.get('parts.headOn')) >= 0.5
+      ? smoothstep(this.headOnPhase) : 0;
     /* The face changes hands rather than fading, for the same reason the
      * mirror does: two copies of hard-edged line art laid over each other are
      * legible as two, and these are two different drawings of a hood, not one
@@ -1115,19 +958,6 @@ export class Parts2D {
 
     const shadowStrength = store.get('parts.contactShadow');
 
-    /* Depth is measured against the head's own radius, so the shell is as
-     * round as the head is wide however the artwork is scaled. Capped where
-     * the surface would start folding over itself within the turn limit —
-     * see the note on RISE in shell.js.
-     */
-    const shellAmount = clamp(store.get('parts.turnShell'), 0, 1);
-    const foldSafe = 1 / (Math.max(this.shell?.rise ?? 1.8, 0.1)
-      * Math.tan(clamp(store.get('head.limitDeg'), 5, 80) * Math.PI / 180));
-    const shellDepth = Math.min(clamp(store.get('parts.shellDepth'), 0, 1), foldSafe)
-      * this.headSpan.r;
-
-    // Back to front, always: the neck scarf is drawn behind the head in every
-    // view now, so the mirror no longer has to reorder anything.
     const order = this.parts;
 
     // --- draw, back to front ---------------------------------------------
@@ -1136,50 +966,6 @@ export class Parts2D {
       gl.uniformMatrix3fv(L.u_modelFar, false,
         joints[part.farJoint ?? part.joint] ?? joints[part.joint] ?? IDENTITY);
 
-
-      // Tufts and the neck wrap are attached to the shell, so they have to
-      // take the same bend as it; only the head itself ever mirrors.
-      // The eyes flip with the face — they are painted on the visor, so leaving
-      // them put while it mirrors slides them off it. But they snap rather
-      // than dissolve: a cross-fade of two bright shards on a dark visor reads
-      // as the character briefly having two eyes, which is far worse than the
-      // ghosting the hood gets away with at its own low contrast.
-      /* What the mirror takes with it: the head and everything drawn on it.
-       *
-       * The eyes especially. They are a separate layer so a lid can erase
-       * them, not because they are a separate object — leave them behind and
-       * the face does not follow the head across.
-       */
-      const flips = FLIPS_WITH_HEAD.has(part.name) && mirror > 0.5;
-      // The cloth stays where the body is; only the arms slide with the head.
-      const slide = flips || part.name === 'wrap' || part.name === 'tails' ? 0 : flipSlide;
-      // Nothing bends any more; the head turns instead. Kept behind a setting
-      // rather than deleted, so the two can still be compared.
-      const bends = BENDS_WITH_HEAD.has(part.name) && store.get('parts.bendHead') > 0;
-      gl.uniform1f(L.u_warp, bends ? 1 : 0);
-      if (bends) {
-        // The neck wrap is cloth lying over the shoulders, not part of the
-        // shell. Turning it as hard as the hood drags it across the visor and
-        // swings it clear of the shoulder, which uncovers the arm's painted
-        // margin as a dark smear. Cloth follows a head turn; it does not
-        // perform it.
-        /* Turn about the middle of the head, not about the marker.
-         *
-         * The marker is placed from eye spacing, which on this drawing puts it
-         * near the chin and calls the head barely half its real size — the
-         * same reason headSpan exists at all, measured from the piece that was
-         * actually cut. Rotating a head about a point forty per cent of a
-         * radius below its centre does not read as a nod: the face swings
-         * through an arc it should not have, the crown barely moves, and what
-         * you see is the drawing being bent rather than the head turning.
-         */
-        gl.uniform2f(L.u_headCenter, this.headSpan.cx, this.headSpan.cy);
-        gl.uniform1f(L.u_cylR, this.headCylR);
-        gl.uniform1f(L.u_yaw, yaw);
-        gl.uniform1f(L.u_pitch, pitch);
-        gl.uniform1f(L.u_shell, this.shell ? shellAmount : 0);
-        gl.uniform1f(L.u_depth, shellDepth);
-      }
 
       /* Which of the two faces this part belongs to.
        *
@@ -1220,8 +1006,6 @@ export class Parts2D {
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
 
-      // The group's centre of mass, so a mirror turns it without moving it.
-      gl.uniform1f(L.u_flipAxis, this.flipAxis);
       gl.uniform2f(L.u_texel, 1 / part.w, 1 / part.h);
 
       gl.activeTexture(gl.TEXTURE0);
@@ -1248,9 +1032,7 @@ export class Parts2D {
        * which is precisely what it did, the first time this was tried on
        * everything at once.
        */
-      gl.uniform1f(L.u_marginMax, flips ? store.get('parts.flipMargin')
-        : part.skinned ? store.get('parts.clothMargin')
-          : MARGIN_FULL);
+      gl.uniform1f(L.u_marginMax, part.skinned ? store.get('parts.clothMargin') : MARGIN_FULL);
 
       /* This part's geometry, bound before anything is drawn with it.
        *
@@ -1278,32 +1060,12 @@ export class Parts2D {
         gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
         gl.uniform1f(L.u_shadow, shadowStrength);
         gl.uniform2f(L.u_shadowOffset, SHADOW_DIR[0] / part.w, SHADOW_DIR[1] / part.h);
-        gl.uniform1f(L.u_flip, flips ? 1 : 0);
-        gl.uniform1f(L.u_flipSlide, slide);
         gl.uniform1f(L.u_opacity, 1);
         gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
         gl.uniform1f(L.u_shadow, 0);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       }
 
-      /* Turning past a threshold swaps the head for its mirror image.
-       *
-       * For a character drawn at three-quarters, the mirror IS the opposite
-       * three-quarter view — far closer to the truth than warping toward a
-       * view the drawing does not contain.
-       *
-       * It swaps rather than cross-fades. The fade was an attempt to avoid a
-       * pop and it bought a worse fault: two copies of hard-edged line art
-       * laid over each other are legible as two, and halfway through the turn
-       * the visor plainly had two outlines and two rims. Nothing about a fade
-       * makes that read as one head. The eyes have snapped since they were
-       * separated for exactly this reason, and now the head does too — which
-       * is only viable because the cutout no longer bends, so the two copies
-       * are the same shape and the swap has nothing to give itself away with
-       * except the drawing changing hands.
-       */
-      gl.uniform1f(L.u_flip, flips ? 1 : 0);
-      gl.uniform1f(L.u_flipSlide, slide);
       gl.uniform1f(L.u_opacity, 1);
       gl.drawElements(gl.TRIANGLES, part.indexCount, gl.UNSIGNED_SHORT, 0);
 
