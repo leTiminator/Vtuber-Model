@@ -684,7 +684,13 @@ try {
     for (const [label, patch] of CASES) {
       for (const [poseName, drive] of POSES) {
         store.reset();
-        store.patch(patch);
+        /* Zoomed out, as the sweep above is, so nothing leaves the frame. The
+         * saved frame from a failing run showed the ribbon swung out of the
+         * top of the canvas and back in at the panel's slackest settings — two
+         * pieces on screen, one piece of cloth. This counts pieces of the
+         * character, not of the canvas.
+         */
+        store.patch({ 'stage.zoom': 0.6, ...patch });
         a.scarf.reset();
         a.inertia.reset();
         const rig = emptyRig();
@@ -847,14 +853,14 @@ try {
    * every check here, because none of them asked where the eye had got to.
    */
   const face = await page.evaluate(async () => {
-    // The mirror is off by default now; this check is about the mirror.
-    window.__vtuber.store.set('parts.flipTurn', 1);
     const { avatars, store, emptyRig } = window.__vtuber;
     const a = avatars.parts2d;
     store.reset();
     store.patch({ 'warp.clothWeight': 0, 'warp.wind': 0, 'warp.overshoot': 0,
       'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0,
-      'stage.zoom': 1.9, 'stage.offsetX': -0.10, 'stage.offsetY': 0.22 });
+      'stage.zoom': 1.9, 'stage.offsetX': -0.10, 'stage.offsetY': 0.22,
+      // Off by default now; this check is about the mirror.
+      'parts.flipTurn': 1 });
     a.resize(300, 300, 2);
     // Flush the rebuild before holding the part list — see the note above.
     for (let f = 0; f < 3; f++) a.render(emptyRig(), 1 / 60);
@@ -1599,8 +1605,16 @@ try {
     store.reset();
     return { flipCut, flipKept, restCut, restKept };
   });
+  /* Two and a half thousand pixels now, not seven and a half. A part is
+   * painted outward only under parts in front of it, and the neck scarf used
+   * to be in front of the head: most of the head's invented paint was the
+   * band under the collar, and flipping trimmed it. The collar is behind the
+   * head now, so the head carries paint only under the eyes and the trim has
+   * far less to take — which is the point of the check still holding: what
+   * there is, goes.
+   */
   check('flipping the head drops the paint that was hiding under it',
-    haze.flipKept - haze.flipCut > haze.flipCut * 0.015,
+    haze.flipKept - haze.flipCut > 500,
     `${haze.flipKept - haze.flipCut}px of haze off a ${haze.flipCut}px figure `
       + `(${(100 * (haze.flipKept - haze.flipCut) / haze.flipCut).toFixed(1)}%)`);
   /* Within a pixel, which is the floor this can be measured to.
