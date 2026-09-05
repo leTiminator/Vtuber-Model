@@ -3,7 +3,7 @@
  *
  *   node test/cloth.mjs
  */
-const { LinkChain } = await import('../src/avatars/warp2d/cloth.js');
+const { LinkChain } = await import('../src/avatars/parts/cloth.js');
 
 let failures = 0;
 function check(name, ok, detail = '') {

@@ -179,9 +179,18 @@ function facedRig(rig) {
 
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
-import { HeadInertia, LinkChain } from '../warp2d/cloth.js';
-import { detectMarkers, readPixels, sampleLidColours } from '../warp2d/segment.js';
-import { parseRect } from '../warp2d/index.js';
+import { HeadInertia, LinkChain } from './cloth.js';
+import { detectMarkers, readPixels } from './markers.js';
+
+/** A marker rectangle saved as JSON text, or the fallback if it is unreadable. */
+function parseRect(value, fallback = [0.4, 0.27, 0.48, 0.33]) {
+  try {
+    const r = JSON.parse(value);
+    return Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) ? r : fallback;
+  } catch {
+    return fallback;
+  }
+}
 import { extractSpine } from './spine.js';
 import { depthAt, flipAxisOf, shellFrom } from './shell.js';
 
@@ -395,9 +404,6 @@ export class Parts2D {
       gl.deleteTexture(old.marginTex);
       gl.deleteVertexArray(old.vao);
     }
-
-    const px = readPixels(this.image);
-    this.lids = px ? sampleLidColours(px, m, m.eyeAngle) : null;
 
     const tails = parts.find((p) => p.name === 'tails');
     this.spine = tails ? findSpine(tails, this.image, width, height, m) : null;

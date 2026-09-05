@@ -233,7 +233,7 @@ try {
   const repaired = await page.evaluate(async () => {
     const { repairKeyedHoles } = await import('/src/avatars/parts/repair.js');
     const { cutParts } = await import('/src/avatars/parts/cut.js');
-    const { detectMarkers, readPixels } = await import('/src/avatars/warp2d/segment.js');
+    const { detectMarkers, readPixels } = await import('/src/avatars/parts/markers.js');
     const art = window.__vtuber.avatars.parts2d;
     const load = (src) => new Promise((done, fail) => {
       const img = new Image();
