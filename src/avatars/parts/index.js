@@ -262,6 +262,27 @@ export class Parts2D {
     if (!this.gl) this.initGL();
   }
 
+  /**
+   * Forget all motion: springs, cloth, hair, glow, the face latch and the
+   * clock. The next render starts from the drawn pose, so two renders of the
+   * same rig after a reset are the same picture.
+   */
+  reset() {
+    this.clock = 0;
+    this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
+    this.tuft = { x: 0, y: 0, vx: 0, vy: 0 };
+    this.glowPulse = 1;
+    this.squareOn = true;
+    this.headOnPhase = 1;
+    this.squareSince = 0;
+    this.yawHeld = undefined;
+    this.mirrored = false;
+    this.faceOn = true;
+    this.scarf.reset();
+    this.inertia.reset();
+    this.clothInertia.reset();
+  }
+
   initGL() {
     const gl = this.canvas.getContext('webgl2', {
       alpha: true,

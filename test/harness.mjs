@@ -104,12 +104,17 @@ window.__t = {
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
     return { d, w, h };
   },
-  // The same, rows top-down, as a PNG expects.
+  // The same, rows top-down as a PNG expects, as base64 so it crosses the
+  // page boundary in one string rather than a million-element array.
   readTopDown(a) {
     const { d, w, h } = this.read(a);
     const out = new Uint8Array(d.length);
     for (let y = 0; y < h; y++) out.set(d.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-    return { d: Array.from(out), w, h };
+    let bin = '';
+    for (let i = 0; i < out.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, out.subarray(i, i + 0x8000));
+    }
+    return { b64: btoa(bin), w, h };
   },
   // Hold a pose for a number of frames so springs and cloth settle.
   pose(a, emptyRig, mut, frames = 70) {
@@ -278,6 +283,12 @@ export function savePng(path, { d, w, h }) {
   png.data = Buffer.from(Uint8Array.from(d));
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, PNG.sync.write(png));
+}
+
+/** The image __t.readTopDown() returns, decoded. */
+export function fromPage({ b64, w, h }) {
+  const buf = Buffer.from(b64, 'base64');
+  return { d: new Uint8Array(buf.buffer, buf.byteOffset, buf.length), w, h };
 }
 
 export function loadPng(path) {

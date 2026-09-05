@@ -13,6 +13,6 @@ public/models/
 *.log
 .DS_Store
 
-# Evidence written by failing checks
+# Evidence written by failing checks. The goldens themselves, in test/golden/,
+# are committed; the /*.png rule above is root-only and does not touch them.
 test/out/
-test/golden/out/
