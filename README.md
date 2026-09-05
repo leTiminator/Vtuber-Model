@@ -103,10 +103,10 @@ real browser with a real GPU, and OBS just draws.
 
 ### Setting it up
 
-1. Start the app as usual and leave that browser window open. **Do not
-   minimise it** — browsers slow a hidden tab down to about one frame a second,
-   and the model would stutter. A second monitor, or a small window beside OBS,
-   is fine.
+1. Start the app as usual and leave that browser window open. Tracking keeps
+   running from a background timer while the window is hidden, but a visible
+   window is the sure thing: if the model stutters in OBS, give the tracker a
+   second monitor or a small window beside OBS.
 2. In the app, leave **Background** on `Transparent` (Output & OBS section).
 3. In OBS: **+** → **Browser**, URL `http://127.0.0.1:5173/output.html`.
 4. Set the size to 1920x1080, then scale the source in your scene.

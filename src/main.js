@@ -7,6 +7,7 @@ import * as store from './core/store.js';
 import { ZOOM_MAX, ZOOM_MIN, fitTo, zoomAbout } from './core/framing.js';
 import { applyBackground as paintStage, fitToWindow } from './core/stage.js';
 import { openRigLink } from './core/rigLink.js';
+import { startTicker } from './core/ticker.js';
 import { FaceTracker } from './tracking/faceTracker.js';
 import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
@@ -87,6 +88,13 @@ store.subscribe(() => { settingsDirty = true; });
 
 let lastFrameTime = performance.now();
 function frame(now) {
+  step(now);
+  requestAnimationFrame(frame);
+}
+// One step of the pipeline: track, solve, draw, send. Driven by the animation
+// frame while the window is visible and by a Worker timer while it is hidden,
+// when animation frames and video frame callbacks slow to about one a second.
+function step(now) {
   const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
   lastFrameTime = now;
 
@@ -119,9 +127,13 @@ function frame(now) {
     dom.fps.hidden = true;
   }
   updateStatus();
-
-  requestAnimationFrame(frame);
 }
+const HIDDEN_HZ = 30;
+startTicker(HIDDEN_HZ, (now) => {
+  if (!document.hidden) return;
+  if (tracker.running) tracker.detect(now);
+  step(now);
+});
 
 /* ---------------------------------------------------------------- status */
 
@@ -152,8 +164,8 @@ function updateStatus() {
   if (avatarError) return setStatus(avatarError, 'error');
   if (outputError && outputs > 0) return setStatus(`OBS page: ${outputError}`, 'error');
   if (outputs > 0 && starvedFor > 2 && performance.now() < starvedUntil) {
-    return setStatus(`This window was hidden for ${Math.round(starvedFor)} s, and OBS gets about `
-      + 'one frame a second while it is. Keep it visible while streaming.', 'error');
+    return setStatus(`This window was hidden for ${Math.round(starvedFor)} s; tracking ran on a `
+      + 'background timer meanwhile. If OBS stuttered, keep this window visible.', 'busy');
   }
   /* Whether the output window is listening, said here rather than there. */
   const out = outputs > 0 ? ` · to OBS ×${outputs}` : '';

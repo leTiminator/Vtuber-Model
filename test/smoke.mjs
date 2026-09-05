@@ -148,6 +148,23 @@ try {
   const after = await page.locator('input[data-key="camera.mirror"]').isChecked();
   check('a changed setting survives a reload', after === !before, `${before} -> ${after}`);
 
+  // The hidden-window ticker: a Worker timer that keeps firing without animation
+  // frames. Headless Chromium cannot hide a page, so this proves the timer runs
+  // at its rate independently of rAF; whether tracking survives a covered
+  // window is for a desk to confirm.
+  const ticks = await page.evaluate(async () => {
+    const { startTicker } = await import('/src/core/ticker.js');
+    let n = 0;
+    const t = startTicker(30, () => { n++; });
+    await new Promise((r) => setTimeout(r, 1000));
+    t.stop();
+    return n;
+  });
+  check('the hidden-window ticker runs at about thirty a second off a Worker timer',
+    ticks >= 20 && ticks <= 40, `${ticks} ticks in a second`);
+  check('the tracker can run one detection from a timer', await page.evaluate(() =>
+    typeof window.__vtuber.tracker.detect === 'function'));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
   /* A stage that cannot draw has to say so. */

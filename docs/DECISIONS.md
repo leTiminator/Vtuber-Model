@@ -215,11 +215,16 @@ ran a second Rig over them, so the two pages could disagree. Now
 OBS page holds the last state through silence, and the relay replays the last
 settings and state to a window that opens late.
 
-**2026-09-05 — A hidden tracker tab is reported, not fixed.** A hidden or
-covered tab gets about one animation frame a second, and OBS is starved for
-exactly that long. The status pill says so when the window comes back. A
-Worker-timer loop that keeps tracking while hidden is the one change on this
-branch only the owner can verify at a desk.
+**2026-09-05 — A hidden tracker window keeps tracking from a Worker timer.**
+A hidden or covered tab gets about one animation frame and one video frame
+callback a second, so OBS was starved for as long as the tracker sat behind
+a game. `src/core/ticker.js` ticks at 30 Hz from a Worker, whose timers are
+not slowed, and while the document is hidden each tick runs one detection
+and one step of the pipeline. Headless Chromium cannot hide a page, so the
+suite proves only that the timer runs at its rate without animation frames;
+whether MediaPipe keeps delivering from a covered window is for the owner to
+confirm at a desk, and the status pill still reports how long the window was
+hidden.
 
 ## The process
 

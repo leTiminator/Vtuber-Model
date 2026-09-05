@@ -140,7 +140,14 @@ export class FaceTracker {
 
   tick = (now) => {
     if (!this.running || !this.landmarker) return;
-    if (this.video.readyState < 2) return this.loop();
+    this.detect(now);
+    this.loop();
+  };
+
+  /** One detection on the current camera frame; the loop above re-arms itself, a timer need not. */
+  detect(now) {
+    if (!this.running || !this.landmarker) return;
+    if (this.video.readyState < 2) return;
 
     // MediaPipe rejects a timestamp that does not strictly advance, which can
     // happen when the same camera frame is delivered twice.
@@ -156,7 +163,7 @@ export class FaceTracker {
       result = this.landmarker.detectForVideo(source, ts);
     } catch (err) {
       console.error('detection failed', err);
-      return this.loop();
+      return;
     }
 
     if (this._lastFrameAt) {
@@ -200,9 +207,7 @@ export class FaceTracker {
       this.missed = (this.missed ?? 0) + 1;
       if (this.missed > 8) this.crop = null;
     }
-
-    this.loop();
-  };
+  }
 
   /** The cropped frame to hand the model, or null for the whole thing. */
   zoomed() {
