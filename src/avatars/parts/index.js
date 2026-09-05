@@ -61,6 +61,10 @@ function facedRig(rig) {
 
 /** Which way the light comes from, in texels of the casting part. */
 const SHADOW_DIR = [-3.5, -3.5];
+/** How far the head drops at a fully open mouth, as a fraction of the drawing's height. */
+const TALK_BOB = 0.0065;
+/** How much a fully open mouth lifts the visor glow above its idle pulse. */
+const TALK_GLOW = 0.35;
 import { HeadInertia, LinkChain } from './cloth.js';
 import { loadModel } from './model.js';
 
@@ -494,8 +498,12 @@ export class Parts2D {
       }
     }
 
+    // The mouth is under the scarf, so speech shows as the visor glow lifting
+    // (and, in solveJoints, a small drop of the head).
+    const talk = clamp(rig.mouth?.open ?? 0, 0, 1);
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
-    this.glowPulse = damp(this.glowPulse, 0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare, 9, dt);
+    this.glowPulse = damp(this.glowPulse,
+      0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare + TALK_GLOW * talk, 9, dt);
 
     /* How far round to the camera the head has come.
      *
@@ -850,9 +858,10 @@ export class Parts2D {
      * was never drawn.
      */
     const shift = clamp(yaw, -1.2, 1.2) * 0.05 * store.get('warp.turn');
+    const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1);
     const neck = compose(
       hips,
-      translate(IDENTITY, shift, nod),
+      translate(IDENTITY, shift, nod + bob),
       rotateAbout(roll, m.pivotX, m.pivotY, this.aspect),
       rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
     );

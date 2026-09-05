@@ -56,6 +56,7 @@ export const POSES = [
     head: { x: 0.9 }, body: { leanX: 0.5, twist: 0.4 } } },
   { name: 'lean-faceflip', rig: { head: { yaw: -0.3 }, arms: { left: { raise: 1 } } },
     settings: { 'stage.faceFlip': true } },
+  { name: 'talking', rig: { mouth: { open: 1 } } },
   { name: 'scarf-settled', settings: { 'warp.clothWeight': 1, 'body.hairPhysics': 1 },
     drive: [[40, {}], [260, { head: { yaw: -0.5 } }]] },
   /* The one pose that goes through the compositor: a screenshot of the app's

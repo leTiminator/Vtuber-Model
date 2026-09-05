@@ -79,7 +79,7 @@ export function buildPanel(root, ctx) {
     {
       title: 'Speech',
       controls: [
-        { type: 'note', text: 'This design is masked, so speech drives the glowing vent under the visor rather than a mouth.' },
+        { type: 'note', text: 'The mouth is under the scarf, so speech lifts the visor glow and bobs the head instead.' },
         { type: 'select', key: 'mouth.source', label: 'Driven by', options: [
           ['camera', 'Camera (your jaw)'],
           ['mic', 'Microphone (loudness)'],

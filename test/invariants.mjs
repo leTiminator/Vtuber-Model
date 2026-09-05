@@ -189,6 +189,12 @@ try {
     const faceOff = shot({ 'parts.headOn': 0 });
     const face = inv.diff(faceOn, faceOff, circle, 2.3);
 
+    // Speech lifts the glow and drops the head a few pixels: everything it
+    // moves hangs off the neck, so nothing beyond the neck's reach changes.
+    const talking = shot({}, { mouth: { open: 1 } });
+    const quiet = shot({});
+    const talk = inv.diff(talking, quiet, circle, 2.3);
+
     const eyes = (settings, mut) => inv.bright(shot(settings, mut), inv.headCircle(a));
     const open = eyes({ 'warp.eyeGlow': 0 });
     const shut = eyes({ 'warp.eyeGlow': 0 }, { eyes: { blinkL: 1, blinkR: 1 } });
@@ -196,7 +202,7 @@ try {
 
     const up = eyes({ 'warp.eyeGlow': 0 }, { head: { pitch: 0.38 } });
     const down = eyes({ 'warp.eyeGlow': 0 }, { head: { pitch: -0.38 } });
-    return { glow, shade, face, open, shut, half, up, down, circle };
+    return { glow, shade, face, talk, open, shut, half, up, down, circle };
   }, FROZEN);
   check('the eye glow lights pixels, and only on the head',
     diffs.glow.inside > 50 && diffs.glow.outside === 0,
@@ -207,6 +213,9 @@ try {
   check('the head-on face is a different drawing of the head, and nothing below it changes',
     diffs.face.inside > 200 && diffs.face.outside === 0,
     `${diffs.face.inside} within 2.3 head radii, ${diffs.face.outside} beyond`);
+  check('an open mouth lifts the glow and moves the head, and nothing off the neck',
+    diffs.talk.inside > 50 && diffs.talk.outside === 0,
+    `${diffs.talk.inside} within 2.3 head radii, ${diffs.talk.outside} beyond`);
   check('the eyes are lit when open and unlit when shut', diffs.open.n > 100 && diffs.shut.n === 0,
     `${diffs.open.n} bright pixels open, ${diffs.shut.n} shut`);
   check('a half blink lands between the two', diffs.half.n > 0 && diffs.half.n < diffs.open.n * 0.9,
