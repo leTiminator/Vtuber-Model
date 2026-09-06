@@ -35,6 +35,12 @@ scope unless the owner says so.
   (`git fetch origin recordings`). Copy the ones worth keeping into
   `test/fixtures/` with the change they motivated; `npm run test:replay` runs
   every recording it finds.
+- Every time the owner is asked to test, give the link and the build stamp to
+  expect in the same message. The deployed site,
+  https://letiminator.github.io/Vtuber-Model/, shows `main`; work on a branch
+  is not there until it is merged, so say so. Locally: `start.bat` or
+  `./start.sh`, then http://127.0.0.1:5173/ for the tracker and
+  http://127.0.0.1:5173/output.html for OBS. Only the local run feeds OBS.
 
 ## Delete, do not demote
 
