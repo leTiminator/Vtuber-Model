@@ -525,5 +525,49 @@ const runPose = (rig, n, f, has = true) => {
   settings.set('camera.neutral', '');
 }
 
+/* --- a blink is a rise over the eye's own baseline --------------------- */
+{
+  const rest = (raw, look = 0) => frame({ shapes: {
+    eyeBlinkLeft: raw, eyeBlinkRight: raw, eyeLookDownLeft: look, eyeLookDownRight: look,
+  } });
+  const peak = (rig, n, f) => {
+    let top = 0;
+    for (let i = 0; i < n; i++) top = Math.max(top, rig.update(f, true, DT).eyes.blinkL);
+    return top;
+  };
+
+  settings.reset();
+  settings.set('eyes.autoBlink', false);
+  const plain = new Rig();
+  run(plain, 60, rest(0.05));
+  check('a face whose eyes read open blinks fully', peak(plain, 8, rest(0.9)) > 0.8);
+
+  // The owner's face: lids read half down all day, and looking down reads
+  // higher still, so the absolute reading alone never sees the blink.
+  const droopy = new Rig();
+  const atRest = run(droopy, 90, rest(0.55, 0.6));
+  check('eyes that always read half shut are open at rest', atRest.eyes.blinkL < 0.15,
+    `blink ${atRest.eyes.blinkL.toFixed(2)} at a raw score of 0.55`);
+  const top = peak(droopy, 8, rest(0.88, 0.9));
+  check('and a blink on that face still reads as a blink', top > 0.6, `peak ${top.toFixed(2)}`);
+  const after = run(droopy, 60, rest(0.55, 0.6));
+  check('and the eyes reopen afterwards', after.eyes.blinkL < 0.15, `blink ${after.eyes.blinkL.toFixed(2)}`);
+
+  const shut = new Rig();
+  run(shut, 60, rest(0.05));
+  run(shut, 120, rest(0.9));
+  let lowest = 1;
+  for (let i = 0; i < 60; i++) lowest = Math.min(lowest, shut.update(rest(0.9), true, DT).eyes.blinkL);
+  check('eyes held shut stay shut once the rise has passed into the baseline', lowest > 0.6,
+    `lowest ${lowest.toFixed(2)} in the third second`);
+
+  const droop = new Rig();
+  let worst = 0;
+  for (let i = 0; i < 300; i++) {
+    worst = Math.max(worst, droop.update(rest(0.05 + 0.45 * (i / 300), 0.6), true, DT).eyes.blinkL);
+  }
+  check('a slow droop of the lids over five seconds never reads as a blink', worst < 0.3, `worst ${worst.toFixed(2)}`);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);

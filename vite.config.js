@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { rigRelay } from './scripts/rig-relay.mjs';
+import { recordings } from './scripts/recordings.mjs';
 
 // A GitHub project page is served from /<repo>/, not from the root, so every
 // asset URL needs that prefix. The workflow passes it in; locally it stays '/'
@@ -18,7 +19,7 @@ export default defineConfig({
   // The relay carries tracking from the tab with the camera to the page OBS
   // opens — see scripts/rig-relay.mjs. Dev only: it is a live connection, and
   // a built copy on a static host has no server to hold one.
-  plugins: [rigRelay()],
+  plugins: [rigRelay(), recordings()],
   server: {
     host: '127.0.0.1',
     port: 5173,

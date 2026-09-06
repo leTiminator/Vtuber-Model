@@ -31,6 +31,10 @@ scope unless the owner says so.
 - A complaint becomes a pose in `POSES` or a fixture in `test/fixtures/` before
   it becomes a change. Quote the `D` readout in every bug report; the build
   stamp on the stage says which commit is running.
+- Recordings the owner makes in the app arrive on the `recordings` branch
+  (`git fetch origin recordings`). Copy the ones worth keeping into
+  `test/fixtures/` with the change they motivated; `npm run test:replay` runs
+  every recording it finds.
 
 ## Delete, do not demote
 

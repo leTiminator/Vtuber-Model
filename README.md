@@ -244,8 +244,12 @@ what a camera produces — smooth curves, one axis at a time, tidy extremes.
 Real tracking jitters, drops out, and reaches combinations no sweep tries.
 
 To record one: start the camera, then **☰ → Camera & tracking → Record 60
-seconds**. Move the way you normally would. It saves `tracker-session.json`;
-put that in `test/fixtures/` and the suite picks it up.
+seconds**. Move the way you normally would. Running locally the recording is
+saved into `test/fixtures/sessions/`, and **Send to the developer** pushes it
+to the `recordings` branch on GitHub; on the published site it downloads and
+**Open GitHub upload page** takes it from there. **Calibrate from this
+recording** then sets your neutral pose and blink settings from it, and says
+what it cannot fix from software.
 
 The file holds numbers only — blendshape weights, head angles, body landmark
 coordinates, the same values the rig already works from. No video is captured
