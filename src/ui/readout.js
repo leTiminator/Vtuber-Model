@@ -63,7 +63,7 @@ export function liveLines({ tracker, pose, rig, avatar }) {
     const s = rig.state.head;
     out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
       + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`
-      + (avatar ? `  ·  face ${avatar.faceOn ? 'head-on' : 'turned'}` : ''));
+      + (avatar ? `  ·  face ${avatar.faceOn ? 'head-on' : avatar.turnedSide < 0 ? 'turned left' : 'turned right'}` : ''));
   } else {
     out.push('no face in frame');
   }
