@@ -30,11 +30,23 @@ specks: a threshold of 139 px took reassembly from 0.03% wrong to 6.3%.
 **2026-09-02 — Margins are painted under the part in front, and only there.**
 Every part is dilated 28 px past its edge by flooding its own colours outward,
 so a part that moves reveals paint rather than a hole. Neighbours are
-averaged, not copied (copying drew stripes into the eye socket). The margin
-is solid near the art and fades toward its edge, so a large move shows a soft
-edge rather than a slab. A byte per texel records how invented each pixel is,
-so the renderer can cap how much of the margin a part draws (`parts.clothMargin`
-for the scarf, 8 px; 32 px for everything else).
+averaged, not copied (copying drew stripes into the eye socket). A byte per
+texel records how invented each pixel is, so the renderer can cap how much of
+the margin a part draws (`parts.clothMargin` for the scarf, 8 px; 32 px for
+everything else).
+
+**2026-09-06 — Margins are solid, and a hood stands behind each head.** The
+margin used to fade over its last fifteen pixels so a large move would show a
+soft edge rather than a slab; on the owner's screen that fade was "a blurry
+section revealed when the head stretches out of its socket", and the head-on
+hair's margin, grown under the head-on drawing's own scarf (4,041 of the
+piece's 9,339 pixels), showed as streaks beside the hair once placed over the
+turned drawing. Now every margin is solid through its 28 px; the head-on
+pieces' margins grow only under each other (`cutParts` takes `keep`); and two
+synthesized parts, `hood` and `hoodOn`, hold each head's own footprint (eye
+sockets included, eroded a pixel) in one flat colour, the head's median
+surface darkened to 60%, still on the hips behind it. Nothing shows at rest;
+a head that slides or rolls reveals a dark crescent of hood.
 
 **2026-09-02 — Enclosed holes are filled with a fitted quadratic.** The eye
 is cut out of the head, and what fills the hole is what shows through a shut
@@ -75,6 +87,15 @@ flipped parts. With the mirror off, the slide that compensated the flip still
 fired past yaw -0.70 rad, which the rig reaches at its 42° limit: the head,
 hair and eyes jumped about 80 px sideways. Removed 2026-09-05. The drawn
 three-quarter view plus the head-on drawing cover the range.
+
+**2026-09-06 — The turned face has two sides, chosen behind the head-on
+face.** The drawing looks to the right, so a turn to the left slid the head
+left with a face still looking right: the owner saw "no left view". The four
+turned-face parts are reflected about the head's centre line before their
+joint moves them (eye channels swapped, gaze x and the shadow offset negated;
+the shader is untouched). The side is decided only as the head-on face gives
+way, while it still hides the turned face, so unlike the 2026-09-04 mirror
+the swap is never seen; with the head-on face off the side never changes.
 
 **2026-09-05 — The cut runs once, offline.** `cutParts` is deterministic in
 its inputs and ran on both pages at every load, twice each (the artwork and
@@ -171,14 +192,30 @@ elbows below the frame in 98% of frames). Recordings are saved into the
 project by the dev server and pushed to the `recordings` branch with git
 plumbing, so nothing is uploaded by hand and the checkout is never touched.
 
+**2026-09-06 — Tracking is checked against a recording before the model is
+blamed.** "Tracking still doesn't work" came with a readout of `seen roll
++43° → driven +25°`. The recording behind it holds a tilt of -44° for twelve
+seconds and +29° for six, steady to a degree or two within each second, with
+the shoulder line leaning 8° the same way: a real tilt, pinned at the rig's
+25° limit. MediaPipe's transformation matrix is column-major (the bundle
+copies the proto's packed data, filled from an Eigen matrix), which is how
+`eulerFromMatrix` reads it. What failed was the model's answer: the latch,
+the missing left view and the margin, above.
+
 ## The renderer
 
-**2026-09-04 — The head-on latch decides on where the head has been.** A
-threshold on the live angle changed hands 33 times in a real minute; a wider
-band moved that to 19. Averaging the angle over about a second, holding the
-view for `parts.headOnDwell` after a change, and ramping the swap over a fixed
-time brought it to 3. The swap sits halfway through an eased ramp: an
-exponential decay moved 14 px (measured 19) between one frame and the next.
+**2026-09-06 — The head-on latch leaves quickly and comes back slowly.**
+The first latch (2026-09-04) averaged the angle over about a second and held
+each view for 1.1 s after a change, because a bare threshold changed hands
+33 times in a real minute; on the owner's second recording it changed 9 times
+for 19 crossings, each 0.4 to 2.0 s late, and skipped a 3.2 s turn: "it
+seems to be on a timer". `latch.js` gives way once the turn has stayed past
+the hold for 0.08 s and comes back once the head has stayed inside the hold
+for `parts.headOnReturn` (0.35 s) and is inside three quarters of it: 15
+changes, the slowest leave 0.08 s and the slowest return 0.28 s after the
+crossing (22 of 28 and 0.34 s on the first recording). The swap still sits
+halfway through an eased ramp: an exponential decay moved 14 px (measured 19)
+between one frame and the next.
 
 **2026-09-04 — The scarf is a chain of rigid links rooted on the shoulder.**
 A displacement field stretched the ribbon to 116% of its drawn length. Every
@@ -196,8 +233,8 @@ middle of the ribbon somewhere else on a phone.
 **2026-09-04 — The neck wrap is drawn behind the head.** In front, it
 covered the visor when the head rolled, and following the chin sheared it
 (more than twice an edge's drawn length). Behind, the head slides over a
-still collar as a cutout, and the collar's painted margin shows wherever the
-head moves away.
+still collar as a cutout, and the hood behind it shows wherever the head
+moves away.
 
 **2026-09-04 — Contact shadows multiply by destination alpha.** A soft dark
 copy of each part is drawn just before it, so it lands on everything behind

@@ -108,6 +108,8 @@ real browser with a real GPU, and OBS just draws.
    window is the sure thing: if the model stutters in OBS, give the tracker a
    second monitor or a small window beside OBS.
 2. In the app, leave **Background** on `Transparent` (Output & OBS section).
+   **Size & position** (the second section) shrinks, grows and moves the
+   figure; so does scrolling and dragging on the stage. The OBS page follows.
 3. In OBS: **+** → **Browser**, URL `http://127.0.0.1:5173/output.html`.
 4. Set the size to 1920x1080, then scale the source in your scene.
 5. Untick **Shutdown source when not visible**.
@@ -190,14 +192,16 @@ camera ─> FaceTracker / PoseTracker ─> Rig ─> Parts2D ─> canvas
   breathing, idle sway and auto-blink.
 - **`scripts/bake/`** — the cut. Run once by `npm run bake`, in headless
   Chromium: it finds the head, neck and eyes in the drawing, cuts it into
-  thirteen parts by connectivity and colour, paints an invented margin under
-  every seam, traces the scarf's centreline into sixteen bones, repairs the
-  head-on drawing's keyed-out eyes and cuts that too, and writes
+  parts by connectivity and colour, paints an invented margin under every
+  seam, puts a flat hood behind each head (fifteen parts in all), traces the
+  scarf's centreline into sixteen bones, repairs the head-on drawing's
+  keyed-out eyes and cuts that too, and writes
   `public/model/ninja/`: a PNG and a margin PNG per part and a manifest that
   says how they fit.
 - **`src/avatars/parts/`** — the renderer. It loads the manifest and draws the
   parts in WebGL2: a rigid head cutout that slides for a turn and rotates for a
-  nod, swapped for the head-on drawing when you face the camera; eyes with
+  nod, swapped for the head-on drawing when you face the camera and for its
+  own mirror image when you turn the other way; eyes with
   lids, glow and gaze in the fragment shader; a contact shadow behind each
   part; the scarf skinned to a chain of rigid links (`cloth.js`) that bends and
   does not stretch.
@@ -277,7 +281,7 @@ a real face in front of a real camera.
   about that drawing — a scarf whose colour separates the head from the body,
   gloves that are the scarf's colour but not joined to it. Other artwork is
   out of scope for now: the bake would run, but it may hand you one big part
-  instead of thirteen.
+  instead of fifteen.
 - Arm tracking needs your shoulders in frame. Hips are not required — it falls
   back to measuring against the screen when you are sitting at a desk.
 - Winks need good light; they are linked by default because half-detected
