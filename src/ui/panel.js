@@ -39,7 +39,7 @@ export function buildPanel(root, ctx) {
           + 'you can do for tracking quality.' },
         { type: 'toggle', key: 'stage.showPreview', label: 'Show camera preview' },
         { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 4, step: 0.05, format: hz,
-          hint: 'Lower is calmer when you hold still, but adds a little lag.' },
+          hint: 'Lower is calmer when you hold still, but adds lag and shrinks quick turns.' },
         { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3),
           hint: 'Higher keeps fast movement lag-free.' },
         { type: 'slider', key: 'smooth.expression', label: 'Face response', min: 0.5, max: 6, step: 0.1, format: hz },

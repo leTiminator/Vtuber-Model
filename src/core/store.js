@@ -16,8 +16,8 @@ export const DEFAULTS = {
   'camera.range': '',
 
   // --- smoothing -------------------------------------------------------
-  'smooth.minCutoff': 1.2, // Hz — lower is steadier, laggier
-  'smooth.beta': 0.06, // speed coefficient — higher is snappier
+  'smooth.minCutoff': 2.5, // Hz — lower is steadier, laggier
+  'smooth.beta': 0.2, // speed coefficient — higher is snappier
   'smooth.expression': 2.4, // separate, faster cutoff for face shapes
 
   // --- head ------------------------------------------------------------

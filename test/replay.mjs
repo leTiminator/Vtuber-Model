@@ -27,7 +27,7 @@ if (!files.length) {
 const settings = await import('../src/core/store.js');
 const { Rig, MAX_HEAD_SLEW, BLINK_RISE, RollingMedian } = await import('../src/tracking/rig.js');
 const { calibrate } = await import('../src/tracking/calibrate.js');
-const { FaceLatch, BACK, BACK_AT, LEAVE } = await import('../src/avatars/parts/latch.js');
+const { FaceLatch, BACK, BACK_AT, CROSS, LEAVE } = await import('../src/avatars/parts/latch.js');
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -90,6 +90,10 @@ function latchTrace(head, hold) {
   const latch = new FaceLatch();
   const crossings = [];
   const changes = [];
+  /* The renderer's own rule for which way the turned face looks, so a stale
+   * side shows up here as frames where the face and the head disagree. */
+  let side = 1;
+  let wrongWay = 0;
   let on = true;
   let over = false;
   let lastOver = -Infinity;
@@ -102,10 +106,12 @@ function latchTrace(head, hold) {
     const want = on ? turn < hold : turn < hold * BACK_AT;
     if (want !== on) { on = want; crossings.push({ t, on }); }
     const was = latch.on;
-    latch.update(yaw, dt, hold, BACK);
+    const square = latch.update(yaw, dt, hold, BACK);
+    if (square) side = yaw < 0 ? -1 : 1;
     if (latch.on !== was) changes.push({ t, on: latch.on, late: t - (latch.on ? lastUnder : lastOver) });
+    if (!square && turn > hold * CROSS && Math.sign(yaw) !== side) wrongWay++;
   }
-  return { crossings, changes };
+  return { crossings, changes, wrongWay };
 }
 
 /**
@@ -197,6 +203,8 @@ for (const file of files) {
     `slowest ${slowest(leaves).toFixed(2)}s, allowed ${(LEAVE + 0.1).toFixed(2)}s`);
   check('the face comes back once the head has sat square', returns.every((c) => c.late <= BACK + 0.1),
     `slowest ${slowest(returns).toFixed(2)}s, allowed ${(BACK + 0.1).toFixed(2)}s`);
+  check('the turned face never looks the way the head is not', trace.wrongWay === 0,
+    `${trace.wrongWay} frames of ${tuned.head.length} facing the wrong way`);
   check('the latch follows the turns without flickering',
     trace.changes.length <= trace.crossings.length && trace.changes.length * 2 >= trace.crossings.length,
     `${trace.changes.length} changes, ${trace.crossings.length} crossings`);

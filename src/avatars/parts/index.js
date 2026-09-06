@@ -419,14 +419,15 @@ export class Parts2D {
     /* Which face: it leaves quickly on a real turn and comes back once the
      * head has sat square (latch.js). A ramp of a fixed length, eased at both
      * ends, then carries the change — not a decay. */
-    const wasOn = this.latch.on;
     const squareOn = this.latch.update(yaw, dt,
       store.get('parts.headOnHold'), store.get('parts.headOnReturn'));
     /* The turned face has two sides: the drawing looks to the right, and a
-     * turn to the left shows its mirror image. The side is chosen as the
-     * head-on face gives way, while it still hides the turned face, so the
-     * change of side is never seen. */
-    if (wasOn && !squareOn && this.faceOn) this.turnedSide = yaw < 0 ? -1 : 1;
+     * turn to the left shows its mirror image. The side follows the head
+     * while the head-on face hides it, so the view is always the one for the
+     * side the head is on. A sweep across centre is quicker than the ramp, so
+     * the head-on face arrives finished rather than starting to arrive. */
+    if (this.latch.crossed) this.headOnPhase = 1;
+    if (squareOn) this.turnedSide = yaw < 0 ? -1 : 1;
     const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
     this.headOnPhase = clamp(this.headOnPhase + (squareOn ? step : -step), 0, 1);
     // A saved value from when this was a slider reads as on above a half.

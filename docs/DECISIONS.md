@@ -110,6 +110,16 @@ The production bundle dropped 38 KB.
 
 ## The rig
 
+**2026-09-06 — Smoothing was costing a fifth of every turn.** The one-euro
+filter shipped at 1.2 Hz with a speed coefficient of 0.06. Measured against
+the owner's own recording for rest wobble and a synthetic shake for
+responsiveness: a step to 30° reached 90% after 360 ms, and a 0.8 Hz shake ran
+120 ms behind at 82% of its size (61% at 1.5 Hz), so a quick turn could miss
+the latch's hold entirely. At 2.5 Hz and 0.20 the same shake is 40 ms behind at
+94% (84% at 1.5 Hz) and the median frame-to-frame wobble at rest rises from
+0.208° to 0.238° — three hundredths of a degree, well under a pixel on the
+head.
+
 **2026-09-03 — The nod sign is fixed in code, from photographs.** Two
 photographs of the running app, one looking up and one looking down, with the
 head found by connected components: looking down put the head 77 px higher
@@ -222,6 +232,18 @@ from the neutral, because a pinned model is the one symptom the owner sees as
 "not moving with my head".
 
 ## The renderer
+
+**2026-09-06 — A sweep across centre brings the face back at once, and the
+side follows the head.** The turned face's side was chosen once, as the
+head-on face gave way. Shaking the head left and right never dwells at centre
+long enough for the 0.35 s return, so the latch stayed off and the side stayed
+where it was: on the owner's two recordings the face pointed the way the head
+was not for 5.0 s and 18.5 s of a minute, in 2 and 8 runs, and the left-facing
+view appeared twice a minute against the right's six. Now the side follows the
+head whenever the head-on face is up to hide the change, and a sweep past 35%
+of the hold on the far side brings that face straight back — quicker than the
+0.18 s ramp, so the ramp is completed rather than started. Both recordings now
+show 0 wrong-way frames, and a 0.8 Hz shake shows all three views.
 
 **2026-09-06 — The head-on latch leaves quickly and comes back slowly.**
 The first latch (2026-09-04) averaged the angle over about a second and held
