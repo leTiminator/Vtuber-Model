@@ -89,8 +89,8 @@ try {
   });
   const HEAD_ON = ['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn'];
   check('a clean profile mounts the parts model', bootState.mounted);
-  check('the model has both faces, a scarf skeleton and 13 parts',
-    bootState.names.length === 13 && HEAD_ON.every((n) => bootState.names.includes(n)) && bootState.spine
+  check('the model has both faces, a scarf skeleton and 15 parts',
+    bootState.names.length === 15 && HEAD_ON.every((n) => bootState.names.includes(n)) && bootState.spine
       && bootState.headOn,
     `${bootState.names.length} parts; head-on ${bootState.note}`);
 

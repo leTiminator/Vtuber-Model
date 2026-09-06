@@ -57,6 +57,12 @@ export function cutParts(image, markers, opts = {}) {
 
   const sockets = [];
   const labels = labelPixels(src, markers, w, h, sockets, opts.minShard);
+  // Parts the caller discards are unlabelled before extraction, so the
+  // margins of the kept parts never grow under them.
+  if (opts.keep) {
+    const keep = new Set(opts.keep.map((name) => LABEL[name]));
+    for (let i = 0; i < labels.length; i++) if (!keep.has(labels[i])) labels[i] = LABEL.none;
+  }
 
   // Depth per label, so dilation knows which neighbours sit in front.
   const zByLabel = new Int32Array(16).fill(-1);
@@ -833,11 +839,8 @@ function extract(src, labels, name, w, h, zByLabel) {
         const b = i * 4;
         od[a] = od[b]; od[a + 1] = od[b + 1]; od[a + 2] = od[b + 2];
       }
-      /* Solid near the art, fading out toward the far edge. */
-      const solid = DILATE * 0.45;
-      od[a + 3] = step <= solid
-        ? 255
-        : Math.round(255 * Math.max(0, 1 - (step - solid) / (DILATE - solid)) ** 1.4);
+      /* Solid all the way out: a part that moves reveals paint, not a fade. */
+      od[a + 3] = 255;
       queue[tail++] = j;
     };
     if (x > 0) spread(i - 1);
