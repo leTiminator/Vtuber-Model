@@ -35,6 +35,20 @@ texel records how invented each pixel is, so the renderer can cap how much of
 the margin a part draws (`parts.clothMargin` for the scarf, 8 px; 32 px for
 everything else).
 
+**2026-09-06 — A tilt turns the head about its own centre.** The neck pivot
+sits 102 px below the head's centre in a 630 px drawing, so tilting from it
+alone levered the head out of its collar: at the 25° limit the head's centre
+travelled 44 px, and the flat hood behind it filled a tenth of the picture at
+the owner's worst pose. A quarter of the tilt still leans from the neck; the
+rest turns the head about its own centre, where it stays inside the collar.
+The turn's slide came down with it, from 0.05 of the width per radian to
+0.015 — the drawn three-quarter views carry the turn now, so the slide is
+parallax rather than the whole effect. Measured as the share of the picture
+that is hood: at the tilt limit 6.12% to 1.05%, at the turn limit 3.03% to
+0.60%, at both limits at once 9.78% to 1.64% (of which 0.53% is drawing that
+merely matches the colour). The hood is also pulled three pixels inside the
+head's edge rather than one, so none of it fringes the head at rest.
+
 **2026-09-06 — Margins are solid, and a hood stands behind each head.** The
 margin used to fade over its last fifteen pixels so a large move would show a
 soft edge rather than a slab; on the owner's screen that fade was "a blurry
@@ -325,6 +339,15 @@ suite proves only that the timer runs at its rate without animation frames;
 whether MediaPipe keeps delivering from a covered window is for the owner to
 confirm at a desk, and the status pill still reports how long the window was
 hidden.
+
+**2026-09-06 — A saved profile takes a new build's tuning.** Settings are
+stored as what differs from the defaults, so a returning profile silently kept
+values a later build had improved on. The save now carries a version, and each
+version names the keys it re-tunes: those go back to the new default once.
+Personal choices — camera, framing, colours, mic — are never touched. A
+neutral pose captured with one press of C before the guided calibration
+existed is dropped too, so the camera sets one on the next start instead of
+leaving the model turned to its limit.
 
 ## The process
 

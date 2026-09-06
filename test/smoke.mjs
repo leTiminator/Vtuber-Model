@@ -171,6 +171,29 @@ try {
   const after = await page.locator('input[data-key="camera.mirror"]').isChecked();
   check('a changed setting survives a reload', after === !before, `${before} -> ${after}`);
 
+  // Coming back with a profile saved by an older build: what that build
+  // re-tuned comes back at the new default and a neutral set with one press of
+  // C is dropped, while the framing and the camera choice are kept.
+  await page.evaluate(() => {
+    localStorage.setItem('vtuber-model/settings/v4', JSON.stringify({
+      'smooth.minCutoff': 1.2,
+      'smooth.beta': 0.06,
+      'camera.neutral': JSON.stringify({ yaw: 0.56, pitch: -0.4, roll: 0, x: 0, y: 0, z: -45 }),
+      'stage.zoom': 1.35,
+      'mouth.source': 'mic',
+    }));
+  });
+  await page.reload({ waitUntil: 'load' });
+  const migrated = await page.evaluate(() => {
+    const s = window.__vtuber.store;
+    return { cutoff: s.get('smooth.minCutoff'), beta: s.get('smooth.beta'),
+      neutral: s.get('camera.neutral'), zoom: s.get('stage.zoom'), mouth: s.get('mouth.source') };
+  });
+  check('an older profile takes the new tuning and keeps what is personal',
+    migrated.cutoff === 2.5 && migrated.beta === 0.2 && migrated.neutral === ''
+      && migrated.zoom === 1.35 && migrated.mouth === 'mic',
+    JSON.stringify(migrated));
+
   // The hidden-window ticker: a Worker timer that keeps firing without animation
   // frames. Headless Chromium cannot hide a page, so this proves the timer runs
   // independently of rAF: an order of magnitude above a hidden tab's one a

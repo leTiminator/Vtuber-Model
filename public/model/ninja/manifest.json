@@ -304,7 +304,7 @@
       "name": "hood",
       "onChain": null,
       "pivot": null,
-      "pixels": 23237,
+      "pixels": 22137,
       "place": null,
       "png": "hood.png",
       "w": 233,
@@ -382,7 +382,7 @@
       "name": "hoodOn",
       "onChain": null,
       "pivot": null,
-      "pixels": 15082,
+      "pixels": 14288,
       "place": {
         "fromX": 0.516667,
         "fromY": 0.447619,

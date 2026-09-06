@@ -331,6 +331,46 @@ try {
     `turned left ${sides.left.eyes.left}/${sides.left.eyes.right} of the eye span, `
       + `turned right ${sides.right.eyes.left}/${sides.right.eyes.right}`);
 
+  /* --- the head stays in its collar -------------------------------------- */
+  const socket = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const emptyRig = t.app().emptyRig;
+    // Both hoods are a single flat colour, so what shows of one is countable.
+    // Some of the drawing happens to match, so rest is the baseline and what
+    // matters is how much more shows once the head moves.
+    const HOODS = [[52, 53, 53], [48, 48, 49]];
+    const shot = (mut) => {
+      t.resetStore({ ...frozen, 'stage.zoom': 1.6, 'parts.contactShadow': 0 });
+      a.reset();
+      t.pose(a, emptyRig, mut, 30);
+      const img = t.read(a);
+      let hood = 0;
+      let drawn = 0;
+      for (let p = 0; p < img.w * img.h; p++) {
+        const i = p * 4;
+        if (img.d[i + 3] < 40) continue;
+        drawn++;
+        if (HOODS.some((c) => Math.abs(img.d[i] - c[0]) <= 5 && Math.abs(img.d[i + 1] - c[1]) <= 5
+          && Math.abs(img.d[i + 2] - c[2]) <= 5)) hood++;
+      }
+      return { hood, drawn };
+    };
+    const D = Math.PI / 180;
+    const rest = shot({});
+    const tilt = shot({ head: { roll: 25 * D } });
+    const turn = shot({ head: { yaw: 42 * D } });
+    const pct = (s) => (100 * Math.max(0, s.hood - rest.hood)) / Math.max(s.drawn, 1);
+    return { tilt: pct(tilt), turn: pct(turn) };
+  }, FROZEN);
+  // Tilting from the neck alone levered the head out of its collar and showed
+  // a slab of the hood behind it; rotating about its own centre does not. The
+  // bound is loose on purpose — it is here to catch a slab, not to pin a number.
+  check('tilting to the limit keeps the head in its collar', socket.tilt < 1.5,
+    `${socket.tilt.toFixed(2)}% of the picture is hood behind the head`);
+  check('turning to the limit keeps the head in its collar', socket.turn < 1.5,
+    `${socket.turn.toFixed(2)}% of the picture is hood behind the head`);
+
   /* --- a turn is continuous, all the way to the limit -------------------- */
   const creep = await page.evaluate((frozen) => {
     const t = window.__t;
