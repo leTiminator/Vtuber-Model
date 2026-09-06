@@ -82,7 +82,7 @@ for (const p of manifest.parts) {
 }
 
 // --- a hood behind each head ------------------------------------------------
-for (const [hoodName, headName, behind] of [['hood', 'head', 'wrap'], ['hoodOn', 'headOn', 'wrap']]) {
+for (const [hoodName, headName, behind, hair] of [['hood', 'head', 'wrap', 'tufts'], ['hoodOn', 'headOn', 'wrap', 'tuftsOn']]) {
   const hood = byName[hoodName];
   const over = byName[headName];
   const hp = PNG.sync.read(readFileSync(join(DIR, hood.png)));
@@ -99,10 +99,10 @@ for (const [hoodName, headName, behind] of [['hood', 'head', 'wrap'], ['hoodOn',
     if (op.data[i * 4 + 3] === 0) outsideHead++;
     colours.add(hp.data.slice(i * 4, i * 4 + 3).join(','));
   }
-  check(`${hoodName} is the ${headName}'s footprint in one colour, behind it and in front of the ${behind}`,
+  check(`${hoodName} is the ${headName}'s footprint in one colour, behind it and its hair, in front of the ${behind}`,
     hood.x === over.x && hood.y === over.y && hood.w === over.w && hood.h === over.h
       && outsideHead === 0 && drawn > headReal * 0.6 && colours.size === 1
-      && byName[behind].z < hood.z && hood.z < over.z
+      && byName[behind].z < hood.z && hood.z < byName[hair].z && byName[hair].z < over.z
       && hood.joint === 'hips' && hood.flags.follow === 'none' && !hood.flags.shadow
       && hood.flags.face === over.flags.face && (hood.place == null) === (over.place == null),
     `${drawn}px of the head's ${headReal}, ${outsideHead} outside it, colour ${[...colours][0]}, z ${hood.z}`);
