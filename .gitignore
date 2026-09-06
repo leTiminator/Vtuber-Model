@@ -12,6 +12,10 @@ public/models/
 *.log
 .DS_Store
 
+# Recordings the app saves while running locally. The developer copies the
+# ones worth keeping into test/fixtures/ with the change they motivated.
+test/fixtures/sessions/
+
 # Evidence written by failing checks. The goldens themselves, in test/golden/,
 # are committed; the /*.png rule above is root-only and does not touch them.
 test/out/

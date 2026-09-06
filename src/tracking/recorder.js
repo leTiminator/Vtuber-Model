@@ -103,8 +103,9 @@ export class SessionRecorder {
     });
   }
 
-  save(extra) {
-    const blob = new Blob([this.toJSON(extra)], { type: 'application/json' });
+  /** The recording as a download, for a build with no server to keep it. */
+  download(json = this.toJSON()) {
+    const blob = new Blob([json], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'tracker-session.json';

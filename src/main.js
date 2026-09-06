@@ -12,6 +12,8 @@ import { FaceTracker } from './tracking/faceTracker.js';
 import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { SessionRecorder } from './tracking/recorder.js';
+import { calibrate } from './tracking/calibrate.js';
+import { UPLOAD_URL, saveRecording, shareRecording } from './core/devServer.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
 import { buildPanel } from './ui/panel.js';
@@ -260,6 +262,11 @@ buildPanel(dom.panelBody, {
     recorder.start(seconds);
     return true;
   },
+  recordingExtra: () => ({ build: buildId(), settings: store.snapshot() }),
+  saveRecording,
+  shareRecording,
+  uploadUrl: UPLOAD_URL,
+  calibrateFrom: (session) => calibrate(session, { mirror: store.get('camera.mirror'), settings: store.snapshot() }),
   armStatus: () => ({
     camera: tracker.running,
     model: pose.error ? 'failed' : pose.landmarker ? 'ready' : pose.enabled ? 'loading' : 'off',

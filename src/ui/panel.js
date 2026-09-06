@@ -309,16 +309,23 @@ const BUILDERS = {
   /** Record what the trackers see, for replaying in tests. */
   record(spec, ctx) {
     if (!ctx.recorder || !ctx.startRecording) return null;
-    /* A minute, not twenty seconds. */
     const SECONDS = 60;
     const field = el('div', 'field');
     const button = el('button', 'btn', `Record ${SECONDS} seconds`);
     button.type = 'button';
     const hint = el('div', 'field__hint',
-      'Saves the tracking numbers — blendshapes, head angles, body points — as a file. '
-      + 'No video is recorded and no image data is saved, and nothing leaves this '
-      + 'machine except the file you choose to keep.');
-    field.append(button, hint);
+      'Saves the tracking numbers: blendshapes, head angles, body points. No video, '
+      + 'no image data. Running locally it lands in the project; on the published '
+      + 'site it downloads.');
+    const actions = el('div', 'field__actions');
+    actions.hidden = true;
+    const mk = (label) => { const b = el('button', 'btn', label); b.type = 'button'; return b; };
+    const calibrateBtn = mk('Calibrate from this recording');
+    const undoBtn = mk('Undo calibration');
+    const shareBtn = mk('Send to the developer');
+    const uploadBtn = mk('Open GitHub upload page');
+    actions.append(calibrateBtn, undoBtn, shareBtn, uploadBtn);
+    field.append(button, hint, actions);
 
     const paint = () => {
       const r = ctx.recorder;
@@ -336,25 +343,70 @@ const BUILDERS = {
         hint.textContent = 'Start the camera first — there is nothing to record yet.';
         return;
       }
+      actions.hidden = true;
       hint.textContent = 'Talk, and move the way you actually would on stream: turn '
         + 'right round and back, look up and down, tilt, blink, glance away, raise '
         + 'your hands, then sit still for a while. The dull and the awkward parts '
-        + 'are the ones worth having — a tidy sweep is what the tests already guess.';
+        + 'are the ones worth having.';
     });
 
-    let saved = false;
-    ctx.recorder.onTick = (r) => {
+    let json = null;
+    let saved = null; // where the dev server put it, or null for a download
+    let before = null; // settings as they were before a calibration
+    let done = true;
+    ctx.recorder.onTick = async (r) => {
       paint();
-      if (r.recording) { saved = false; return; }
-      if (saved || !r.frames.length) return;
-      saved = true;
-      r.save();
-      hint.textContent = `Saved ${r.frames.length} frames as tracker-session.json. `
-        + 'Upload it to the repo under test/fixtures/, replacing what is there, and '
-        + 'every check in the suite replays your session instead of a guess at one.';
+      if (r.recording) { done = false; return; }
+      if (done || !r.frames.length) return;
+      done = true;
+      json = r.toJSON(ctx.recordingExtra?.() ?? {});
+      try {
+        saved = await ctx.saveRecording(json);
+        hint.textContent = `Saved ${r.frames.length} frames to ${saved.path}.`;
+      } catch (err) {
+        saved = null;
+        r.download(json);
+        hint.textContent = `Saved ${r.frames.length} frames as tracker-session.json in your downloads `
+          + `(${err.message}). The upload page takes it from there.`;
+      }
+      shareBtn.hidden = !saved;
+      undoBtn.hidden = true;
+      actions.hidden = false;
     };
-    setInterval(paint, 120);
-    paint();
+
+    calibrateBtn.addEventListener('click', () => {
+      if (!json) return;
+      const { patch, report } = ctx.calibrateFrom(JSON.parse(json));
+      if (!patch) { hint.textContent = report.join(' '); return; }
+      before = store.snapshot();
+      const changes = Object.keys(patch)
+        .filter((k) => k !== 'camera.neutral' && before[k] !== patch[k])
+        .map((k) => `${k.split('.').pop()} ${before[k]} → ${patch[k]}`);
+      store.patch(patch);
+      hint.textContent = `${report.join(' ')}${changes.length ? ` Changed: ${changes.join(', ')}.` : ''}`;
+      undoBtn.hidden = false;
+    });
+    undoBtn.addEventListener('click', () => {
+      if (!before) return;
+      store.patch(before);
+      before = null;
+      undoBtn.hidden = true;
+      hint.textContent = 'Calibration undone; settings are back to what they were.';
+    });
+    shareBtn.addEventListener('click', async () => {
+      if (!saved) return;
+      shareBtn.disabled = true;
+      hint.textContent = 'Pushing to GitHub…';
+      try {
+        const r = await ctx.shareRecording(saved.name);
+        hint.textContent = `On GitHub: ${r.file} on the ${r.branch} branch (${r.commit}). The developer can pick it up from there.`;
+      } catch (err) {
+        hint.textContent = `${err.message} The upload page works from any machine: it wants the file at ${saved.path}.`;
+      } finally {
+        shareBtn.disabled = false;
+      }
+    });
+    uploadBtn.addEventListener('click', () => window.open(ctx.uploadUrl, '_blank', 'noopener'));
     return field;
   },
 

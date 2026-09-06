@@ -65,7 +65,14 @@ export function emptyRig() {
 }
 
 /** What a head can plausibly be resting at, per axis. */
-const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
+export const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
+
+/** A blink is a rise of the raw score over its own last second, mapped between these. */
+export const BLINK_RISE = [0.12, 0.28];
+/** Seconds of raw blink score the baseline median looks back over. */
+const BLINK_WINDOW = 0.7;
+/** A rise that lasts longer than this is a glance down, not a blink, and fades out by the second value. */
+const BLINK_PULSE = [0.25, 0.5];
 
 /** The saved rest pose, or null. Anything malformed is treated as none. */
 function readNeutral() {
@@ -108,6 +115,8 @@ export class Rig {
     this.lostFor = 0; // seconds since the face was last seen
     this.clock = 0;
     this.blink = { timer: 1.4, value: 0, phase: 'idle' };
+    this.blinkBase = { left: new RollingMedian(BLINK_WINDOW), right: new RollingMedian(BLINK_WINDOW) };
+    this.riseSince = { left: -1, right: -1 };
     this.micLevel = 0;
     this.lastFrame = null;
 
@@ -483,8 +492,24 @@ export class Rig {
 
     const blinkGain = g('eyes.blinkGain');
     const thresh = g('eyes.blinkThreshold');
-    let bl = shapeBlink(deLid(sh('eyeBlinkLeft')), thresh, blinkGain);
-    let br = shapeBlink(deLid(sh('eyeBlinkRight')), thresh, blinkGain);
+    // Two readings of a blink, the larger wins. The absolute one keeps eyes
+    // that are held shut shut; the transient one, a rise over the eye's own
+    // recent baseline, sees a blink on a face whose lids always read half
+    // down (glasses, a beard, a camera above eye level).
+    const pulse = (side, raw) => {
+      const rise = raw - this.blinkBase[side].push(raw, this.clock);
+      if (rise > BLINK_RISE[0]) {
+        if (this.riseSince[side] < 0) this.riseSince[side] = this.clock;
+      } else {
+        this.riseSince[side] = -1;
+      }
+      const held = this.riseSince[side] < 0 ? 0 : this.clock - this.riseSince[side];
+      return transientBlink(rise) * (1 - remap(held, BLINK_PULSE[0], BLINK_PULSE[1], 0, 1));
+    };
+    const rawL = sh('eyeBlinkLeft');
+    const rawR = sh('eyeBlinkRight');
+    let bl = Math.max(shapeBlink(deLid(rawL), thresh, blinkGain), pulse('left', rawL));
+    let br = Math.max(shapeBlink(deLid(rawR), thresh, blinkGain), pulse('right', rawR));
     if (g('eyes.linkBlinks')) {
       // Winks read as tracking noise on most rigs; take the stronger eye for both.
       const both = Math.max(bl, br);
@@ -688,7 +713,33 @@ function mirrorShapes(shapes) {
  * as a permanently sleepy avatar. Rescale from the threshold up, then apply a
  * gamma so the eye commits to closed rather than lingering.
  */
-function shapeBlink(raw, threshold, gain) {
+export function shapeBlink(raw, threshold, gain) {
   const scaled = remap(raw * gain, threshold, 0.92, 0, 1);
   return clamp(Math.pow(scaled, 0.72), 0, 1);
+}
+
+/** How shut a rise of the raw score over its baseline reads, 0..1. */
+export function transientBlink(rise) {
+  return clamp(Math.pow(remap(rise, BLINK_RISE[0], BLINK_RISE[1], 0, 1), 0.72), 0, 1);
+}
+
+/** The median of the values pushed in the last `seconds`; a few dozen at most, so a sort per push is nothing. */
+export class RollingMedian {
+  constructor(seconds) {
+    this.seconds = seconds;
+    this.values = [];
+    this.times = [];
+  }
+
+  /** Add a value at time `t` and return the median of what the window holds. */
+  push(v, t) {
+    this.values.push(v);
+    this.times.push(t);
+    while (this.times.length > 1 && t - this.times[0] > this.seconds) {
+      this.values.shift();
+      this.times.shift();
+    }
+    const sorted = [...this.values].sort((a, b) => a - b);
+    return sorted[sorted.length >> 1];
+  }
 }

@@ -1,26 +1,36 @@
 # Recorded tracker sessions
 
-Drop a `tracker-session.json` here and `npm run test:replay` will drive the rig
-and the renderer with it instead of a synthetic sweep.
+`tracker-session.json` is a recording of the owner at their desk. `npm run
+test:replay` drives the rig with it, and with every recording in `sessions/`,
+instead of a synthetic sweep.
 
-Record one from the app: **☰ → Camera & tracking → Record 60 seconds**, with the
-camera running. It saves a file to your downloads.
+## Recording one
+
+**☰ → Camera & tracking → Record 60 seconds**, with the camera running.
+
+- Running locally (`start.sh`, `start.bat`, `npm run dev`) the recording is
+  saved into `test/fixtures/sessions/` and the panel offers **Send to the
+  developer**, which pushes it to the `recordings` branch on GitHub without
+  touching your checkout. **Open GitHub upload page** does the same by hand
+  from any machine.
+- On the published site it downloads as `tracker-session.json`; the upload
+  page takes it from there.
+
+**Calibrate from this recording** sets your neutral pose, the blink threshold
+and the gaze discount from the recording itself, and says what it cannot fix
+from software: a jaw the camera never saw, elbows below the frame.
 
 ## What is in the file
 
-Numbers only — the same values the rig already works from:
-
-- blendshape weights (how open the jaw is, how closed each eye is, …)
-- head yaw, pitch, roll and position
-- body landmark coordinates, if arm tracking was on
-
-**No image data.** No video is captured, no frames are stored, and nothing is
-written out beyond those numbers. The file is plain JSON; open it and read it.
+Numbers only, the same values the rig works from: blendshape weights, head
+yaw, pitch, roll and position, body landmark coordinates when arm tracking was
+on, and the settings in force. No video, no frames, no image data. Plain JSON;
+open it and read it.
 
 ## Why it is worth having
 
-Every other motion check in this suite is a sweep somebody wrote by hand, which
-means it reflects an assumption about what a camera produces: smooth curves,
-one axis at a time, tidy extremes. Real tracking jitters, drops out, holds
-still in ways that expose drift, and reaches combinations no sweep tries. Most
-of the faults in this project lived in exactly that gap.
+A sweep somebody wrote by hand encodes an assumption about what a camera
+produces: smooth curves, one axis at a time, tidy extremes. Real tracking
+jitters, drops out, holds still in ways that expose drift, and reaches
+combinations no sweep tries. Most of the faults in this project lived in that
+gap, and the fixes for blinks and the neutral pose were measured on this file.

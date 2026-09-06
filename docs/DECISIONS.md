@@ -149,6 +149,28 @@ crop the detection was made through, not the crop aimed for the next frame.
 Finding a face takes real evidence; keeping one takes much less (the face was
 present 71% of a minute with 28 gaps, the longest 1.5 s).
 
+**2026-09-06 — A blink is a rise over the eye's own baseline.** On the
+owner's recording the raw blink score rests at a median of 0.52 (glasses, a
+beard, a camera above eye level) and never exceeds 0.83, and at each of its 35
+real blinks the eyes-looking-down score jumps too, so the static gaze-lid
+subtraction cancelled the blink: through the rig with defaults and auto-blink
+off, the whole minute produced one blink event. No threshold can separate
+that. The rig now takes the larger of the absolute reading and a transient
+one: the raw score's rise over its own rolling median of the last 0.7 s,
+mapped from 0.12 to 0.28 (this face's full blinks rise about 0.33), and faded
+out when the rise lasts past a quarter second, because a blink is a pulse and
+a glance down is a step. Eyes held shut stay shut through the absolute path.
+On the recording, 24 of 34 rises now reach the screen as blinks.
+
+**2026-09-06 — The app calibrates from its own recording.** Resting yaw of
+-26° and pitch of -22° on the same recording, and a fixed threshold that could
+not fit the face: `src/tracking/calibrate.js` reads the neutral (medians, in
+the rig's mirrored space), the gaze-lid slope and the open threshold off a
+recording, and reports what software cannot fix (a jaw the camera never saw,
+elbows below the frame in 98% of frames). Recordings are saved into the
+project by the dev server and pushed to the `recordings` branch with git
+plumbing, so nothing is uploaded by hand and the checkout is never touched.
+
 ## The renderer
 
 **2026-09-04 — The head-on latch decides on where the head has been.** A

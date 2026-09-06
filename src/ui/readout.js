@@ -48,6 +48,7 @@ export function neutralLine(rig) {
     ? `forward is where you looked when you set the pose, ${Math.round(off)}° from the camera`
     : 'forward is the camera';
   return `${where} · neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
+    + (n.from ? ` (${n.from})` : '')
     + (off > 8 && !cal ? ' — C resets it, 3-second countdown' : '') + capturing;
 }
 

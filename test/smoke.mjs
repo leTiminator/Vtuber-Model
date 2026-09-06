@@ -3,7 +3,9 @@
  * and checks the whole pipeline comes up — model download, camera start, the
  * render loop actually putting pixels on the canvas, and the hotkeys firing.
  */
-import { boot } from './harness.mjs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { OUT, boot } from './harness.mjs';
 
 const results = [];
 let failures = 0;
@@ -14,7 +16,12 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const { page, errors, close, openBrowser } = await boot({
+// Recordings saved during this run go somewhere disposable, not into fixtures.
+const SESSIONS = join(OUT, 'sessions');
+process.env.VTUBER_SESSIONS_DIR = SESSIONS;
+rmSync(SESSIONS, { recursive: true, force: true });
+
+const { page, errors, close, openBrowser, base } = await boot({
   viewport: { width: 1280, height: 720 }, camera: true,
 });
 
@@ -164,6 +171,25 @@ try {
     ticks >= 20 && ticks <= 40, `${ticks} ticks in a second`);
   check('the tracker can run one detection from a timer', await page.evaluate(() =>
     typeof window.__vtuber.tracker.detect === 'function'));
+
+  // The dev server keeps a recording the page posts to it, under a name it
+  // chooses, and refuses anything that is not one.
+  const posted = await page.evaluate(async () => {
+    const body = JSON.stringify({ version: 1, recorded: 'test', seconds: 0.1, frames: 2, hz: 30,
+      shapeKeys: ['jawOpen'], samples: [{ t: 0, face: null, pose: null }, { t: 0.033, face: null, pose: null }] });
+    const ok = await fetch('/__record', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    return { ok: await ok.json(), okStatus: ok.status };
+  });
+  // The refusal is sent from here, not the page: a browser logs a 400 as a
+  // console error, and this suite counts those.
+  posted.badStatus = (await fetch(`${base}__record`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: base.replace(/\/$/, '') }, body: '{"hello":1}',
+  })).status;
+  const savedFiles = existsSync(SESSIONS) ? readdirSync(SESSIONS) : [];
+  check('a recording posted to the dev server lands in the sessions folder',
+    posted.okStatus === 200 && posted.ok.ok && savedFiles.includes(posted.ok.name),
+    `${posted.ok.path ?? 'no path'}; folder holds ${savedFiles.join(', ') || 'nothing'}`);
+  check('and something that is not a recording is refused', posted.badStatus === 400, `status ${posted.badStatus}`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
