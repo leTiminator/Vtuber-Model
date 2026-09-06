@@ -569,5 +569,76 @@ const runPose = (rig, n, f, has = true) => {
   check('a slow droop of the lids over five seconds never reads as a blink', worst < 0.3, `worst ${worst.toFixed(2)}`);
 }
 
+/* --- guided calibration: the capture, the guide, the pinned warning ----- */
+{
+  const { PoseCapture, NEEDED } = await import('../src/tracking/capture.js');
+  const { Guide, TARGET_YAW, TARGET_PITCH } = await import('../src/tracking/guide.js');
+  const D = Math.PI / 180;
+  const head = (yaw = 0, pitch = 0, roll = 0) => ({ yaw, pitch, roll });
+  const pos = { x: 0, y: 0, z: -45 };
+
+  const cap = new PoseCapture();
+  let got = null;
+  for (let i = 0; i < NEEDED - 1; i++) got = cap.push(head(0.3 + (i % 2) * 0.01), pos);
+  check('a capture says nothing before its run is complete', got === null);
+  got = cap.push(head(0.3), pos);
+  check('a steady run yields its median pose', got?.steady && Math.abs(got.pose.yaw - 0.3) < 0.011, JSON.stringify(got?.pose));
+  for (let i = 0; i < NEEDED; i++) got = cap.push(head((i % 2) * 20 * D), pos);
+  check('a run that wanders twenty degrees is not steady', got && !got.steady);
+
+  const guide = new Guide(0);
+  let clock = 0;
+  const feed = (h, seconds) => {
+    for (let i = 0; i < seconds * 30; i++) { clock += 1 / 30; guide.update(h, h && pos, clock); }
+  };
+  feed(head(0.3, -0.2), 1);
+  const early = guide.status(clock);
+  check('the guide counts down before it samples', early.key === 'neutral' && early.secondsLeft > 1.5 && early.secondsLeft < 2.1,
+    `${early.secondsLeft.toFixed(2)}s left`);
+  feed(head(0.3, -0.2), 4);
+  check('sitting still gives the neutral and moves on to the left turn',
+    guide.step?.key === 'left' && Math.abs(guide.neutral.yaw - 0.3) < 1e-9 && Math.abs(guide.neutral.pitch + 0.2) < 1e-9,
+    `at ${guide.step?.key}`);
+  feed(head(0.3 + 5 * D, -0.2), 4);
+  check('a five-degree turn is not a turn', guide.step?.key === 'left', `at ${guide.step?.key}`);
+  feed(head(0.3 - 35 * D, -0.2), 4);
+  check('a held thirty-five-degree turn is taken', guide.step?.key === 'right' && Math.abs(guide.turns.left + 35 * D) < 1e-9,
+    `at ${guide.step?.key}, left ${guide.turns.left}`);
+  feed(head(0.3 + 29 * D, -0.2), 4);
+  feed(head(0.3, -0.2 + 20 * D), 4);
+  feed(null, 15);
+  check('a step nobody performs times out as not measured', guide.done && guide.turns.down === null,
+    `done ${guide.done}, down ${guide.turns.down}`);
+  const { patch, report, range } = guide.result();
+  const neutral = JSON.parse(patch['camera.neutral']);
+  check('the guide\'s neutral is the first pose, marked guided', Math.abs(neutral.yaw - 0.3) < 1e-9 && neutral.from === 'guided');
+  check('the turn gain maps the larger turn onto the model\'s target',
+    Math.abs(patch['head.yawGain'] - Math.round((TARGET_YAW / (35 * D)) * 100) / 100) < 1e-9, `${patch['head.yawGain']}`);
+  check('the nod gain comes from the one nod that was measured',
+    Math.abs(patch['head.pitchGain'] - Math.round((TARGET_PITCH / (20 * D)) * 100) / 100) < 1e-9, `${patch['head.pitchGain']}`);
+  check('the range is recorded in degrees per side, the missing one empty',
+    range.left === 35 && range.right === 29 && range.up === 20 && range.down === null
+      && JSON.parse(patch['camera.range']).down === null, JSON.stringify(range));
+  check('the report names each pose', /Turn: left 35°, right 29°/.test(report[1]) && /down not measured/.test(report[1]),
+    report.join(' | '));
+
+  settings.reset();
+  settings.set('camera.mirror', true);
+  const rig = new Rig();
+  rig.guide = new Guide(rig.clock);
+  run(rig, 300, frame({ head: { yaw: 0.25 } }));
+  check('through the rig the guide reads the mirrored head, the space the neutral is kept in',
+    rig.guide.neutral && Math.abs(rig.guide.neutral.yaw + 0.25) < 1e-9, `${rig.guide.neutral?.yaw}`);
+
+  settings.reset();
+  const pinned = new Rig();
+  pinned.neutral = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: -45 };
+  run(pinned, 240, frame({ head: { yaw: 1.0 } }));
+  check('a head held past the limit for seconds raises the pinned warning',
+    /stuck at its limit/.test(pinned.pinnedWarning) && /57°/.test(pinned.pinnedWarning), pinned.pinnedWarning);
+  run(pinned, 60, frame({ head: { yaw: 0 } }));
+  check('coming back inside the limit clears it', pinned.pinnedWarning === '', pinned.pinnedWarning);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);

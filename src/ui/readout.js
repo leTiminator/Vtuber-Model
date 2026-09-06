@@ -6,7 +6,7 @@
 import * as store from '../core/store.js';
 
 /** Settings the app writes itself; not worth listing as "changed". */
-const MACHINE_SET = /^camera\.(deviceId|neutral)$/;
+const MACHINE_SET = /^camera\.(deviceId|neutral|range)$/;
 
 export const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}°`;
 
@@ -31,6 +31,18 @@ export function stampText() {
   return `build ${buildId()} · ${changedSettings()}`;
 }
 
+/** The turns the guided calibration measured, when it has run. */
+function rangeText() {
+  try {
+    const r = JSON.parse(store.get('camera.range') || 'null');
+    if (!r) return '';
+    const side = (k) => (r[k] == null ? '–' : `${r[k]}°`);
+    return ` · range L ${side('left')} R ${side('right')} U ${side('up')} D ${side('down')}`;
+  } catch {
+    return '';
+  }
+}
+
 /** Where forward is, and whether a neutral capture is counting down. */
 export function neutralLine(rig) {
   const n = rig.neutral;
@@ -48,8 +60,8 @@ export function neutralLine(rig) {
     ? `forward is where you looked when you set the pose, ${Math.round(off)}° from the camera`
     : 'forward is the camera';
   return `${where} · neutral ${deg(n.yaw)} ${deg(n.pitch)} ${deg(n.roll)}`
-    + (n.from ? ` (${n.from})` : '')
-    + (off > 8 && !cal ? ' — C resets it, 3-second countdown' : '') + capturing;
+    + (n.from ? ` (${n.from})` : '') + rangeText()
+    + (off > 8 && !cal ? ' — C resets it, G calibrates your range' : '') + capturing;
 }
 
 /** Raw angles beside driven ones, the face zoom, and what the pose model sees. */
