@@ -247,12 +247,31 @@ try {
     const chat = run((s) => 0.14 * Math.sin(s * 5), 240);
     // A real turn: a ramp to twenty-five degrees over two seconds, then held.
     const turn = run((s) => Math.min(s / 2, 1) * 0.436, 240);
-    return { chat, turn };
+    // A step to thirty degrees, a step back to centre, then a three-frame flick.
+    t.resetStore(frozen);
+    a.reset();
+    const at = (deg) => { const rig = emptyRig(); rig.head.yaw = deg * Math.PI / 180; return rig; };
+    let left = -1;
+    let back = -1;
+    for (let f = 0; f < 60; f++) { a.render(at(30), 1 / 60); if (left < 0 && !a.faceOn) left = f; }
+    for (let f = 0; f < 90; f++) { a.render(at(0), 1 / 60); if (back < 0 && a.faceOn) back = f; }
+    let flick = 0;
+    let last = a.faceOn;
+    for (let f = 0; f < 60; f++) {
+      a.render(at(f < 3 ? 20 : 0), 1 / 60);
+      if (a.faceOn !== last) { flick++; last = a.faceOn; }
+    }
+    return { chat, turn, step: { left, back, flick } };
   }, FROZEN);
   check('ordinary talking never changes the face', latch.chat.changes === 0 && latch.chat.faceOn,
     `${latch.chat.changes} changes`);
   check('a real turn changes it once', latch.turn.changes === 1 && !latch.turn.faceOn,
     `${latch.turn.changes} changes, head-on ${latch.turn.faceOn}`);
+  check('a real turn takes the face within a quarter of a second', latch.step.left >= 0 && latch.step.left <= 15,
+    `${latch.step.left} frames`);
+  check('the face comes back after the head has sat square, not before', latch.step.back >= 18 && latch.step.back <= 36,
+    `${latch.step.back} frames`);
+  check('a three-frame flick changes nothing', latch.step.flick === 0, `${latch.step.flick} changes`);
 
   /* --- a turn is continuous, all the way to the limit -------------------- */
   const creep = await page.evaluate((frozen) => {

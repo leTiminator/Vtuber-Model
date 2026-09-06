@@ -160,9 +160,9 @@ export function buildPanel(root, ctx) {
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
             + 'so talking does not walk the eyes across the visor.' },
         { type: 'slider', key: 'parts.headOnTime', label: '— changes after', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
-        { type: 'slider', key: 'parts.headOnDwell', label: '— then holds for', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(1)}s`,
-          hint: 'The least time a view is kept before it can hand over again. Without it, a '
-            + 'head that sits near the threshold crosses it constantly and the eyes never settle.' },
+        { type: 'slider', key: 'parts.headOnReturn', label: '— comes back after', min: 0.1, max: 1.5, step: 0.05, format: (v) => `${v.toFixed(2)}s`,
+          hint: 'How long you must sit square before the face comes back. Turning away is '
+            + 'immediate; coming back waits, so a head hovering near the threshold does not flicker.' },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },

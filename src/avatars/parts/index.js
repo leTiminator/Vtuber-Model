@@ -37,6 +37,7 @@ const TALK_BOB = 0.0065;
 const TALK_GLOW = 0.35;
 import { HeadInertia, LinkChain } from './cloth.js';
 import { loadModel } from './model.js';
+import { FaceLatch } from './latch.js';
 
 const UNIFORMS = [
   'u_model', 'u_modelFar', 'u_aspect', 'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
@@ -86,7 +87,7 @@ export class Parts2D {
     this.glowPulse = 1;
     // Which face is showing, and how far through changing hands it is. Latched
     // rather than derived from the angle every frame — see the note in render.
-    this.squareOn = true;
+    this.latch = new FaceLatch();
     this.headOnPhase = 1;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
@@ -107,10 +108,8 @@ export class Parts2D {
     this.springs = { yaw: makeSpring(), pitch: makeSpring(), roll: makeSpring() };
     this.tuft = { x: 0, y: 0, vx: 0, vy: 0 };
     this.glowPulse = 1;
-    this.squareOn = true;
+    this.latch.reset();
     this.headOnPhase = 1;
-    this.squareSince = 0;
-    this.yawHeld = undefined;
     this.faceOn = true;
     this.scarf.reset();
     this.inertia.reset();
@@ -415,22 +414,13 @@ export class Parts2D {
     this.glowPulse = damp(this.glowPulse,
       0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare + TALK_GLOW * talk, 9, dt);
 
-    /* How far round to the camera the head has come. */
-    /* Which face, latched — then how fast it changes hands, separately. */
-    /* Wider, and it cannot change its mind in a hurry. */
-    const hold = store.get('parts.headOnHold');
-    const dwell = store.get('parts.headOnDwell');
-    /* Decided on where the head has been, not where it is this instant. */
-    this.yawHeld = damp(this.yawHeld ?? Math.abs(yaw), Math.abs(yaw), 1.6, dt);
-    this.squareSince = (this.squareSince ?? 0) + dt;
-    const want = this.squareOn ? this.yawHeld < hold : this.yawHeld < hold * 0.5;
-    if (want !== this.squareOn && this.squareSince >= dwell) {
-      this.squareOn = want;
-      this.squareSince = 0;
-    }
-    /* A ramp of a fixed length, eased at both ends — not a decay. */
+    /* Which face: it leaves quickly on a real turn and comes back once the
+     * head has sat square (latch.js). A ramp of a fixed length, eased at both
+     * ends, then carries the change — not a decay. */
+    const squareOn = this.latch.update(yaw, dt,
+      store.get('parts.headOnHold'), store.get('parts.headOnReturn'));
     const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
-    this.headOnPhase = clamp(this.headOnPhase + (this.squareOn ? step : -step), 0, 1);
+    this.headOnPhase = clamp(this.headOnPhase + (squareOn ? step : -step), 0, 1);
     // A saved value from when this was a slider reads as on above a half.
     const headOnT = this.headOn && Number(store.get('parts.headOn')) >= 0.5
       ? smoothstep(this.headOnPhase) : 0;
