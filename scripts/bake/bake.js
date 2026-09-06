@@ -64,7 +64,7 @@ export async function bakeModel({ artwork, headOn, minShard = MIN_SHARD }) {
   const headPart = parts.find((p) => p.name === 'head');
   const headSpan = headPart ? spanOf(headPart, width, height)
     : { cx: markers.headX, cy: markers.headY, r: markers.headR };
-  if (headPart) parts.push(hoodOf(headPart, 'hood', headPart.z - 0.5));
+  if (headPart) parts.push(hoodOf(headPart, 'hood', headPart.z - 0.7));
 
   const records = parts.map((part) => describe(part, { width, height, aspect, markers, sockets, spine }));
   const textures = parts.map((part) => textureOf(part));

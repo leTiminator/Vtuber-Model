@@ -53,6 +53,14 @@
         Press <strong>Start camera</strong> to bring the model to life.
         <br />Everything runs on this machine — no video ever leaves it.
       </p>
+
+      <!-- The guided calibration's prompts: large, over the stage, readable
+           from a turned head. -->
+      <div id="guide" hidden aria-live="polite">
+        <p id="guide-prompt"></p>
+        <p id="guide-count"></p>
+        <p class="guide__hint">Esc cancels</p>
+      </div>
     </main>
 
     <aside id="panel" aria-label="Controls">

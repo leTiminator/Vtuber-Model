@@ -13,6 +13,7 @@ import { PoseTracker } from './tracking/poseTracker.js';
 import { MicLevel } from './tracking/audio.js';
 import { SessionRecorder } from './tracking/recorder.js';
 import { calibrate } from './tracking/calibrate.js';
+import { Guide } from './tracking/guide.js';
 import { UPLOAD_URL, saveRecording, shareRecording } from './core/devServer.js';
 import { Rig, emptyRig } from './tracking/rig.js';
 import { Parts2D } from './avatars/parts/index.js';
@@ -28,6 +29,9 @@ const dom = {
   fps: document.getElementById('fps'),
   preview: document.getElementById('camera-preview'),
   firstRun: document.getElementById('first-run'),
+  guide: document.getElementById('guide'),
+  guidePrompt: document.getElementById('guide-prompt'),
+  guideCount: document.getElementById('guide-count'),
   panelBody: document.getElementById('panel-body'),
   start: document.getElementById('start'),
   calibrate: document.getElementById('calibrate'),
@@ -102,6 +106,7 @@ function step(now) {
 
   if (mic.active) rig.setMicLevel(mic.sample());
   rig.update(tracker.frame, tracker.hasFace, dt);
+  tickGuide();
   if (pose.enabled && tracker.running) pose.detect(tracker.video, now);
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
@@ -165,6 +170,8 @@ function updateStatus() {
   // Faults first: a stage that cannot draw makes every other state moot.
   if (avatarError) return setStatus(avatarError, 'error');
   if (outputError && outputs > 0) return setStatus(`OBS page: ${outputError}`, 'error');
+  if (rig.guide) return setStatus('Calibrating — follow the prompt on the stage', 'busy');
+  if (rig.pinnedWarning) return setStatus(rig.pinnedWarning, 'error');
   if (outputs > 0 && starvedFor > 2 && performance.now() < starvedUntil) {
     return setStatus(`This window was hidden for ${Math.round(starvedFor)} s; tracking ran on a `
       + 'background timer meanwhile. If OBS stuttered, keep this window visible.', 'busy');
@@ -239,6 +246,11 @@ async function applyMicSource() {
 
 const cameraListeners = new Set();
 
+/* The guided calibration's state; its functions live further down. */
+let guideBefore = null; // settings before the last guided calibration, for Undo
+let guideReport = '';
+let guideNoticeUntil = 0;
+
 buildPanel(dom.panelBody, {
   // The rig's own numbers, so "it is backwards" can be pinned to the half of
   // the pipeline that is actually backwards.
@@ -267,6 +279,10 @@ buildPanel(dom.panelBody, {
   shareRecording,
   uploadUrl: UPLOAD_URL,
   calibrateFrom: (session) => calibrate(session, { mirror: store.get('camera.mirror'), settings: store.snapshot() }),
+  startGuide: () => startGuide(),
+  guideReport: () => guideReport,
+  canUndoGuide: () => Boolean(guideBefore),
+  undoGuide: () => undoGuide(),
   armStatus: () => ({
     camera: tracker.running,
     model: pose.error ? 'failed' : pose.landmarker ? 'ready' : pose.enabled ? 'loading' : 'off',
@@ -373,8 +389,66 @@ window.addEventListener('resize', scheduleSelfCheck);
 window.addEventListener('orientationchange', scheduleSelfCheck);
 scheduleSelfCheck();
 
+/* ------------------------------------------------------- guided calibration */
+
+function startGuide() {
+  if (rig.guide) return;
+  if (!tracker.running) {
+    // Said on the overlay, where the eye already is; the status line is
+    // rewritten every frame.
+    dom.guidePrompt.textContent = 'Start the camera first, then press G.';
+    dom.guideCount.textContent = '';
+    dom.guide.hidden = false;
+    guideNoticeUntil = performance.now() + 3000;
+    return;
+  }
+  rig.guide = new Guide(rig.clock);
+  guideReport = '';
+  dom.guide.hidden = false;
+}
+function cancelGuide() {
+  if (guideNoticeUntil) { guideNoticeUntil = 0; dom.guide.hidden = true; }
+  if (!rig.guide) return;
+  rig.guide.cancel();
+  rig.guide = null;
+  dom.guide.hidden = true;
+  guideReport = 'Calibration cancelled; nothing changed.';
+}
+/* One frame of the guide: its prompt and countdown, and its result when it ends. */
+function tickGuide() {
+  if (guideNoticeUntil && performance.now() > guideNoticeUntil) {
+    guideNoticeUntil = 0;
+    dom.guide.hidden = true;
+  }
+  const g = rig.guide;
+  if (!g) return;
+  if (g.done) {
+    const { patch, report } = g.result();
+    rig.guide = null;
+    dom.guide.hidden = true;
+    if (patch) {
+      guideBefore = store.snapshot();
+      store.patch(patch);
+    }
+    guideReport = report.join(' ');
+    return;
+  }
+  const s = g.status(rig.clock);
+  dom.guidePrompt.textContent = `${g.index + 1} of 5 · ${s.prompt}`;
+  dom.guideCount.textContent = s.secondsLeft > 0 ? `${Math.ceil(s.secondsLeft)}`
+    : tracker.hasFace ? 'hold it…' : 'no face in view';
+}
+function undoGuide() {
+  if (!guideBefore) return;
+  store.patch(guideBefore);
+  guideBefore = null;
+  guideReport = 'Calibration undone; settings are back to what they were.';
+}
+
 installHotkeys({
   onCalibrate: () => rig.calibrate(),
+  onGuide: startGuide,
+  onCancel: cancelGuide,
   onToggleUI: toggleUI,
   onToggleMirror: () => store.set('camera.mirror', !store.get('camera.mirror')),
   // Put the readout away, or bring it back. It is the only place a live

@@ -12,6 +12,8 @@ export const DEFAULTS = {
   'camera.faceZoom': 'auto',
   /* The calibrated rest pose, as JSON; empty means none. */
   'camera.neutral': '',
+  /* How far the guided calibration saw you turn, degrees per side; read by the readout. */
+  'camera.range': '',
 
   // --- smoothing -------------------------------------------------------
   'smooth.minCutoff': 1.2, // Hz — lower is steadier, laggier

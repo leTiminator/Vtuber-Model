@@ -46,7 +46,9 @@ pieces' margins grow only under each other (`cutParts` takes `keep`); and two
 synthesized parts, `hood` and `hoodOn`, hold each head's own footprint (eye
 sockets included, eroded a pixel) in one flat colour, the head's median
 surface darkened to 60%, still on the hips behind it. Nothing shows at rest;
-a head that slides or rolls reveals a dark crescent of hood.
+a head that slides or rolls reveals a dark crescent of hood. The hood sits
+between the collar and the hair (tufts moved above the collar, 2026-09-06):
+drawn over the hair it cut the tufts wherever a moved head exposed it.
 
 **2026-09-02 — Enclosed holes are filled with a fitted quadratic.** The eye
 is cut out of the head, and what fills the hole is what shows through a shut
@@ -201,6 +203,23 @@ the shoulder line leaning 8° the same way: a real tilt, pinned at the rig's
 copies the proto's packed data, filled from an Eigen matrix), which is how
 `eulerFromMatrix` reads it. What failed was the model's answer: the latch,
 the missing left view and the margin, above.
+
+**2026-09-06 — The neutral is where you look while streaming, and a guided
+calibration reads it.** The owner's readout showed a neutral 49° from where
+they sat: set with C looking straight at the camera, which they then
+suggested as the calibration's first step. On this desk the camera is 49°
+from the screen, so a camera neutral leaves the model pinned at its 42°
+limit whenever they look at their screen, and nothing the head does reaches
+it. The guided calibration (`guide.js`, driven by G) therefore asks for the
+streaming gaze first, then left, right, up and down; each pose is a steady
+run (`capture.js`, the same definition C uses), a turn counts from 8° and
+times out as "not measured" after 12 s. The larger turn is mapped onto 38°
+and the larger nod onto 28° through `head.yawGain` and `head.pitchGain`
+(0.5 to 2.5), the range is kept in `camera.range` for the readout, and the
+neutral records where it came from. A driven yaw or roll within half a degree
+of its limit for three seconds raises a warning naming how far the head reads
+from the neutral, because a pinned model is the one symptom the owner sees as
+"not moving with my head".
 
 ## The renderer
 

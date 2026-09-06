@@ -43,6 +43,7 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3),
           hint: 'Higher keeps fast movement lag-free.' },
         { type: 'slider', key: 'smooth.expression', label: 'Face response', min: 0.5, max: 6, step: 0.1, format: hz },
+        { type: 'guide' },
         { type: 'record' },
       ],
     },
@@ -312,6 +313,33 @@ const BUILDERS = {
     return field;
   },
 
+  /** The guided calibration: five prompts on the stage, then the result and an Undo. */
+  guide(_spec, ctx) {
+    if (!ctx.startGuide) return null;
+    const field = el('div', 'field');
+    const button = el('button', 'btn', 'Guided calibration (G)');
+    button.type = 'button';
+    button.addEventListener('click', () => ctx.startGuide());
+    const hint = el('div', 'field__hint',
+      'Five prompts on the stage: sit as you stream and look where you usually look, then '
+      + 'turn left, right, up and down as far as you would. Sets where forward is and how '
+      + 'far a turn goes. C sets forward alone.');
+    const result = el('div', 'field__hint');
+    const undo = el('button', 'btn', 'Undo calibration');
+    undo.type = 'button';
+    undo.hidden = true;
+    undo.addEventListener('click', () => ctx.undoGuide?.());
+    const paint = () => {
+      const text = ctx.guideReport?.() ?? '';
+      if (result.textContent !== text) result.textContent = text;
+      undo.hidden = !ctx.canUndoGuide?.();
+    };
+    paint();
+    setInterval(paint, 250);
+    field.append(button, hint, result, undo);
+    return field;
+  },
+
   /** Record what the trackers see, for replaying in tests. */
   record(spec, ctx) {
     if (!ctx.recorder || !ctx.startRecording) return null;
@@ -521,6 +549,8 @@ const BUILDERS = {
     const wrap = el('div', 'keycaps');
     const rows = [
       ['C', 'Set neutral pose (3-second countdown)'],
+      ['G', 'Guided calibration: neutral pose and range'],
+      ['Esc', 'Cancel the guided calibration'],
       ['D', 'Show or hide the readout'],
       ['H', 'Hide the interface'],
       ['M', 'Flip mirroring'],

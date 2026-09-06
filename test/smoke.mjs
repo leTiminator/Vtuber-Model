@@ -68,6 +68,13 @@ try {
   check('a hotkey with a modifier held is left to the browser',
     await page.evaluate(() => !document.body.classList.contains('panel-hidden')));
 
+  // G before the camera runs says so on the overlay; Esc puts it away.
+  await page.keyboard.press('g');
+  const guideOff = await page.locator('#guide').isVisible() && /camera first/.test(await page.locator('#guide-prompt').textContent());
+  await page.keyboard.press('Escape');
+  check('G with the camera off asks for the camera, and Esc dismisses it',
+    guideOff && !(await page.locator('#guide').isVisible()));
+
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
   const idlePixels = await page.evaluate(() => {
     const c = document.querySelector('#avatar-host canvas');
@@ -120,6 +127,15 @@ try {
   check('the readout stays up once the camera is live',
     await page.locator('#selfcheck').isVisible(),
     'visible while tracking');
+
+  // With the camera running, G starts the five prompts on the stage.
+  await page.keyboard.press('g');
+  await page.waitForTimeout(300);
+  const prompt = await page.locator('#guide-prompt').textContent();
+  const guideOn = await page.locator('#guide').isVisible() && /^1 of 5/.test(prompt);
+  await page.keyboard.press('Escape');
+  check('G starts the guided calibration on the stage, and Esc cancels it',
+    guideOn && !(await page.locator('#guide').isVisible()), prompt);
 
   // A pose the rigged artwork honours: closing the eyes must move pixels.
   const blinkDelta = await page.evaluate(async () => {

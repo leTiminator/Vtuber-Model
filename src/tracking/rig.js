@@ -9,6 +9,7 @@ const ELBOW_RAISE = 1.6;
 
 import { clamp, damp, DEG, lerp, makeSpring, remap, spring, TAU } from '../core/math.js';
 import * as store from '../core/store.js';
+import { PoseCapture } from './capture.js';
 
 /**
  * Ceilings on how fast the head may turn and travel, in radians and in units
@@ -67,6 +68,10 @@ export function emptyRig() {
 /** What a head can plausibly be resting at, per axis. */
 export const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
 
+/** Seconds at the limit before the pinned warning, and how close to it counts. */
+const PINNED_SECONDS = 3;
+const PINNED_SLACK = 0.5 * DEG;
+
 /** A blink is a rise of the raw score over its own last second, mapped between these. */
 export const BLINK_RISE = [0.12, 0.28];
 /** Seconds of raw blink score the baseline median looks back over. */
@@ -100,6 +105,13 @@ export class Rig {
 
     this.neutral = readNeutral(); // calibrated baseline, set by calibrate()
     this.pendingCalibration = null;
+    // A guided calibration in progress (guide.js), fed the same head and
+    // position the neutral is kept in; main.js owns it.
+    this.guide = null;
+    // Seconds the driven head has sat at its limit, and the warning that
+    // raises: a head pinned there is not being followed, the neutral is off.
+    this.pinnedFor = 0;
+    this.pinnedWarning = '';
     this.armNeutral = null; // resting arm angles, captured on the same signal
     // Why the neutral cannot be trusted, when it cannot. Empty when it can.
     this.neutralWarning = '';
@@ -161,10 +173,7 @@ export class Rig {
       return;
     }
     this.pendingCalibration = {
-      samples: [],
-      // A second and a half at thirty frames, so a blink or a glance is a
-      // minority of it rather than all of it.
-      needed: 45,
+      capture: new PoseCapture(),
       // Nothing is sampled until this: a second and a half for an automatic
       // capture, so the camera has settled; three seconds for a requested one,
       // so whoever pressed the button can look where they mean to look.
@@ -380,6 +389,7 @@ export class Rig {
         : frame.position;
 
       this.collectCalibration(head, pos);
+      this.guide?.update(head, pos, this.clock);
       const before = { ...s.head };
       this.applyTracked(shapes, head, pos, dt);
 
@@ -398,6 +408,7 @@ export class Rig {
       s.tracked = true;
       s.confidence = damp(s.confidence, 1, 8, dt);
     } else {
+      this.guide?.update(null, null, this.clock);
       s.tracked = false;
       s.confidence = damp(s.confidence, 0, 3, dt);
       this.relax(dt);
@@ -413,24 +424,10 @@ export class Rig {
     const cal = this.pendingCalibration;
     if (!cal) return;
     if (this.clock < cal.armAt) return;
-    cal.samples.push({ ...head, px: pos.x, py: pos.y, pz: pos.z });
-    if (cal.samples.length < cal.needed) return;
-
-    /* The middle sample, not the average of them. */
-    const mid = (k) => {
-      const v = cal.samples.map((s) => s[k]).sort((a, b) => a - b);
-      return v[v.length >> 1];
-    };
-    const spread = (k) => {
-      const v = cal.samples.map((s) => s[k]);
-      return Math.max(...v) - Math.min(...v);
-    };
-
-    /* Steadiness is what separates a resting pose from a glance. */
-    const STILL = 12 * DEG;
-    const steady = spread('yaw') < STILL && spread('pitch') < STILL;
-    if (cal.auto && !steady) {
-      cal.samples = [];
+    const got = cal.capture.push(head, pos);
+    if (!got) return;
+    /* An automatic capture has to be steady; a requested one is taken as is. */
+    if (cal.auto && !got.steady) {
       if (this.clock < cal.deadline) return;
       // Past the deadline it gives up: with no neutral the model follows the
       // camera's own frame, and the readout says what to do.
@@ -440,12 +437,12 @@ export class Rig {
     }
 
     /* Bounded to what a resting head can actually be, one axis at a time. */
-    const held = (k) => clamp(mid(k), -REST_LIMIT[k], REST_LIMIT[k]);
-    const raw = { yaw: mid('yaw'), pitch: mid('pitch'), roll: mid('roll') };
-
+    const raw = got.pose;
+    const held = (k) => clamp(raw[k], -REST_LIMIT[k], REST_LIMIT[k]);
     this.neutral = {
       yaw: held('yaw'), pitch: held('pitch'), roll: held('roll'),
-      x: mid('px'), y: mid('py'), z: mid('pz'),
+      x: raw.x, y: raw.y, z: raw.z,
+      from: cal.auto ? 'camera start' : 'C',
     };
     this.pendingCalibration = null;
     const trimmed = Object.keys(REST_LIMIT).some((k) => Math.abs(raw[k] - this.neutral[k]) > 1e-4);
@@ -478,6 +475,17 @@ export class Rig {
     s.head.yaw = this.pose.filter('yaw', clamp(yaw, -limit, limit), dt);
     s.head.pitch = this.pose.filter('pitch', clamp(pitch, -limit, limit), dt);
     s.head.roll = this.pose.filter('roll', clamp(roll, -rollLimit, rollLimit), dt);
+
+    /* A head that sits at its limit is not being followed: the neutral is off. */
+    const pinned = Math.abs(s.head.yaw) >= limit - PINNED_SLACK || Math.abs(s.head.roll) >= rollLimit - PINNED_SLACK;
+    this.pinnedFor = pinned ? this.pinnedFor + dt : 0;
+    if (!pinned || this.pendingCalibration || this.guide) {
+      this.pinnedWarning = '';
+    } else if (this.pinnedFor >= PINNED_SECONDS) {
+      const off = Math.abs(s.head.yaw) >= limit - PINNED_SLACK ? head.yaw - (n?.yaw ?? 0) : head.roll - (n?.roll ?? 0);
+      this.pinnedWarning = `the model is stuck at its limit: your head reads ${Math.round(Math.abs(off) / DEG)}° `
+        + 'from the neutral pose. Press G to calibrate where you sit.';
+    }
 
     // Translation arrives in centimetres; normalise to roughly -1..1 of frame.
     const pg = g('head.positionGain');

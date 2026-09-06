@@ -236,90 +236,6 @@
     },
     {
       "eyeL": [
-        0.772998,
-        1.50271,
-        0.20581,
-        0.195116
-      ],
-      "eyeR": [
-        1.069918,
-        1.447249,
-        0.059963,
-        0.176808
-      ],
-      "farJoint": null,
-      "flags": {
-        "eyes": false,
-        "face": "turned",
-        "far": false,
-        "follow": "full",
-        "shadow": true,
-        "skinned": false
-      },
-      "grid": 1,
-      "h": 145,
-      "inset": 28,
-      "joint": "tufts",
-      "lidFill": 0.646542,
-      "marginPng": "tufts.margin.png",
-      "name": "tufts",
-      "onChain": null,
-      "pivot": null,
-      "pixels": 5282,
-      "place": null,
-      "png": "tufts.png",
-      "w": 233,
-      "x": 258,
-      "y": 150,
-      "z": 4
-    },
-    {
-      "eyeL": [
-        0.337319,
-        1.292741,
-        0.127305,
-        0.179604
-      ],
-      "eyeR": [
-        0.615606,
-        1.291465,
-        0.126087,
-        0.177966
-      ],
-      "farJoint": null,
-      "flags": {
-        "eyes": false,
-        "face": "headOn",
-        "far": false,
-        "follow": "full",
-        "shadow": true,
-        "skinned": false
-      },
-      "grid": 1,
-      "h": 150,
-      "inset": 28,
-      "joint": "tufts",
-      "lidFill": 0.628813,
-      "marginPng": "tuftsOn.margin.png",
-      "name": "tuftsOn",
-      "onChain": null,
-      "pivot": null,
-      "pixels": 5298,
-      "place": {
-        "fromX": 0.516667,
-        "fromY": 0.447619,
-        "k": 1.253333,
-        "toX": 0.707143,
-        "toY": 0.504762
-      },
-      "png": "tuftsOn.png",
-      "w": 241,
-      "x": 211,
-      "y": 124,
-      "z": 4.5
-    },
-    {
-      "eyeL": [
         0.712737,
         0.468596,
         0.16038,
@@ -394,7 +310,46 @@
       "w": 233,
       "x": 329,
       "y": 196,
-      "z": 5.5
+      "z": 5.3
+    },
+    {
+      "eyeL": [
+        0.772998,
+        1.50271,
+        0.20581,
+        0.195116
+      ],
+      "eyeR": [
+        1.069918,
+        1.447249,
+        0.059963,
+        0.176808
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "turned",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 145,
+      "inset": 28,
+      "joint": "tufts",
+      "lidFill": 0.646542,
+      "marginPng": "tufts.margin.png",
+      "name": "tufts",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 5282,
+      "place": null,
+      "png": "tufts.png",
+      "w": 233,
+      "x": 258,
+      "y": 150,
+      "z": 5.4
     },
     {
       "eyeL": [
@@ -440,6 +395,51 @@
       "x": 225,
       "y": 179,
       "z": 5.6
+    },
+    {
+      "eyeL": [
+        0.337319,
+        1.292741,
+        0.127305,
+        0.179604
+      ],
+      "eyeR": [
+        0.615606,
+        1.291465,
+        0.126087,
+        0.177966
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "headOn",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 150,
+      "inset": 28,
+      "joint": "tufts",
+      "lidFill": 0.628813,
+      "marginPng": "tuftsOn.margin.png",
+      "name": "tuftsOn",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 5298,
+      "place": {
+        "fromX": 0.516667,
+        "fromY": 0.447619,
+        "k": 1.253333,
+        "toX": 0.707143,
+        "toY": 0.504762
+      },
+      "png": "tuftsOn.png",
+      "w": 241,
+      "x": 211,
+      "y": 124,
+      "z": 5.9
     },
     {
       "eyeL": [
