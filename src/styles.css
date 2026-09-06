@@ -117,6 +117,25 @@ body { background: transparent; }
 }
 #first-run strong { color: var(--text); }
 
+#guide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(12, 14, 20, 0.55);
+  z-index: 4;
+  pointer-events: none;
+}
+#guide[hidden] { display: none; }
+#guide-prompt { max-width: 760px; margin: 0; font-size: 32px; line-height: 1.3; color: var(--text); }
+#guide-count { margin: 0; min-height: 1.2em; font-size: 56px; font-weight: 700; color: var(--accent); }
+#guide .guide__hint { margin: 0; color: var(--muted); }
+
 /* ------------------------------------------------------------------ panel */
 
 #panel {

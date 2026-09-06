@@ -31,6 +31,13 @@ export function stampText() {
   return `build ${buildId()} · ${changedSettings()}`;
 }
 
+/** Which face shows, in screen terms: facing the other way turns the label round. */
+function faceName(avatar) {
+  if (avatar.faceOn) return 'head-on';
+  const left = (avatar.turnedSide < 0) !== Boolean(store.get('stage.faceFlip'));
+  return left ? 'turned left' : 'turned right';
+}
+
 /** The turns the guided calibration measured, when it has run. */
 function rangeText() {
   try {
@@ -75,7 +82,7 @@ export function liveLines({ tracker, pose, rig, avatar }) {
     const s = rig.state.head;
     out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
       + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`
-      + (avatar ? `  ·  face ${avatar.faceOn ? 'head-on' : avatar.turnedSide < 0 ? 'turned left' : 'turned right'}` : ''));
+      + (avatar ? `  ·  face ${faceName(avatar)}` : ''));
   } else {
     out.push('no face in frame');
   }

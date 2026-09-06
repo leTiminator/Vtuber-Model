@@ -1,5 +1,5 @@
-/** Keyboard shortcuts: C neutral pose, D readout, H interface, M mirror. */
-export function installHotkeys({ onCalibrate, onToggleUI, onToggleMirror, onToggleReadout }) {
+/** Keyboard shortcuts: C neutral pose, G guided calibration, Esc cancels it, D readout, H interface, M mirror. */
+export function installHotkeys({ onCalibrate, onGuide, onCancel, onToggleUI, onToggleMirror, onToggleReadout }) {
   const isTyping = (target) =>
     target instanceof HTMLElement &&
     (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
@@ -10,6 +10,8 @@ export function installHotkeys({ onCalibrate, onToggleUI, onToggleMirror, onTogg
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     switch (event.code) {
       case 'KeyC': onCalibrate(); break;
+      case 'KeyG': onGuide?.(); break;
+      case 'Escape': onCancel?.(); break;
       case 'KeyH': onToggleUI(); break;
       case 'KeyM': onToggleMirror(); break;
       case 'KeyD': onToggleReadout?.(); break;
