@@ -47,6 +47,19 @@ export function buildPanel(root, ctx) {
       ],
     },
     {
+      title: 'Size & position',
+      open: true,
+      controls: [
+        { type: 'framingHelp' },
+        { type: 'fit' },
+        { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
+        { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
+          hint: 'Stops a stray scroll or drag moving the shot mid-stream.' },
+      ],
+    },
+    {
       title: 'Head',
       controls: [
         { type: 'slider', key: 'head.yawGain', label: 'Turn', min: 0, max: 3, step: 0.05, format: x },
@@ -128,13 +141,6 @@ export function buildPanel(root, ctx) {
         ] },
         { type: 'color', key: 'stage.chroma', label: 'Chroma colour' },
         { type: 'color', key: 'stage.color', label: 'Solid colour' },
-        { type: 'framingHelp' },
-        { type: 'fit' },
-        { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
-        { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
-        { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
-        { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
-          hint: 'Stops a stray scroll or drag moving the shot mid-stream.' },
         { type: 'obsHelp' },
       ],
     },
@@ -477,9 +483,9 @@ const BUILDERS = {
   framingHelp() {
     const note = el('p', 'note');
     note.innerHTML =
-      '<strong>Drag the character</strong> to move it and <strong>scroll</strong> to resize, ' +
-      'right on the stage. Zoom follows your pointer, so you magnify what you are aiming at. ' +
-      'The sliders below do the same thing if you want exact numbers.';
+      '<strong>Drag the character</strong> to move it and <strong>scroll</strong> over it to ' +
+      'shrink or grow it, right on the stage. Zoom follows your pointer, so you magnify what ' +
+      'you are aiming at. The sliders below do the same with exact numbers. The OBS page follows.';
     return note;
   },
 
