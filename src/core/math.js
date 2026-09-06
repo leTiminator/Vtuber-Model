@@ -18,10 +18,7 @@ export const smoothstep = (t) => {
   return x * x * (3 - 2 * x);
 };
 
-/**
- * Critically-damped-ish spring, integrated semi-implicitly. Used for hair and
- * accessory follow-through; `state` is mutated in place.
- */
+/** A near-critically-damped spring, integrated semi-implicitly; `state` is mutated in place. */
 export function spring(state, target, stiffness, damping, dt) {
   // Sub-step so a long frame (tab regains focus, GC pause) cannot blow up.
   const steps = Math.min(4, Math.max(1, Math.ceil(dt / 0.016)));
@@ -37,9 +34,8 @@ export function spring(state, target, stiffness, damping, dt) {
 export const makeSpring = (value = 0) => ({ value, velocity: 0 });
 
 /**
- * Pull yaw/pitch/roll (radians) out of MediaPipe's 4x4 facial transformation
- * matrix, which arrives column-major. Returns intrinsic Y-X-Z Euler angles,
- * the convention that reads naturally as "turn / nod / tilt".
+ * Yaw, pitch and roll in radians from MediaPipe's column-major 4x4 facial
+ * transform: intrinsic Y-X-Z Euler angles, which read as turn / nod / tilt.
  */
 export function eulerFromMatrix(m) {
   const m00 = m[0], m01 = m[4], m02 = m[8];

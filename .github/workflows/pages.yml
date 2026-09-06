@@ -1,16 +1,12 @@
-# Publishes the app to GitHub Pages, so it can be opened on a phone from
-# anywhere without the computer running.
-#
-# Pages serves over HTTPS, which is the part that matters: browsers refuse
-# getUserMedia on an insecure origin, so a plain HTTP host would load the page
-# and then silently have no camera.
+# Publishes the tracker page to GitHub Pages from main. Pages serves over
+# HTTPS, which the camera needs; the OBS page still needs the local server,
+# because that is what carries tracking between the two pages.
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches:
       - main
-      - claude/vtuber-model-creation-lzx8mi
   workflow_dispatch:
 
 permissions:

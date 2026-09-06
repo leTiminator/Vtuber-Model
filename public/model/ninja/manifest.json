@@ -1,0 +1,710 @@
+{
+  "headOn": {
+    "filled": 616,
+    "markers": {
+      "confidentEyes": true,
+      "eyeAngle": -0.0017,
+      "eyeL": [
+        0.4238,
+        0.4586,
+        0.5036,
+        0.5502
+      ],
+      "eyeR": [
+        0.5301,
+        0.4584,
+        0.6099,
+        0.55
+      ],
+      "headR": 0.2126,
+      "headX": 0.5169,
+      "headY": 0.4575,
+      "pivotX": 0.519,
+      "pivotY": 0.702,
+      "waistY": 0.789
+    },
+    "note": "4 pieces, 616px repaired, scaled 1.25x",
+    "pieces": 4,
+    "scale": 1.253333,
+    "sockets": [
+      {
+        "cx": 0.463959,
+        "cy": 0.504621,
+        "fill": 0.628813,
+        "hx": 0.048699,
+        "hy": 0.042763
+      },
+      {
+        "cx": 0.570414,
+        "cy": 0.504317,
+        "fill": 0.625396,
+        "hx": 0.048233,
+        "hy": 0.042373
+      }
+    ]
+  },
+  "headSpan": {
+    "cx": 0.707143,
+    "cy": 0.504762,
+    "r": 0.149206
+  },
+  "height": 630,
+  "markers": {
+    "confidentEyes": true,
+    "eyeAngle": 0.5527,
+    "eyeL": [
+      0.6478,
+      0.536,
+      0.7055,
+      0.6083
+    ],
+    "eyeR": [
+      0.6844,
+      0.5586,
+      0.7421,
+      0.6309
+    ],
+    "headR": 0.0861,
+    "headX": 0.695,
+    "headY": 0.5645,
+    "pivotX": 0.6798,
+    "pivotY": 0.6635,
+    "waistY": 0.7957
+  },
+  "parts": [
+    {
+      "eyeL": [
+        0.717535,
+        0.637596,
+        0.079262,
+        0.049033
+      ],
+      "eyeR": [
+        0.831886,
+        0.623659,
+        0.023093,
+        0.044432
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "none",
+        "shadow": false,
+        "skinned": true
+      },
+      "grid": 26,
+      "h": 577,
+      "inset": 28,
+      "joint": "hips",
+      "lidFill": 0.646542,
+      "marginPng": "tails.margin.png",
+      "name": "tails",
+      "onChain": "111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100011111111111111111111111100000111111111111111111111100000011111111111111111111100000001111111111111111111100000001111111111111111111110000001111111111111111111111111111111111111111111111111110000111111111111111100100000000001111111111110000000000000000000111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "pivot": null,
+      "pixels": 73649,
+      "place": null,
+      "png": "tails.png",
+      "w": 605,
+      "x": 4,
+      "y": 0,
+      "z": 0
+    },
+    {
+      "eyeL": [
+        0.803519,
+        -0.38681,
+        0.152234,
+        0.149693
+      ],
+      "eyeR": [
+        1.023145,
+        -0.429359,
+        0.044354,
+        0.135646
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "none",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 189,
+      "inset": 28,
+      "joint": "hips",
+      "lidFill": 0.646542,
+      "marginPng": "body.margin.png",
+      "name": "body",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 11056,
+      "place": null,
+      "png": "body.png",
+      "w": 315,
+      "x": 185,
+      "y": 441,
+      "z": 1
+    },
+    {
+      "eyeL": [
+        1.396361,
+        0.184201,
+        0.195729,
+        0.15376
+      ],
+      "eyeR": [
+        1.678738,
+        0.140495,
+        0.057026,
+        0.139332
+      ],
+      "farJoint": "shoulderLeft",
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "radial",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 12,
+      "h": 184,
+      "inset": 28,
+      "joint": "neck",
+      "lidFill": 0.646542,
+      "marginPng": "armLeft.margin.png",
+      "name": "armLeft",
+      "onChain": null,
+      "pivot": [
+        0.522922,
+        0.658096
+      ],
+      "pixels": 11521,
+      "place": null,
+      "png": "armLeft.png",
+      "w": 245,
+      "x": 96,
+      "y": 334,
+      "z": 2
+    },
+    {
+      "eyeL": [
+        -0.565014,
+        0.605922,
+        0.452393,
+        0.241811
+      ],
+      "eyeR": [
+        0.087649,
+        0.537189,
+        0.131806,
+        0.219121
+      ],
+      "farJoint": "shoulderRight",
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "radial",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 12,
+      "h": 117,
+      "inset": 28,
+      "joint": "neck",
+      "lidFill": 0.646542,
+      "marginPng": "armRight.margin.png",
+      "name": "armRight",
+      "onChain": null,
+      "pivot": [
+        0.811653,
+        0.591985
+      ],
+      "pixels": 2174,
+      "place": null,
+      "png": "armRight.png",
+      "w": 106,
+      "x": 498,
+      "y": 297,
+      "z": 3
+    },
+    {
+      "eyeL": [
+        0.772998,
+        1.50271,
+        0.20581,
+        0.195116
+      ],
+      "eyeR": [
+        1.069918,
+        1.447249,
+        0.059963,
+        0.176808
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "turned",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 145,
+      "inset": 28,
+      "joint": "tufts",
+      "lidFill": 0.646542,
+      "marginPng": "tufts.margin.png",
+      "name": "tufts",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 5282,
+      "place": null,
+      "png": "tufts.png",
+      "w": 233,
+      "x": 258,
+      "y": 150,
+      "z": 4
+    },
+    {
+      "eyeL": [
+        0.337319,
+        1.292741,
+        0.127305,
+        0.179604
+      ],
+      "eyeR": [
+        0.615606,
+        1.291465,
+        0.126087,
+        0.177966
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "headOn",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 150,
+      "inset": 28,
+      "joint": "tufts",
+      "lidFill": 0.628813,
+      "marginPng": "tuftsOn.margin.png",
+      "name": "tuftsOn",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 5298,
+      "place": {
+        "fromX": 0.516667,
+        "fromY": 0.447619,
+        "k": 1.253333,
+        "toX": 0.707143,
+        "toY": 0.504762
+      },
+      "png": "tuftsOn.png",
+      "w": 241,
+      "x": 211,
+      "y": 124,
+      "z": 4.5
+    },
+    {
+      "eyeL": [
+        0.712737,
+        0.468596,
+        0.16038,
+        0.097558
+      ],
+      "eyeR": [
+        0.944116,
+        0.440866,
+        0.046727,
+        0.088404
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "none",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 290,
+      "inset": 28,
+      "joint": "hips",
+      "lidFill": 0.646542,
+      "marginPng": "wrap.margin.png",
+      "name": "wrap",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 23247,
+      "place": null,
+      "png": "wrap.png",
+      "w": 299,
+      "x": 225,
+      "y": 232,
+      "z": 5
+    },
+    {
+      "eyeL": [
+        0.468277,
+        0.704479,
+        0.20581,
+        0.11595
+      ],
+      "eyeR": [
+        0.765196,
+        0.671521,
+        0.059963,
+        0.10507
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "turned",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 244,
+      "inset": 28,
+      "joint": "neck",
+      "lidFill": 0.646542,
+      "marginPng": "head.margin.png",
+      "name": "head",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 22236,
+      "place": null,
+      "png": "head.png",
+      "w": 233,
+      "x": 329,
+      "y": 196,
+      "z": 6
+    },
+    {
+      "eyeL": [
+        0.334795,
+        0.674326,
+        0.152639,
+        0.13078
+      ],
+      "eyeR": [
+        0.668462,
+        0.673397,
+        0.151179,
+        0.129587
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": "headOn",
+        "far": false,
+        "follow": "full",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 206,
+      "inset": 28,
+      "joint": "neck",
+      "lidFill": 0.628813,
+      "marginPng": "headOn.margin.png",
+      "name": "headOn",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 14503,
+      "place": {
+        "fromX": 0.516667,
+        "fromY": 0.447619,
+        "k": 1.253333,
+        "toX": 0.707143,
+        "toY": 0.504762
+      },
+      "png": "headOn.png",
+      "w": 201,
+      "x": 225,
+      "y": 179,
+      "z": 6.5
+    },
+    {
+      "eyeL": [
+        0.472427,
+        0.504051,
+        0.389867,
+        0.291669
+      ],
+      "eyeR": [
+        -9,
+        -9,
+        1,
+        1
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": true,
+        "face": "turned",
+        "far": false,
+        "follow": "full",
+        "shadow": false,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 97,
+      "inset": 28,
+      "joint": "eyes",
+      "lidFill": 0.646542,
+      "marginPng": "eyeNear.margin.png",
+      "name": "eyeNear",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 1573,
+      "place": null,
+      "png": "eyeNear.png",
+      "w": 123,
+      "x": 380,
+      "y": 319,
+      "z": 7
+    },
+    {
+      "eyeL": [
+        0.482228,
+        0.504519,
+        0.319588,
+        0.29605
+      ],
+      "eyeR": [
+        -9,
+        -9,
+        1,
+        1
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": true,
+        "face": "headOn",
+        "far": false,
+        "follow": "full",
+        "shadow": false,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 91,
+      "inset": 28,
+      "joint": "eyes",
+      "lidFill": 0.628813,
+      "marginPng": "eyeNearOn.margin.png",
+      "name": "eyeNearOn",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 495,
+      "place": {
+        "fromX": 0.516667,
+        "fromY": 0.447619,
+        "k": 1.253333,
+        "toX": 0.707143,
+        "toY": 0.504762
+      },
+      "png": "eyeNearOn.png",
+      "w": 96,
+      "x": 246,
+      "y": 272,
+      "z": 7.5
+    },
+    {
+      "eyeL": [
+        0.420778,
+        0.477615,
+        0.153533,
+        0.267054
+      ],
+      "eyeR": [
+        -9,
+        -9,
+        1,
+        1
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": true,
+        "face": "turned",
+        "far": true,
+        "follow": "full",
+        "shadow": false,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 96,
+      "inset": 28,
+      "joint": "eyes",
+      "lidFill": 0.609941,
+      "marginPng": "eyeFar.margin.png",
+      "name": "eyeFar",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 534,
+      "place": null,
+      "png": "eyeFar.png",
+      "w": 91,
+      "x": 469,
+      "y": 314,
+      "z": 8
+    },
+    {
+      "eyeL": [
+        0.509062,
+        0.507997,
+        0.319862,
+        0.296609
+      ],
+      "eyeR": [
+        -9,
+        -9,
+        1,
+        1
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": true,
+        "face": "headOn",
+        "far": true,
+        "follow": "full",
+        "shadow": false,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 90,
+      "inset": 28,
+      "joint": "eyes",
+      "lidFill": 0.625396,
+      "marginPng": "eyeFarOn.margin.png",
+      "name": "eyeFarOn",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 496,
+      "place": {
+        "fromX": 0.516667,
+        "fromY": 0.447619,
+        "k": 1.253333,
+        "toX": 0.707143,
+        "toY": 0.504762
+      },
+      "png": "eyeFarOn.png",
+      "w": 95,
+      "x": 311,
+      "y": 272,
+      "z": 8.5
+    }
+  ],
+  "sockets": [
+    {
+      "cx": 0.69541,
+      "cy": 0.583957,
+      "fill": 0.646542,
+      "hx": 0.076117,
+      "hy": 0.044908
+    },
+    {
+      "cx": 0.805223,
+      "cy": 0.571192,
+      "fill": 0.609941,
+      "hx": 0.022177,
+      "hy": 0.040694
+    }
+  ],
+  "source": {
+    "artwork": "art/BA_Ninja_TPBG.png",
+    "bakedWith": {
+      "chromium": "141.0.7390.37",
+      "playwright": "1.56.1"
+    },
+    "headOn": "art/views/pose-front-arms-out.png",
+    "minShard": 40
+  },
+  "spine": {
+    "nodes": [
+      [
+        0.469841,
+        0.584127
+      ],
+      [
+        0.413485,
+        0.530945
+      ],
+      [
+        0.333698,
+        0.485714
+      ],
+      [
+        0.245874,
+        0.455398
+      ],
+      [
+        0.161864,
+        0.415873
+      ],
+      [
+        0.11746,
+        0.339439
+      ],
+      [
+        0.132494,
+        0.245284
+      ],
+      [
+        0.212259,
+        0.2
+      ],
+      [
+        0.300806,
+        0.228571
+      ],
+      [
+        0.393298,
+        0.209524
+      ],
+      [
+        0.4779,
+        0.171429
+      ],
+      [
+        0.571707,
+        0.168254
+      ],
+      [
+        0.668143,
+        0.165079
+      ],
+      [
+        0.741096,
+        0.103349
+      ],
+      [
+        0.824968,
+        0.063492
+      ],
+      [
+        0.91746,
+        0.057143
+      ]
+    ],
+    "pixels": 414,
+    "span": 0.092144
+  },
+  "version": 1,
+  "width": 630
+}

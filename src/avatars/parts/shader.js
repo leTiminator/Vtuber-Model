@@ -1,155 +1,28 @@
-/**
- * Shaders for the layered puppet.
- *
- * Every part is drawn with the same program. Simple parts are a single quad
- * carrying a transform; the head is a small grid so the cylindrical turn can
- * bend it; the scarf is a strip whose vertices are rebuilt from its bone chain.
- *
- * Positions arrive in image space — 0..1 across the whole artwork, not across
- * the part — so a part sits where it was cut from until a transform moves it.
- * That is what lets the stack reassemble exactly at rest.
- */
+/** Shaders for the layered puppet. */
 
 export const VERTEX_SHADER = `#version 300 es
 precision highp float;
 
-in vec2 a_pos;   // image space, 0..1 across the whole artwork
-in vec2 a_uv;    // into this part's own texture
-in float a_follow; // how much of the head's turn this vertex takes, 0..1
-in float a_depth;  // how far this vertex stands off the drawing, 0..1
+in vec2 a_pos;     // image space, 0..1 across the whole artwork
+in vec2 a_uv;      // into this part's own texture
+in float a_follow; // how much of the near joint this vertex takes, 0..1
 
-uniform mat3 u_model;      // the joint this part's head end hangs off
-/* The joint its far end hangs off, blended in by the same follow weight.
- *
- * The torso was cut into the scarf piece, and that piece hangs off the neck —
- * so tilting the head swung the whole trunk and left a boot standing on its
- * own. A part is not attached at one point: the scarf is held by the neck
- * where it crosses the face and by the hips where it reaches the waist, and
- * which of those a vertex answers to is a question about where it sits, not
- * about which piece the cut put it in. Same weight as the turn, so a point
- * cannot take the head's rotation without taking the head's joint.
- *
- * Equal to u_model for parts held at one joint, which is most of them.
- */
-uniform mat3 u_modelFar;
-uniform float u_aspect;    // image width / height
-
-// Head turn. Applied before the joint transform, so it bends the art in place.
-/* Mirroring, about the head's axis rather than about each part's own.
- *
- * This used to flip the texture coordinate inside whichever part was being
- * drawn, which mirrors that part about the middle of its own box. For the head
- * that is very nearly the head's axis, so it looked right. For the eyes it is
- * not: their box is a small patch off to one side of the face, so flipping
- * inside it left the eye exactly where it was while the face it belongs to
- * moved across. The face did not follow the head.
- *
- * Reflecting the drawing itself about one shared axis is what a mirror does,
- * and it puts every part where its mirror image belongs whatever shape its
- * own box happens to be. Applied before the joints, so a mirrored head still
- * tilts and nods the way its owner does rather than the opposite way.
- */
-uniform float u_flip;      // 1 mirrors this part about u_flipAxis
-uniform float u_flipAxis;  // in image space, 0..1 across the artwork
-
-/* How far the swap carries the head, for everything that is not swapping.
- *
- * The mirror reflects the head about the axis its group balances on, which
- * turns the group without moving it — but the head itself is not that group,
- * and its own middle lands about forty pixels to the side. The neck wrap does
- * not swap with it, and must not: it is cloth that runs on into the scarf, and
- * mirroring half a scarf tears it off the shoulders. So the wrap stayed put
- * while the face slid out from under it, which is the glitch at the neck.
- *
- * It travels instead. The same distance the head's middle moved, taken per
- * vertex through the weight that already says how much of the head's turn a
- * point takes — full where the cloth crosses the face, nothing at the
- * shoulders. Nothing is reversed, so no drawing ends up back to front, and
- * every seam holds because both sides of it answer this same question.
- */
-uniform float u_flipSlide;
-
-uniform float u_warp;      // 0 disables the whole block
-uniform vec2 u_headCenter;
-uniform float u_cylR;
-uniform float u_yaw;
-uniform float u_pitch;
-uniform float u_shell;  // 0 bends on the old cylinder, 1 turns the shell
-uniform float u_depth;  // how deep the shell is, in the same units as x
+uniform mat3 u_model;    // the joint this part's near end hangs off
+uniform mat3 u_modelFar; // the joint its far end hangs off; equal to u_model for most parts
+uniform float u_aspect;  // image width / height
 
 uniform vec2 u_viewScale;
 uniform vec2 u_viewOffset;
 
 out vec2 v_uv;
 
-/**
- * Rotate a point on a cylinder of radius R and read off its new position.
- * The centreline term is subtracted, or the head translates by R*sin(a) as well
- * as rotating — which at a 25 degree turn slides it most of its own width.
- */
-float cylinder(float x, float R, float angle) {
-  return R * (sin(asin(clamp(x / R, -0.999, 0.999)) + angle) - sin(angle));
-}
-
 void main() {
-  /* Cloth arrives already on its bones.
-   *
-   * This used to look each bone up out of a uniform array with a per-vertex
-   * index. It is done on the CPU now — see skinCloth — because that indexing
-   * is a known way to get wrong geometry out of a mobile driver, and the
-   * scarf was the only part breaking on a phone that matched this machine in
-   * every other respect.
-   */
-  vec2 p = a_pos;
-  if (u_flip > 0.5) p.x = 2.0 * u_flipAxis - p.x;
-  else p.x += u_flipSlide * a_follow;
-
-  /* The head's turn, taken per vertex rather than per part.
-   *
-   * A cut cannot express a gradient. The scarf is one continuous surface that
-   * should follow the head fully where it crosses the face and barely at all
-   * where it hangs off the shoulder — but it is cut in two, and giving each
-   * piece a single follow factor makes them disagree at the seam. The bend
-   * maps a point differently for different angles, so at a 42-degree turn the
-   * same point on that seam landed tens of pixels apart in the two parts and
-   * the scarf came away from the head.
-   *
-   * Both sides of the seam compute this from the same function of where the
-   * vertex sits, so they cannot disagree there however the parts are cut.
-   */
-  if (u_warp > 0.5 && a_follow > 0.001) {
-    vec2 local = (p - u_headCenter) * vec2(u_aspect, 1.0);
-    float yaw = u_yaw * a_follow;
-    float pitch = u_pitch * a_follow;
-
-    // The old mapping: a fixed-radius arc, kept so the two can be compared and
-    // so the turn can be dialled back to it if the shell reads badly.
-    vec2 arc = vec2(cylinder(local.x, u_cylR, yaw),
-                    cylinder(local.y, u_cylR * 0.82, pitch));
-
-    /* The shell: an actual rotation of a surface that has depth.
-     *
-     * Rotating about the vertical axis and then the horizontal one, in that
-     * order, is a head turning and then nodding — which is the order a neck
-     * does it in, and the reason yaw and pitch stop fighting each other. A
-     * vertex at the outline stands at zero depth, so it foreshortens instead
-     * of sliding, and the silhouette turns with the surface.
-     */
-    float z = a_depth * u_depth;
-    float cy = cos(yaw), sy = sin(yaw);
-    float cp = cos(pitch), sp = sin(pitch);
-    vec3 P = vec3(local, z);
-    P = vec3(P.x * cy + P.z * sy, P.y, P.z * cy - P.x * sy);
-    P = vec3(P.x, P.y * cp - P.z * sp, P.y * sp + P.z * cp);
-
-    p = u_headCenter + mix(arc, P.xy, u_shell) / vec2(u_aspect, 1.0);
-  }
-
-  // Blend the transformed points, not the matrices: two rotations averaged
-  // element-wise are not a rotation, and the error shows as a squash.
-  vec2 near = (u_model * vec3(p, 1.0)).xy;
-  vec2 far = (u_modelFar * vec3(p, 1.0)).xy;
-  p = mix(far, near, a_follow);
+  // Cloth arrives already on its bones (see skinCloth); every other part is
+  // placed by its joints. Blend the transformed points, not the matrices: an
+  // element-wise average of two rotations is not a rotation.
+  vec2 near = (u_model * vec3(a_pos, 1.0)).xy;
+  vec2 far = (u_modelFar * vec3(a_pos, 1.0)).xy;
+  vec2 p = mix(far, near, a_follow);
 
   v_uv = a_uv;
   vec2 ndc = (p * u_viewScale + u_viewOffset) * 2.0 - 1.0;
@@ -183,27 +56,14 @@ uniform float u_glow;
 uniform float u_glowPulse;
 uniform vec2 u_texel;     // one texel of this part, for the glow's blur
 
-/* How much invented margin to draw, in pixels of this part's texture.
- *
- * Every part is grown outward past its own art so that when the part covering
- * it moves, something is revealed rather than a hole. That paint is a guess,
- * and it is only ever right while it stays under its neighbour. The head's
- * mirror swap takes it forty pixels clear of everything behind it, and what
- * had been hidden shows up as a dark haze off the hood and the raised fist —
- * a guess about a seam, drawn against the empty background.
- *
- * u_margin says how far from real art each pixel is, so the guess can be cut
- * back to the few pixels that are still doing their job.
- */
+/* How much invented margin to draw, in pixels of this part's texture. */
 uniform sampler2D u_margin;
 uniform float u_marginMax;
 
 float marginCut(vec2 uv) {
   float d = texture(u_margin, uv).r * 255.0;
-  // The fade starts at the limit and runs outward, never inward. Centring it
-  // on the limit put half the band below zero, so at a limit of zero the
-  // drawing itself came out at half alpha — the whole character went
-  // translucent the first time a check asked for the art without its padding.
+  // The fade starts at the limit and runs outward, so the drawing itself is
+  // never faded, whatever the limit.
   return 1.0 - smoothstep(u_marginMax, u_marginMax + 2.0, d);
 }
 
@@ -215,62 +75,20 @@ vec2 toEye(vec2 uv, vec4 e) {
   return d / max(e.zw, vec2(1e-5));
 }
 
-/**
- * A lid sweeping across the socket.
- *
- * It erases the eye layer rather than painting over it. Painting needs a
- * colour, and one flat colour cannot match a visor that is a gradient — it
- * shows as a patch with visible edges, and it leaves the shard's own ink
- * outline sitting there like a ghost, because the outline belongs to this
- * layer too and a rectangle laid over the socket never quite covers it.
- *
- * Erasing has neither problem. The head layer underneath carries the visor,
- * relaxed into the hole where the eye was cut out, so what shows through is
- * the real surface with its real gradient, and the outline goes when the
- * layer holding it goes.
- *
- * Both lids bow — further at the middle than the corners, the way an eyelid
- * actually closes — and overshoot so a shut eye leaves no sliver. The edge is
- * softened over a pixel or so, because a hard cut across a shape this small
- * crawls as the head moves.
- */
+/** A lid sweeping across the socket. */
 vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   vec2 p = toEye(uv, e);
   if (abs(p.x) > 1.2 || abs(p.y) > 1.2) return base;
   float bow = 1.0 - clamp(p.x * p.x, 0.0, 1.0);
-  // Overshoot the far edge of the socket at full blink.
-  //
-  // Sweeping to exactly 1.0 puts the lid's soft edge astride the boundary, so
-  // the corners of the slit — where the bow is flat and there is no extra
-  // travel — end up half covered and stay lit. The socket is measured to fit
-  // the slit, so anything past it costs nothing.
-  /* The lid starts at the top of the shard, not the top of the socket.
-   *
-   * The socket is the shard plus a fixed pad for the ink ring around it, so
-   * how much of it is shard depends on how big the shard is: two thirds for
-   * the turned-away eyes this was tuned on, under a half for the head-on ones.
-   * Sweeping the socket therefore shut the smaller pair three times as fast,
-   * and a half blink left nothing of them lit at all.
-   *
-   * Scaled by that fraction, a blink covers the same share of either shard.
-   * Reduces to the original expression exactly at the fraction it was tuned
-   * at, and the plain sweep is kept as a floor so a very small shard still has
-   * its ring cleared at full blink.
-   */
+  // Overshoot the far edge of the socket at full blink, so the flat corners of
+  // the bow are covered too.
+  /* The lid starts at the top of the shard, not the top of the socket. */
   float g = 1.0 + 0.28 * bow;
   float fill = clamp(u_lidFill, 0.05, 1.0);
   // Where the lid is, in the shard's own terms. Reduces to the original
   // expression exactly at the fraction that expression was tuned at.
   float scaled = fill * (blink * 3.409 * g - 1.515);
-  /* And the socket's, brought in only at the very end of the sweep.
-   *
-   * A shard smaller than the pad around it needs a slower lid, which is the
-   * whole point of scaling — so taking whichever of the two is further along
-   * hands the middle of the range straight back to the socket's sweep and
-   * changes nothing at all. Measured: a half blink still shut the head-on eyes
-   * outright. The socket's reach is only wanted where it is wanted, which is
-   * at a full blink, clearing the ink ring the shard's own sweep stops inside.
-   */
+  /* And the socket's, brought in only at the very end of the sweep. */
   float plain = -1.0 + blink * 2.25 * g;
   float upper = max(scaled, mix(-4.0, plain, smoothstep(0.75, 1.0, blink)));
   float lower = 1.0 - squint * 1.1 * g;
@@ -283,15 +101,7 @@ vec4 lidded(vec2 uv, vec4 e, float blink, float squint, vec4 base) {
   return vec4(base.rgb, base.a * (1.0 - covered));
 }
 
-/**
- * Coverage at a point, and nothing outside the part's own texture.
- *
- * The blur and the shadow's offset both sample past the edge of the quad,
- * where CLAMP_TO_EDGE repeats the border texel outward. Where that border is
- * opaque — the dilated margin usually is — the repeat smears into a hard
- * rectangle the width of the part, which is exactly what appeared as a dark
- * slab beside the scarf.
- */
+/** Coverage at a point, and nothing outside the part's own texture. */
 float alphaAt(vec2 uv) {
   vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
   return texture(u_tex, uv).a * marginCut(uv) * inside.x * inside.y;
@@ -312,15 +122,7 @@ float slitAt(vec2 uv) {
   return lit.a;
 }
 
-/**
- * A soft halo around the slit, blurred out far enough to spill onto the visor.
- *
- * The old glow only tinted pixels that were already bright, so it lived
- * entirely inside the shard and read as a slightly bluer white rather than as
- * light. Light leaves the thing emitting it. Two rings of taps at different
- * radii is enough of a blur for a feature this small, and it closes when the
- * lid does because it is sampled through the same lids.
- */
+/** A soft halo around the slit, blurred out far enough to spill onto the visor. */
 float halo(vec2 uv) {
   float sum = 0.0;
   float weight = 0.0;
@@ -337,14 +139,7 @@ float halo(vec2 uv) {
   return sum / weight;
 }
 
-/**
- * This part's own coverage, blurred, for the shadow it casts.
- *
- * Kept tight on purpose. A contact shadow is the dark line where two surfaces
- * meet; spread it out and it stops reading as contact and starts dimming
- * whatever is nearby — here it reached the glowing slit and took the light
- * out of it.
- */
+/** This part's own coverage, blurred, for the shadow it casts. */
 float softAlpha(vec2 uv) {
   float sum = alphaAt(uv) * 1.6;
   float weight = 1.6;
@@ -363,18 +158,7 @@ float softAlpha(vec2 uv) {
 void main() {
   vec2 uv = v_uv;
 
-  /* Contact shadow pass.
-   *
-   * Layers sliding over one another with no shading read as paper cutouts —
-   * there is nothing to say the scarf is in front of the arm rather than
-   * printed on it. This lays a soft dark shape just behind each part before
-   * the part itself is drawn, so whatever is underneath is shaded by it.
-   *
-   * The blend is set up to multiply by the destination's alpha, so the shadow
-   * only appears where something has already been drawn. Without that it would
-   * halo into empty space — which on a transparent OBS source is a black
-   * outline around the whole character.
-   */
+  /* Contact shadow pass. */
   if (u_shadow > 0.0) {
     float a = softAlpha(uv - u_shadowOffset);
     fragColor = vec4(0.0, 0.0, 0.0, a * u_shadow * u_opacity);

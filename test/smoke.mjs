@@ -2,15 +2,8 @@
  * End-to-end smoke test: boots the real app in Chromium against a fake webcam
  * and checks the whole pipeline comes up — model download, camera start, the
  * render loop actually putting pixels on the canvas, and the hotkeys firing.
- *
- * The fake device shows a rolling test pattern rather than a face, so this
- * proves the pipeline runs; it cannot prove the tracking is accurate.
- *
- *   node test/smoke.mjs
  */
-import { chromium } from 'playwright';
-import { chromeBin } from '../scripts/chrome.mjs';
-import { createServer } from 'vite';
+import { boot } from './harness.mjs';
 
 const results = [];
 let failures = 0;
@@ -21,53 +14,18 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const server = await createServer({ server: { port: 5188 }, logLevel: 'error' });
-await server.listen();
-
-const browser = await chromium.launch({
-  executablePath: chromeBin(),
-  args: [
-    '--use-fake-ui-for-media-stream',
-    '--use-fake-device-for-media-stream',
-    '--enable-unsafe-swiftshader',
-  ],
+const { page, errors, close, openBrowser } = await boot({
+  viewport: { width: 1280, height: 720 }, camera: true,
 });
-const context = await browser.newContext({
-  permissions: ['camera', 'microphone'],
-  viewport: { width: 1280, height: 720 },
-});
-const page = await context.newPage();
-
-const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-// MediaPipe logs its own INFO/GL notices on stderr, which the CDP console
-// reports as errors. Only genuinely unexpected output should fail the run.
-const NOISE = /favicon|404|^INFO:|XNNPACK delegate|GL Driver Message|OpenGL error checking/i;
-page.on('console', (m) => {
-  if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
-});
-
-// The stage canvas may be 2D or WebGL depending on the backend; read either.
-const READ_CANVAS = `window.readCanvas = (c) => {
-  const two = c.getContext('2d');
-  if (two) return two.getImageData(0, 0, c.width, c.height);
-  const gl = c.getContext('webgl2') || c.getContext('webgl');
-  const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-  gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
-  return { data };
-};`;
-await page.addInitScript(READ_CANVAS);
 
 try {
-  await page.goto('http://127.0.0.1:5188/', { waitUntil: 'load' });
-
   check('page loads with a stage and a panel',
     await page.locator('#stage').isVisible() && await page.locator('#panel').isVisible());
 
   // Naming the groups beats counting them: a control that silently dropped out
   // because its setting was renamed shows up as a missing section, not a number.
   const wanted = ['Camera & tracking', 'Head', 'Eyes', 'Speech', 'Arms',
-    'Body & scarf', 'Output & OBS', 'Your own artwork', 'Hotkeys'];
+    'Body & scarf', 'Output & OBS', 'Model', 'Hotkeys'];
   const groups = await page.locator('#panel-body .group > summary').allTextContents();
   check('control panel builds every group',
     wanted.every((title) => groups.includes(title)) && groups.length === wanted.length,
@@ -92,12 +50,16 @@ try {
   // handler. Capturing the pointer there once swallowed the click outright.
   await page.click('#toggle-panel');
   const hidden = await page.evaluate(() => document.body.classList.contains('panel-hidden'));
-  // On a desktop the HUD goes with the panel, for a clean capture; H brings
-  // both back. (A phone keeps the button instead — checked in test/mobile.mjs.)
+  // The HUD goes with the panel, for a clean capture; H brings both back.
   await page.keyboard.press('h');
   const shown = await page.evaluate(() => !document.body.classList.contains('panel-hidden'));
   check('the panel button is not swallowed by drag-to-pan', hidden && shown,
     `hid ${hidden}, restored ${shown}`);
+
+  // Chords belong to the browser: Ctrl+H must not touch the panel.
+  await page.keyboard.press('Control+h');
+  check('a hotkey with a modifier held is left to the browser',
+    await page.evaluate(() => !document.body.classList.contains('panel-hidden')));
 
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
   const idlePixels = await page.evaluate(() => {
@@ -144,22 +106,10 @@ try {
   const fps = await page.locator('#fps').textContent();
   check('frame-rate counter is wired up', /^\d+ fps$/.test(fps ?? ''), fps ?? 'none');
 
-  /* Nothing of ours in the outgoing picture.
-   *
-   * Whatever is on this canvas is what OBS captures, so a debugging overlay
-   * left on screen once the camera is live is burned into the stream. It is
-   * only useful before going live anyway.
-   */
+  /* Nothing of ours in the outgoing picture. */
   await page.waitForFunction(() => document.getElementById('selfcheck')?.hidden === true,
     null, { timeout: 5000 }).catch(() => {});
-  /* The readout stays up while the camera runs, which is the change.
-   *
-   * It used to hide itself the instant tracking started, because everything on
-   * the page went out to OBS. OBS reads its own page now — and the time it was
-   * hidden was exactly the time it had anything to say. A week went into
-   * arguing about a head that sat turned, with the line naming the neutral
-   * pose one keypress away and switched off.
-   */
+  /* The readout stays up while the camera runs, which is the change. */
   check('the readout stays up once the camera is live',
     await page.locator('#selfcheck').isVisible(),
     'visible while tracking');
@@ -190,20 +140,49 @@ try {
 
   // Settings must survive a reload: flip a real control, come back, check it
   // stuck. Reading localStorage alone would not prove the store reloads it.
-  const mirror = page.locator('.check input').first();
+  const mirror = page.locator('input[data-key="camera.mirror"]');
   const before = await mirror.isChecked();
   await mirror.click();
   await page.waitForTimeout(500); // the store debounces its writes
   await page.reload({ waitUntil: 'load' });
-  const after = await page.locator('.check input').first().isChecked();
+  const after = await page.locator('input[data-key="camera.mirror"]').isChecked();
   check('a changed setting survives a reload', after === !before, `${before} -> ${after}`);
 
+  // The hidden-window ticker: a Worker timer that keeps firing without animation
+  // frames. Headless Chromium cannot hide a page, so this proves the timer runs
+  // at its rate independently of rAF; whether tracking survives a covered
+  // window is for a desk to confirm.
+  const ticks = await page.evaluate(async () => {
+    const { startTicker } = await import('/src/core/ticker.js');
+    let n = 0;
+    const t = startTicker(30, () => { n++; });
+    await new Promise((r) => setTimeout(r, 1000));
+    t.stop();
+    return n;
+  });
+  check('the hidden-window ticker runs at about thirty a second off a Worker timer',
+    ticks >= 20 && ticks <= 40, `${ticks} ticks in a second`);
+  check('the tracker can run one detection from a timer', await page.evaluate(() =>
+    typeof window.__vtuber.tracker.detect === 'function'));
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+  /* A stage that cannot draw has to say so. */
+  const noGl = await openBrowser(['--disable-3d-apis']);
+  try {
+    await noGl.page.waitForFunction(
+      () => /WebGL2/.test(document.getElementById('status')?.textContent ?? ''),
+      null, { timeout: 15000 }).catch(() => {});
+    check('a browser without WebGL is told so on the status line',
+      /WebGL2/.test(await noGl.page.locator('#status').textContent()),
+      await noGl.page.locator('#status').textContent());
+  } finally {
+    await noGl.close();
+  }
 } catch (err) {
   check('test run completed', false, err.message);
 } finally {
-  await browser.close();
-  await server.close();
+  await close();
 }
 
 console.log(`\n${results.length - failures}/${results.length} checks passed`);

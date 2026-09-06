@@ -1,21 +1,4 @@
-/**
- * Upper-body tracking, for the arms.
- *
- * The face model has no shoulders — it knows where your head is and nothing
- * below it — so raising your hands off the keyboard needs a second model. This
- * one returns 33 body landmarks; only six matter here.
- *
- * It shares the face tracker's video element rather than opening its own
- * camera: two getUserMedia streams from one device is asking for trouble, and
- * there is no reason for the two models to see different frames.
- *
- * Inference runs on a stride, not every frame, and the stride adapts to what
- * the model actually costs on this machine. Arms move slowly; frame rate is
- * visible. So a weak laptop should update the arms less often rather than
- * stutter the whole avatar, and that trade only works if the cost is measured
- * instead of guessed — the same model is a few milliseconds on a GPU and
- * hundreds in software.
- */
+/** Upper-body tracking, for the arms. */
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 const WASM_PATH = `${import.meta.env.BASE_URL}mediapipe/wasm`;

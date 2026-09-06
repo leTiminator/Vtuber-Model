@@ -1,17 +1,4 @@
-/**
- * Records what the trackers saw, so a real session can be replayed in tests.
- *
- * Every synthetic sweep in the test suite reflects what I *assumed* a camera
- * produces — smooth sinusoids, tidy extremes, one axis at a time. Real tracking
- * is none of those: it jitters, drops out, hits combinations no sweep tries,
- * and holds still in ways that expose drift. Most of the faults in this project
- * lived in that gap.
- *
- * What is captured is numbers, not video. Blendshape weights, head angles and
- * body landmark coordinates — the same values the rig already works from. No
- * image data is read, stored or written out, and nothing leaves the machine
- * except the file you choose to save.
- */
+/** Records what the trackers saw, so a real session can be replayed in tests. */
 
 /** Keep the file small: three decimals is far below what any of this resolves. */
 const round = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);

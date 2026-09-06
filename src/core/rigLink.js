@@ -1,28 +1,8 @@
-/**
- * The wire between the window you sit in front of and the one OBS opens.
- *
- * OBS composites a Browser Source with real transparency, which is the only
- * way into a scene that needs no keying and has no window — so nothing to crop
- * and no title bar in shot. What it cannot reliably do is open a webcam: its
- * embedded browser needs a launch flag for that and fails silently without
- * one, and even given the flag it would be running a face-tracking model
- * beside your encoder in an older Chromium.
- *
- * So it does not. Tracking stays in a real browser tab, which already has the
- * camera and a current runtime, and sends the numbers here. What OBS loads has
- * no camera in it at all. This is the same shape the browser-based tools in
- * this space use, and the same division the native ones make when they hand a
- * texture to OBS rather than asking OBS to animate anything.
- *
- * What crosses is what the session recorder already captures: blendshape
- * weights and head angles, about a kilobyte a frame. No video, and nothing
- * leaves the machine — the relay is the local dev server that is already
- * running.
- */
+/** The wire between the window you sit in front of and the one OBS opens. */
 
 const PATH = '/__rig';
 
-/** ws:// beside http://, wss:// beside https:// — see scripts/phone.mjs. */
+/** ws:// beside http://, wss:// beside https://. */
 function endpoint() {
   const url = new URL(PATH, window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -32,11 +12,12 @@ function endpoint() {
 /**
  * @param {object} opts
  * @param {'tracker'|'output'} opts.role
- * @param {(msg: object) => void} [opts.onFrame]
+ * @param {(msg: {seq: number, at: number, state: object}) => void} [opts.onRigState]
  * @param {(values: object) => void} [opts.onSettings]
  * @param {(state: {connected: boolean, outputs: number}) => void} [opts.onState]
+ * @param {(msg: {text: string}) => void} [opts.onPeerStatus]  an error the other page reports
  */
-export function openRigLink({ role, onFrame, onSettings, onState }) {
+export function openRigLink({ role, onRigState, onSettings, onState, onPeerStatus }) {
   let socket = null;
   let closed = false;
   /* Backs off, because the common case is that the other end is simply not
@@ -97,8 +78,10 @@ export function openRigLink({ role, onFrame, onSettings, onState }) {
         announce();
       } else if (msg.t === 'settings') {
         onSettings?.(msg.values ?? {});
-      } else if (msg.t === 'frame') {
-        onFrame?.(msg);
+      } else if (msg.t === 'state') {
+        onRigState?.(msg);
+      } else if (msg.t === 'status') {
+        onPeerStatus?.(msg);
       }
     };
 
