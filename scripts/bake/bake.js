@@ -13,6 +13,8 @@ const CLOTH_GRID = 26;
 /** Rows in each arm: its follow weight varies between glove and shoulder. */
 const ARM_GRID = 12;
 const MIN_SHARD = 40;
+/** Pixels the hood is pulled in from the head's edge, so it never fringes it. */
+const HOOD_ERODE = 3;
 
 const EYES = new Set(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn']);
 const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
@@ -272,18 +274,28 @@ function hoodOf(head, name, z) {
   // In shadow behind the head: the median of the surface, darkened.
   const median = (a) => { a.sort((p, q) => p - q); return a[a.length >> 1] ?? 0; };
   const colour = [median(r), median(g), median(b)].map((v) => Math.round(v * 0.6));
+  // Pulled in past the head's soft edge, so none of it fringes the head at rest.
+  let inside = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) inside[i] = real(i) ? 1 : 0;
+  for (let pass = 0; pass < HOOD_ERODE; pass++) {
+    const next = new Uint8Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        next[i] = inside[i] && inside[i - 1] && inside[i + 1] && inside[i - w] && inside[i + w] ? 1 : 0;
+      }
+    }
+    inside = next;
+  }
   const out = new ImageData(w, h);
   let pixels = 0;
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      if (!real(i) || !real(i - 1) || !real(i + 1) || !real(i - w) || !real(i + w)) continue;
-      out.data[i * 4] = colour[0];
-      out.data[i * 4 + 1] = colour[1];
-      out.data[i * 4 + 2] = colour[2];
-      out.data[i * 4 + 3] = src[i * 4 + 3];
-      pixels++;
-    }
+  for (let i = 0; i < w * h; i++) {
+    if (!inside[i]) continue;
+    out.data[i * 4] = colour[0];
+    out.data[i * 4 + 1] = colour[1];
+    out.data[i * 4 + 2] = colour[2];
+    out.data[i * 4 + 3] = 255;
+    pixels++;
   }
   const canvas = document.createElement('canvas');
   canvas.width = w;

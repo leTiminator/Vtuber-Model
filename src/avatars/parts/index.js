@@ -49,6 +49,11 @@ const UNIFORMS = [
 const SPINE_NODES = 16;
 /** How much invented margin a part may draw, in pixels of its texture. */
 const MARGIN_FULL = 32;
+/* How much of a tilt leans from the neck. The rest turns the head about its
+ * own centre, where it stays inside its collar: the neck pivot is a hundred
+ * pixels below the head's centre, so tilting from it alone levers the head
+ * out of the collar and shows the hood behind it. */
+const ROLL_AT_NECK = 0.25;
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -577,14 +582,16 @@ export class Parts2D {
     /* Nodding turns the head cutout, rather than bending the drawing on it. */
     const nod = clamp(-pitch, -1.2, 1.2) * 0.055 * store.get('warp.nod');
     const tilt = clamp(-pitch, -1.2, 1.2) * store.get('parts.nodTurn');
-    /* Turning left and right slides the head instead of bending it. */
-    const shift = clamp(yaw, -1.2, 1.2) * 0.05 * store.get('warp.turn');
+    /* Turning left and right slides the head instead of bending it. The
+     * drawn views carry most of the turn now, so the slide is parallax rather
+     * than the whole effect, and a smaller one keeps the head in its collar. */
+    const shift = clamp(yaw, -1.2, 1.2) * 0.015 * store.get('warp.turn');
     const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1);
     const neck = compose(
       hips,
       translate(IDENTITY, shift, nod + bob),
-      rotateAbout(roll, m.pivotX, m.pivotY, this.aspect),
-      rotateAbout(tilt, this.headSpan.cx, this.headSpan.cy, this.aspect),
+      rotateAbout(roll * ROLL_AT_NECK, m.pivotX, m.pivotY, this.aspect),
+      rotateAbout(tilt + roll * (1 - ROLL_AT_NECK), this.headSpan.cx, this.headSpan.cy, this.aspect),
     );
 
     /* Arms hang off the hips rather than the neck: lifting a hand should not

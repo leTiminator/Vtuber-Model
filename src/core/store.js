@@ -3,6 +3,15 @@
 // what differs from the defaults (see docs/DECISIONS.md).
 const KEY = 'vtuber-model/settings/v4';
 
+/** Bumped when a build re-tunes settings a saved profile would otherwise hold back. */
+const VERSION = 2;
+/* What each version re-tunes. A saved value for one of these goes back to the
+ * new default once, so coming back to an improved build needs nothing reset by
+ * hand. Personal choices — camera, framing, colours — are never touched. */
+const RETUNED = {
+  2: ['smooth.minCutoff', 'smooth.beta'],
+};
+
 export const DEFAULTS = {
   // --- capture ---------------------------------------------------------
   'camera.deviceId': '',
@@ -125,10 +134,21 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return;
     const saved = JSON.parse(raw);
+    const from = Number(saved.__version) || 1;
+    const retuned = new Set();
+    for (let v = from + 1; v <= VERSION; v++) for (const k of RETUNED[v] ?? []) retuned.add(k);
     // Only adopt keys we still know about, so old saves cannot resurrect
-    // settings that no longer exist.
+    // settings that no longer exist, and skip the ones this build re-tunes.
     for (const k of Object.keys(DEFAULTS)) {
-      if (k in saved) state[k] = saved[k];
+      if (k in saved && !retuned.has(k)) state[k] = saved[k];
+    }
+    // A neutral pose captured before the guided calibration is a guess made
+    // with one press of C; dropping it lets the camera set one on the next
+    // start rather than leaving the model turned to its limit.
+    if (from < 2 && state['camera.neutral']) {
+      let guided = false;
+      try { guided = JSON.parse(state['camera.neutral']).from === 'guided'; } catch { guided = false; }
+      if (!guided) state['camera.neutral'] = '';
     }
   } catch {
     /* corrupt or unavailable storage — fall back to defaults */
@@ -149,7 +169,7 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      const changed = {};
+      const changed = { __version: VERSION };
       for (const k of Object.keys(DEFAULTS)) {
         if (!Object.is(state[k], DEFAULTS[k])) changed[k] = state[k];
       }
