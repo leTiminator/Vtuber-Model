@@ -50,14 +50,15 @@ window.__inv = {
   },
   // Near-white pixels: on this character, only the eye shards.
   bright(img, circle) {
-    let n = 0, sx = 0, sy = 0;
+    let n = 0, sx = 0, sy = 0, x0 = Infinity, x1 = -Infinity;
     for (let p = 0; p < img.w * img.h; p++) {
       const i = p * 4;
       if (img.d[i+3] < 200 || img.d[i] < 215 || img.d[i+1] < 215 || img.d[i+2] < 215) continue;
       if (circle && !this.inHead(circle, p, img.w, 1.3)) continue;
-      n++; sx += p % img.w; sy += (p - (p % img.w)) / img.w;
+      const x = p % img.w;
+      n++; sx += x; sy += (p - x) / img.w; x0 = Math.min(x0, x); x1 = Math.max(x1, x);
     }
-    return { n, cx: n ? sx / n : 0, cy: n ? sy / n : 0 };
+    return { n, cx: n ? sx / n : 0, cy: n ? sy / n : 0, x0, x1 };
   },
   // Every pixel drawn in A is also drawn in B (A adds no coverage).
   coveredBy(A, B) {
@@ -89,8 +90,8 @@ try {
   });
   const HEAD_ON = ['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn'];
   check('a clean profile mounts the parts model', bootState.mounted);
-  check('the model has both faces, a scarf skeleton and 13 parts',
-    bootState.names.length === 13 && HEAD_ON.every((n) => bootState.names.includes(n)) && bootState.spine
+  check('the model has both faces, a scarf skeleton and 15 parts',
+    bootState.names.length === 15 && HEAD_ON.every((n) => bootState.names.includes(n)) && bootState.spine
       && bootState.headOn,
     `${bootState.names.length} parts; head-on ${bootState.note}`);
 
@@ -247,12 +248,59 @@ try {
     const chat = run((s) => 0.14 * Math.sin(s * 5), 240);
     // A real turn: a ramp to twenty-five degrees over two seconds, then held.
     const turn = run((s) => Math.min(s / 2, 1) * 0.436, 240);
-    return { chat, turn };
+    // A step to thirty degrees, a step back to centre, then a three-frame flick.
+    t.resetStore(frozen);
+    a.reset();
+    const at = (deg) => { const rig = emptyRig(); rig.head.yaw = deg * Math.PI / 180; return rig; };
+    let left = -1;
+    let back = -1;
+    for (let f = 0; f < 60; f++) { a.render(at(30), 1 / 60); if (left < 0 && !a.faceOn) left = f; }
+    for (let f = 0; f < 90; f++) { a.render(at(0), 1 / 60); if (back < 0 && a.faceOn) back = f; }
+    let flick = 0;
+    let last = a.faceOn;
+    for (let f = 0; f < 60; f++) {
+      a.render(at(f < 3 ? 20 : 0), 1 / 60);
+      if (a.faceOn !== last) { flick++; last = a.faceOn; }
+    }
+    return { chat, turn, step: { left, back, flick } };
   }, FROZEN);
   check('ordinary talking never changes the face', latch.chat.changes === 0 && latch.chat.faceOn,
     `${latch.chat.changes} changes`);
   check('a real turn changes it once', latch.turn.changes === 1 && !latch.turn.faceOn,
     `${latch.turn.changes} changes, head-on ${latch.turn.faceOn}`);
+  check('a real turn takes the face within a quarter of a second', latch.step.left >= 0 && latch.step.left <= 15,
+    `${latch.step.left} frames`);
+  check('the face comes back after the head has sat square, not before', latch.step.back >= 18 && latch.step.back <= 36,
+    `${latch.step.back} frames`);
+  check('a three-frame flick changes nothing', latch.step.flick === 0, `${latch.step.flick} changes`);
+
+  /* --- the turned face has two sides ------------------------------------- */
+  const sides = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const inv = window.__inv;
+    const a = window.__a;
+    t.resetStore(frozen);
+    const circle = inv.headCircle(a);
+    const shot = (settings, mut) => {
+      t.resetStore({ ...frozen, ...settings });
+      a.reset();
+      t.pose(a, t.app().emptyRig, mut, 120);
+      return { side: a.turnedSide, faceOn: a.faceOn, eyes: inv.bright(t.read(a), circle) };
+    };
+    return {
+      left: shot({}, { head: { yaw: -0.44 } }),
+      right: shot({}, { head: { yaw: 0.44 } }),
+      drawnLeft: shot({ 'parts.headOn': 0 }, { head: { yaw: -0.44 } }),
+    };
+  }, FROZEN);
+  check('turning right shows the drawing and turning left its mirror image',
+    sides.right.side === 1 && sides.left.side === -1 && !sides.right.faceOn && !sides.left.faceOn,
+    `sides ${sides.right.side} / ${sides.left.side}`);
+  // The near eye is the bigger, so the eyes' centroid barely moves when they
+  // change sides; their span does.
+  check('the mirrored face looks the other way: its eyes sit further toward that side',
+    sides.left.eyes.x0 < sides.drawnLeft.eyes.x0 - 8 && sides.left.eyes.x1 < sides.drawnLeft.eyes.x1 - 8,
+    `eyes span x ${sides.left.eyes.x0}..${sides.left.eyes.x1} mirrored, ${sides.drawnLeft.eyes.x0}..${sides.drawnLeft.eyes.x1} as drawn`);
 
   /* --- a turn is continuous, all the way to the limit -------------------- */
   const creep = await page.evaluate((frozen) => {

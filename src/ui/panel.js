@@ -47,6 +47,19 @@ export function buildPanel(root, ctx) {
       ],
     },
     {
+      title: 'Size & position',
+      open: true,
+      controls: [
+        { type: 'framingHelp' },
+        { type: 'fit' },
+        { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
+        { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
+        { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
+          hint: 'Stops a stray scroll or drag moving the shot mid-stream.' },
+      ],
+    },
+    {
       title: 'Head',
       controls: [
         { type: 'slider', key: 'head.yawGain', label: 'Turn', min: 0, max: 3, step: 0.05, format: x },
@@ -128,13 +141,6 @@ export function buildPanel(root, ctx) {
         ] },
         { type: 'color', key: 'stage.chroma', label: 'Chroma colour' },
         { type: 'color', key: 'stage.color', label: 'Solid colour' },
-        { type: 'framingHelp' },
-        { type: 'fit' },
-        { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
-        { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
-        { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
-        { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
-          hint: 'Stops a stray scroll or drag moving the shot mid-stream.' },
         { type: 'obsHelp' },
       ],
     },
@@ -160,9 +166,9 @@ export function buildPanel(root, ctx) {
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
             + 'so talking does not walk the eyes across the visor.' },
         { type: 'slider', key: 'parts.headOnTime', label: '— changes after', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
-        { type: 'slider', key: 'parts.headOnDwell', label: '— then holds for', min: 0, max: 3, step: 0.05, format: (v) => `${v.toFixed(1)}s`,
-          hint: 'The least time a view is kept before it can hand over again. Without it, a '
-            + 'head that sits near the threshold crosses it constantly and the eyes never settle.' },
+        { type: 'slider', key: 'parts.headOnReturn', label: '— comes back after', min: 0.1, max: 1.5, step: 0.05, format: (v) => `${v.toFixed(2)}s`,
+          hint: 'How long you must sit square before the face comes back. Turning away is '
+            + 'immediate; coming back waits, so a head hovering near the threshold does not flicker.' },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
 
         { type: 'heading', label: 'Cloth & hair' },
@@ -477,9 +483,9 @@ const BUILDERS = {
   framingHelp() {
     const note = el('p', 'note');
     note.innerHTML =
-      '<strong>Drag the character</strong> to move it and <strong>scroll</strong> to resize, ' +
-      'right on the stage. Zoom follows your pointer, so you magnify what you are aiming at. ' +
-      'The sliders below do the same thing if you want exact numbers.';
+      '<strong>Drag the character</strong> to move it and <strong>scroll</strong> over it to ' +
+      'shrink or grow it, right on the stage. Zoom follows your pointer, so you magnify what ' +
+      'you are aiming at. The sliders below do the same with exact numbers. The OBS page follows.';
     return note;
   },
 

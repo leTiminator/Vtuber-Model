@@ -16,12 +16,14 @@ const MIN_SHARD = 40;
 
 const EYES = new Set(['eyeNear', 'eyeFar', 'eyeNearOn', 'eyeFarOn']);
 const FAR_EYES = new Set(['eyeFar', 'eyeFarOn']);
-const TURNED_FACE = new Set(['head', 'tufts', 'eyeNear', 'eyeFar']);
-const HEADON_FACE = new Set(['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn']);
+const TURNED_FACE = new Set(['head', 'tufts', 'eyeNear', 'eyeFar', 'hood']);
+const HEADON_FACE = new Set(['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn', 'hoodOn']);
+/** What the head-on drawing contributes; its margins grow under these alone. */
+const HEADON_KEEP = ['head', 'tufts', 'eyes', 'eyeNear', 'eyeFar'];
 const HEADON_OF = { head: 'headOn', tufts: 'tuftsOn', eyeNear: 'eyeNearOn', eyeFar: 'eyeFarOn' };
 const SHADOWS = new Set(['body', 'armLeft', 'armRight', 'tufts', 'head', 'wrap', 'tuftsOn', 'headOn']);
 const ARMS = new Set(['armLeft', 'armRight']);
-const STILL = new Set(['body', 'wrap', 'tails']);
+const STILL = new Set(['body', 'wrap', 'tails', 'hood', 'hoodOn']);
 
 export function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -62,6 +64,7 @@ export async function bakeModel({ artwork, headOn, minShard = MIN_SHARD }) {
   const headPart = parts.find((p) => p.name === 'head');
   const headSpan = headPart ? spanOf(headPart, width, height)
     : { cx: markers.headX, cy: markers.headY, r: markers.headR };
+  if (headPart) parts.push(hoodOf(headPart, 'hood', headPart.z - 0.5));
 
   const records = parts.map((part) => describe(part, { width, height, aspect, markers, sockets, spine }));
   const textures = parts.map((part) => textureOf(part));
@@ -135,7 +138,7 @@ function describe(part, { width, height, markers, sockets, spine }) {
       face,
       shadow: SHADOWS.has(part.name),
       skinned,
-      follow: face ? 'full' : STILL.has(part.name) ? 'none' : 'radial',
+      follow: STILL.has(part.name) ? 'none' : face ? 'full' : 'radial',
     },
     ...socketOf(part, sockets, width, height, markers),
   };
@@ -200,7 +203,7 @@ function headOnFace(headOnImage, { width, height, markers, headSpan, minShard })
   const found = detectMarkers(readPixels(fixed.canvas));
   if (!found) return none('could not find a face in it');
   const m = { ...markers, ...found };
-  const cut = cutParts(fixed.canvas, m, { minShard });
+  const cut = cutParts(fixed.canvas, m, { minShard, keep: HEADON_KEEP });
   const head = cut.parts.find((p) => p.name === 'head');
   const eyes = cut.parts.filter((p) => EYES.has(p.name));
   if (!head || eyes.length < 2) {
@@ -218,9 +221,77 @@ function headOnFace(headOnImage, { width, height, markers, headSpan, minShard })
     if (!name) continue;
     parts.push({ ...part, name, z: part.z + 0.5, place });
   }
+  const headOnPiece = parts.find((p) => p.name === 'headOn');
+  parts.push(hoodOf(headOnPiece, 'hoodOn', headOnPiece.z - 0.9));
   return {
     note: `${parts.length} pieces, ${fixed.filled}px repaired, scaled ${place.k.toFixed(2)}x`,
     parts, sockets: cut.sockets, markers: m, filled: fixed.filled, scale: place.k,
+  };
+}
+
+/**
+ * The back of the hood: the head's own footprint in one flat colour, drawn
+ * still behind the head, so a head that slides or rolls reveals hood rather
+ * than the collar's edge. Eroded a pixel so none of it shows at rest.
+ */
+function hoodOf(head, name, z) {
+  const { w, h } = head;
+  const src = head.canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const drawn = (i) => src[i * 4 + 3] > 0 && !(head.margin && head.margin[i] > 0);
+  // The footprint is everything inside the drawn outline: the eye sockets
+  // (filled, but invented) count, the painted margin outside it does not.
+  // Flood the invented paint inward from the border; what it cannot reach is
+  // inside.
+  const outside = new Uint8Array(w * h);
+  const queue = new Int32Array(w * h);
+  let qh = 0;
+  let qt = 0;
+  const seed = (i) => { if (outside[i] || drawn(i)) return; outside[i] = 1; queue[qt++] = i; };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (qh < qt) {
+    const i = queue[qh++];
+    const x = i % w;
+    if (x > 0) seed(i - 1);
+    if (x < w - 1) seed(i + 1);
+    if (i >= w) seed(i - w);
+    if (i < w * (h - 1)) seed(i + w);
+  }
+  const real = (i) => src[i * 4 + 3] > 0 && !outside[i];
+  const r = [];
+  const g = [];
+  const b = [];
+  for (let i = 0; i < w * h; i++) {
+    if (!drawn(i) || src[i * 4 + 3] < 250) continue;
+    const lum = 0.299 * src[i * 4] + 0.587 * src[i * 4 + 1] + 0.114 * src[i * 4 + 2];
+    if (lum < 30) continue;
+    r.push(src[i * 4]);
+    g.push(src[i * 4 + 1]);
+    b.push(src[i * 4 + 2]);
+  }
+  // In shadow behind the head: the median of the surface, darkened.
+  const median = (a) => { a.sort((p, q) => p - q); return a[a.length >> 1] ?? 0; };
+  const colour = [median(r), median(g), median(b)].map((v) => Math.round(v * 0.6));
+  const out = new ImageData(w, h);
+  let pixels = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (!real(i) || !real(i - 1) || !real(i + 1) || !real(i - w) || !real(i + w)) continue;
+      out.data[i * 4] = colour[0];
+      out.data[i * 4 + 1] = colour[1];
+      out.data[i * 4 + 2] = colour[2];
+      out.data[i * 4 + 3] = src[i * 4 + 3];
+      pixels++;
+    }
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').putImageData(out, 0, 0);
+  return {
+    name, z, joint: 'hips', canvas, margin: new Uint8Array(w * h),
+    x: head.x, y: head.y, w, h, inset: head.inset, pixels, place: head.place,
   };
 }
 

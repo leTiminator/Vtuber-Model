@@ -33,8 +33,8 @@ scope unless the owner says so.
   stamp on the stage says which commit is running.
 - Recordings the owner makes in the app arrive on the `recordings` branch
   (`git fetch origin recordings`). Copy the ones worth keeping into
-  `test/fixtures/` with the change they motivated; `npm run test:replay` runs
-  every recording it finds.
+  `test/fixtures/tracker-session-<date>.json` with the change they motivated;
+  `npm run test:replay` runs every recording it finds.
 - Every time the owner is asked to test, give the link and the build stamp to
   expect in the same message. The deployed site,
   https://letiminator.github.io/Vtuber-Model/, shows `main`; work on a branch

@@ -53,7 +53,7 @@ export function neutralLine(rig) {
 }
 
 /** Raw angles beside driven ones, the face zoom, and what the pose model sees. */
-export function liveLines({ tracker, pose, rig }) {
+export function liveLines({ tracker, pose, rig, avatar }) {
   if (!tracker.running) return [];
   const out = [];
   const head = tracker.frame?.head;
@@ -62,7 +62,8 @@ export function liveLines({ tracker, pose, rig }) {
     const seen = mirror ? { yaw: -head.yaw, pitch: head.pitch, roll: -head.roll } : head;
     const s = rig.state.head;
     out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
-      + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`);
+      + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`
+      + (avatar ? `  ·  face ${avatar.faceOn ? 'head-on' : avatar.turnedSide < 0 ? 'turned left' : 'turned right'}` : ''));
   } else {
     out.push('no face in frame');
   }
@@ -115,7 +116,7 @@ export function readoutText({ avatar, rig, tracker, pose }) {
     neutralLine(rig) + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
     r.drawn,
     r.headOn ? `head-on: ${r.headOn}` : null,
-    ...liveLines({ tracker, pose, rig }),
+    ...liveLines({ tracker, pose, rig, avatar }),
     changedSettings({ shortKeys: true }),
   ].filter(Boolean).join('\n');
   return { text, torn };

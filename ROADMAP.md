@@ -38,9 +38,10 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   the tracker sees it, so sitting back from the webcam no longer costs the
   tracker its input; the body driven by the shoulders where they are seen,
   so it can sit turned while the head looks at the camera.
-- **The model** — the original drawing cut once, offline, into thirteen parts
-  by connectivity and colour (`npm run bake`), committed as PNGs and a
-  manifest, and reassembled exactly at rest. A rigid head cutout that slides
+- **The model** — the original drawing cut once, offline, into parts by
+  connectivity and colour, with a flat hood behind each head (fifteen in all;
+  `npm run bake`), committed as PNGs and a manifest, and reassembled exactly
+  at rest. A rigid head cutout that slides
   for a turn and turns for a nod; the frontal drawing's head swapped in when
   you face the camera, with its keyed-out eyes repaired on the way in. Eyes
   with lids, glow, gaze and blink; contact shadows; invented margins under
@@ -50,12 +51,13 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   it does not stretch: 5% at worst held, against 116%; one piece at every
   extreme. The lag down the ribbon is the chain-like movement that was asked
   for. The neck scarf sits still on the chest, drawn *behind* the head, and
-  the head moves over it as a cutout — the collar's painted margin shows
+  the head moves over it as a cutout — a flat hood behind the head shows
   wherever the head moves away, and nothing ever lands on the visor.
-- **The head** — turns as far as 42° and tilts to 25° (its own limit). There
-  is no mirror and no cylinder bend any more: both were tried, both read as
-  distortion, and the drawn three-quarter view plus the head-on drawing cover
-  the range.
+- **The head** — turns as far as 42° and tilts to 25° (its own limit). The
+  head-on drawing shows while you face the camera and gives way within a few
+  frames of a turn; the drawn three-quarter view covers one side and its
+  mirror image the other, swapped behind the head-on face so the swap is
+  never seen. There is no cylinder bend: it read as distortion.
 - **Output** — a model-only page for OBS as a Browser Source, with real
   transparency and no window to crop. The tracker page sends it the solved
   rig over the dev server; settings cross too; nothing persists on the OBS

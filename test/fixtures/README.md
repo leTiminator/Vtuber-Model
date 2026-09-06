@@ -1,8 +1,10 @@
 # Recorded tracker sessions
 
-`tracker-session.json` is a recording of the owner at their desk. `npm run
-test:replay` drives the rig with it, and with every recording in `sessions/`,
-instead of a synthetic sweep.
+`tracker-session.json` (2026-09-03) and `tracker-session-2026-09-06.json`
+(turns, and deliberate tilts held for seconds) are recordings of the owner at
+their desk. `npm run test:replay` drives the rig with every
+`tracker-session*.json` here, and with every recording in `sessions/`, instead
+of a synthetic sweep.
 
 ## Recording one
 

@@ -84,8 +84,8 @@ export const DEFAULTS = {
   'parts.headOn': true,
   /* How far the head can turn before the head-on face starts giving way. */
   'parts.headOnHold': 0.26,
-  /* The least time a view is kept before it may hand over again, in seconds. */
-  'parts.headOnDwell': 1.1,
+  /* How long the head sits square before the head-on face comes back, in seconds. */
+  'parts.headOnReturn': 0.35,
   /* How long the latch waits before the face actually changes, in seconds. */
   'parts.headOnTime': 0.18,
   /* Face the other way. */

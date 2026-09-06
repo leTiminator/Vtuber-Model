@@ -1,9 +1,9 @@
 /**
- * Real recordings through the rig: the committed one and every one saved by
+ * Real recordings through the rig: the committed ones and every one saved by
  * the app locally. Every channel stays finite, the head obeys its own speed
- * cap, the eyes stay open through a session where they were open, and the
- * calibration read off the recording puts the head at rest and the blinks
- * on screen.
+ * cap, the eyes stay open through a session where they were open, the
+ * calibration read off the recording puts the head at rest and the blinks on
+ * screen, and the face latch follows the recorded turns promptly.
  */
 import './node-shim.mjs';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -12,8 +12,10 @@ import { fileURLToPath } from 'node:url';
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const FIXTURE = join(DIR, 'tracker-session.json');
+const TILTS = join(DIR, 'tracker-session-2026-09-06.json');
 const SESSIONS = join(DIR, 'sessions');
-const files = [FIXTURE, ...(existsSync(SESSIONS)
+const committed = readdirSync(DIR).filter((f) => /^tracker-session.*\.json$/.test(f)).sort().map((f) => join(DIR, f));
+const files = [...committed, ...(existsSync(SESSIONS)
   ? readdirSync(SESSIONS).filter((f) => f.endsWith('.json')).sort().map((f) => join(SESSIONS, f)) : [])]
   .filter((f) => existsSync(f));
 if (!files.length) {
@@ -25,6 +27,7 @@ if (!files.length) {
 const settings = await import('../src/core/store.js');
 const { Rig, MAX_HEAD_SLEW, BLINK_RISE, RollingMedian } = await import('../src/tracking/rig.js');
 const { calibrate } = await import('../src/tracking/calibrate.js');
+const { FaceLatch, BACK, BACK_AT, LEAVE } = await import('../src/avatars/parts/latch.js');
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -42,6 +45,7 @@ function replay(session) {
   let worstSlewAt = 0;
   const blink = [];
   const yaw = [];
+  const head = [];
   let prevT = session.samples[0]?.t ?? 0;
   for (const s of session.samples) {
     const dt = clamp(s.t - prevT, 1 / 240, 1 / 15);
@@ -72,8 +76,36 @@ function replay(session) {
       blink.push(Math.max(rig.state.eyes.blinkL, rig.state.eyes.blinkR));
       yaw.push(rig.state.head.yaw * 180 / Math.PI);
     }
+    head.push({ t: s.t, dt, yaw: rig.state.head.yaw, roll: rig.state.head.roll });
   }
-  return { finite, worstSlew, worstSlewAt, blink, yaw };
+  return { finite, worstSlew, worstSlewAt, blink, yaw, head };
+}
+
+/**
+ * The face latch driven by a recording's turns, beside the bare threshold
+ * crossings it is meant to follow: when each happened, and how long after
+ * the angle crossed the latch acted.
+ */
+function latchTrace(head, hold) {
+  const latch = new FaceLatch();
+  const crossings = [];
+  const changes = [];
+  let on = true;
+  let over = false;
+  let lastOver = -Infinity;
+  let lastUnder = -Infinity;
+  for (const { t, dt, yaw } of head) {
+    const turn = Math.abs(yaw);
+    if (turn > hold && !over) lastOver = t;
+    if (turn < hold * BACK_AT && over) lastUnder = t;
+    over = turn > hold ? true : turn < hold * BACK_AT ? false : over;
+    const want = on ? turn < hold : turn < hold * BACK_AT;
+    if (want !== on) { on = want; crossings.push({ t, on }); }
+    const was = latch.on;
+    latch.update(yaw, dt, hold, BACK);
+    if (latch.on !== was) changes.push({ t, on: latch.on, late: t - (latch.on ? lastUnder : lastOver) });
+  }
+  return { crossings, changes };
 }
 
 /**
@@ -152,6 +184,36 @@ for (const file of files) {
       + `(defaults: median ${quantile(atRest(defaults.blink), 0.5).toFixed(2)}, p90 ${quantile(atRest(defaults.blink), 0.9).toFixed(2)})`);
   const events = blinkEvents(tuned.blink);
   console.log(`       blinks on screen with auto-blink off: ${events} calibrated, ${blinkEvents(defaults.blink)} with defaults`);
+
+  // --- the face latch on these turns ------------------------------------------
+  const hold = settings.get('parts.headOnHold');
+  const trace = latchTrace(tuned.head, hold);
+  const leaves = trace.changes.filter((c) => !c.on);
+  const returns = trace.changes.filter((c) => c.on);
+  const slowest = (list) => list.reduce((m, c) => Math.max(m, c.late), 0);
+  console.log(`       face latch: ${trace.changes.length} changes for ${trace.crossings.length} threshold crossings; `
+    + `slowest leave ${slowest(leaves).toFixed(2)}s, slowest return ${slowest(returns).toFixed(2)}s after the crossing`);
+  check('the face gives way within a few frames of a real turn', leaves.every((c) => c.late <= LEAVE + 0.1),
+    `slowest ${slowest(leaves).toFixed(2)}s, allowed ${(LEAVE + 0.1).toFixed(2)}s`);
+  check('the face comes back once the head has sat square', returns.every((c) => c.late <= BACK + 0.1),
+    `slowest ${slowest(returns).toFixed(2)}s, allowed ${(BACK + 0.1).toFixed(2)}s`);
+  check('the latch follows the turns without flickering',
+    trace.changes.length <= trace.crossings.length && trace.changes.length * 2 >= trace.crossings.length,
+    `${trace.changes.length} changes, ${trace.crossings.length} crossings`);
+
+  // --- tilt ---------------------------------------------------------------------
+  const rollLimit = settings.get('head.rollLimitDeg') * Math.PI / 180;
+  const rollMax = tuned.head.reduce((m, h) => Math.max(m, Math.abs(h.roll)), 0);
+  check('the head never tilts past its own limit', rollMax <= rollLimit + 1e-6,
+    `furthest ${(rollMax * 180 / Math.PI).toFixed(1)}°, limit ${settings.get('head.rollLimitDeg')}°`);
+  if (file === TILTS) {
+    // The owner tilted their head on purpose in this minute: -44° for twelve
+    // seconds and +29° for six, steady to a degree or two, shoulders leaning
+    // with them. The rig reports the tilt and stops at its limit.
+    check('the recorded tilts reach the tilt limit and hold there', rollMax >= rollLimit * 0.98
+      && tuned.head.filter((h) => Math.abs(h.roll) >= rollLimit * 0.98).length > tuned.head.length * 0.15,
+      `at the limit in ${(100 * tuned.head.filter((h) => Math.abs(h.roll) >= rollLimit * 0.98).length / tuned.head.length).toFixed(0)}% of frames`);
+  }
   if (file === FIXTURE) {
     // Measured on this recording: 34 rises of the raw score in the minute, 17
     // of them as large as this face's full blinks; the rest read as partial.
