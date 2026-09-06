@@ -63,6 +63,15 @@ If the model download is blocked or interrupted, re-run it on its own with
 
 Redo the neutral pose whenever you move your chair or camera.
 
+Better still, press **G** (or **Guided calibration** under Camera & tracking)
+and follow the five prompts on the stage: sit as you stream and look where you
+usually look (your screen, not the camera), then turn left, right, up and down
+as far as you would while streaming. That sets where forward is *and* how far
+a turn goes, so your comfortable extreme reaches the model's. The readout's
+neutral line shows the measured range; **Undo calibration** puts the settings
+back. If the model ever sits stuck at its limit, the status line says so and
+points at G.
+
 ---
 
 ## Desktop only
@@ -149,6 +158,8 @@ server, since that is what carries tracking between them.
 | Key | Does |
 | --- | --- |
 | `C` | Set neutral pose — press this after sitting down |
+| `G` | Guided calibration — the neutral pose, then how far you turn each way |
+| `Esc` | Cancel the guided calibration |
 | `H` | Hide or show the interface |
 | `M` | Mirror the camera |
 
@@ -166,7 +177,7 @@ settings** writes a JSON file worth keeping once you have it dialled in.
 | Looks permanently sleepy | Raise **Blink threshold** |
 | Blinks get missed | Lower **Blink threshold**, or raise **Blink strength** |
 | Winks when you didn't wink | Turn on **Blink both eyes together** |
-| Head sits turned or tilted at rest | Press **C** sitting the way you stream. It counts down three seconds so you can look where you mean to — forward is wherever you are looking when it captures, and the readout (`D`) says how far that is from the camera |
+| Head sits turned or tilted at rest | Press **G** and follow the prompts, or **C** sitting the way you stream. It counts down three seconds so you can look where you mean to — forward is wherever you are looking when it captures, and the readout (`D`) says how far that is from the camera |
 | Movement feels stiff | Raise the **Head** gains |
 | It moves the wrong way | Toggle **Mirror me** (`M`) |
 | Speech is unreliable in low light | Set **Speech → Driven by** to `Microphone` |

@@ -72,7 +72,7 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
 
 ## What is still in the way, in order
 
-### 1. Forward is where you look when you set the pose — know it, set it
+### 1. Forward is where you look while you stream — G reads it where you sit
 
 Your readout said `neutral yaw +38°`: the pose was set looking at the
 screen, and your camera is 38° from your screen. Facing the camera therefore
@@ -83,6 +83,13 @@ camera; **C** counts down three seconds before capturing so you can look
 where you mean to; an automatic capture that finds no steady pose gives up
 and says so instead of guessing; the OBS page receives the neutral (it was
 rendering without one); and the mirror is off.
+
+On 2026-09-06 the neutral had been set looking at the camera, 49° from the
+screen, and the model sat pinned at its 42° limit: nothing the head did
+reached it. **G** now runs a guided calibration: five prompts on the stage
+read the neutral where you sit and the four turns, and set the turn and nod
+gains from your real range. A head stuck at its limit for three seconds says
+so on the status line and points at G.
 
 Then the one thing no harness can do: **you run it with the readout up** and
 say what you see, quoting the readout.
