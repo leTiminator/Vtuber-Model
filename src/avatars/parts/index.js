@@ -51,8 +51,8 @@ const SPINE_NODES = 16;
 const MARGIN_FULL = 32;
 /* How much of a tilt leans from the neck. The rest turns the head about its
  * own centre, where it stays inside its collar: the neck pivot is a hundred
- * pixels below the head's centre, so tilting from it alone levers the head
- * out of the collar and shows the hood behind it. */
+ * pixels below the head's centre, so tilting from it alone swings the head
+ * sideways and lifts it clear of the collar. */
 const ROLL_AT_NECK = 0.25;
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became

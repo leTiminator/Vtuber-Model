@@ -38,31 +38,37 @@ everything else).
 **2026-09-06 — A tilt turns the head about its own centre.** The neck pivot
 sits 102 px below the head's centre in a 630 px drawing, so tilting from it
 alone levered the head out of its collar: at the 25° limit the head's centre
-travelled 44 px, and the flat hood behind it filled a tenth of the picture at
-the owner's worst pose. A quarter of the tilt still leans from the neck; the
+travelled 44 px, and at the owner's worst pose a tenth of the picture was what
+lay behind the head rather than the head. A quarter of the tilt still leans from the neck; the
 rest turns the head about its own centre, where it stays inside the collar.
 The turn's slide came down with it, from 0.05 of the width per radian to
 0.015 — the drawn three-quarter views carry the turn now, so the slide is
-parallax rather than the whole effect. Measured as the share of the picture
-that is hood: at the tilt limit 6.12% to 1.05%, at the turn limit 3.03% to
-0.60%, at both limits at once 9.78% to 1.64% (of which 0.53% is drawing that
-merely matches the colour). The hood is also pulled three pixels inside the
-head's edge rather than one, so none of it fringes the head at rest.
+parallax rather than the whole effect. Measured against the backing shape that then stood behind
+the head, as the share of the picture it filled: at the tilt limit 6.12% to
+1.05%, at the turn limit 3.03% to 0.60%, at both limits at once 9.78% to
+1.64%. That shape is deleted now, so the same numbers read as how far the head
+leaves its collar at all.
 
-**2026-09-06 — Margins are solid, and a hood stands behind each head.** The
-margin used to fade over its last fifteen pixels so a large move would show a
-soft edge rather than a slab; on the owner's screen that fade was "a blurry
-section revealed when the head stretches out of its socket", and the head-on
-hair's margin, grown under the head-on drawing's own scarf (4,041 of the
-piece's 9,339 pixels), showed as streaks beside the hair once placed over the
-turned drawing. Now every margin is solid through its 28 px; the head-on
-pieces' margins grow only under each other (`cutParts` takes `keep`); and two
-synthesized parts, `hood` and `hoodOn`, hold each head's own footprint (eye
-sockets included, eroded a pixel) in one flat colour, the head's median
-surface darkened to 60%, still on the hips behind it. Nothing shows at rest;
-a head that slides or rolls reveals a dark crescent of hood. The hood sits
-between the collar and the hair (tufts moved above the collar, 2026-09-06):
-drawn over the hair it cut the tufts wherever a moved head exposed it.
+**2026-09-06 — Margins are solid.** The margin used to fade over its last
+fifteen pixels so a large move would show a soft edge rather than a slab; on
+the owner's screen that fade was "a blurry section revealed when the head
+stretches out of its socket", and the head-on hair's margin, grown under the
+head-on drawing's own scarf (4,041 of the piece's 9,339 pixels), showed as
+streaks beside the hair once placed over the turned drawing. Now every margin
+is solid through its 28 px, and the head-on pieces' margins grow only under
+each other (`cutParts` takes `keep`).
+
+**2026-09-07 — Nothing is drawn behind the head; deleted the hood.** Two
+synthesized parts held each head's footprint in one flat colour, so a head
+that moved revealed them rather than nothing. The owner saw exactly what they
+were: "there should be no silhouette behind the head when it moves." Invented
+paint that is not the drawing does not belong on screen. Deleted, back to
+thirteen parts, and the hair went back under the collar (z 4) where the
+drawing has it — it had only been lifted above to keep the hood beneath it.
+What a moved head reveals now is the neighbouring parts' painted margins, real
+art, and beyond them the background, which on a transparent OBS source is
+nothing at all. The tilt-in-its-own-collar change below is what keeps that
+reveal small.
 
 **2026-09-02 — Enclosed holes are filled with a fitted quadratic.** The eye
 is cut out of the head, and what fills the hole is what shows through a shut
@@ -288,8 +294,8 @@ middle of the ribbon somewhere else on a phone.
 **2026-09-04 — The neck wrap is drawn behind the head.** In front, it
 covered the visor when the head rolled, and following the chin sheared it
 (more than twice an edge's drawn length). Behind, the head slides over a
-still collar as a cutout, and the hood behind it shows wherever the head
-moves away.
+still collar as a cutout, and the collar's painted margin shows wherever the
+head moves away.
 
 **2026-09-04 — Contact shadows multiply by destination alpha.** A soft dark
 copy of each part is drawn just before it, so it lands on everything behind

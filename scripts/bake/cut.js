@@ -14,9 +14,7 @@ export const PART_SPECS = [
   { name: 'body', parent: 'root', joint: 'hips', z: 1 },
   { name: 'armLeft', parent: 'root', joint: 'neck', farJoint: 'shoulderLeft', z: 2 },
   { name: 'armRight', parent: 'root', joint: 'neck', farJoint: 'shoulderRight', z: 3 },
-  /* Above the collar so the hood behind the head, which sits over the collar,
-   * stays under the hair; the hair and the collar never touch. */
-  { name: 'tufts', parent: 'head', joint: 'tufts', z: 5.4 },
+  { name: 'tufts', parent: 'head', joint: 'tufts', z: 4 },
   /* The neck scarf is drawn behind the head, though the drawing has it in
    * front of the chin. Which is in front only matters once they move apart,
    * and then it decides everything: a collar in front covered the visor when
