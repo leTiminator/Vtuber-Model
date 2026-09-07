@@ -26,8 +26,8 @@ const box = (p) => p && {
 // --- what the manifest says ---------------------------------------------
 const TURNED = ['tails', 'body', 'armLeft', 'armRight', 'tufts', 'wrap', 'head', 'eyeNear', 'eyeFar'];
 const HEAD_ON = ['headOn', 'tuftsOn', 'eyeNearOn', 'eyeFarOn'];
-check('the manifest has the nine parts of the drawing, the four of the head-on face and a hood behind each head',
-  manifest.parts.length === 15 && [...TURNED, ...HEAD_ON, 'hood', 'hoodOn'].every((n) => byName[n]),
+check('the manifest has the nine parts of the drawing and the four of the head-on face',
+  manifest.parts.length === 13 && [...TURNED, ...HEAD_ON].every((n) => byName[n]),
   manifest.parts.map((p) => p.name).join(', '));
 check('parts are listed back to front',
   manifest.parts.every((p, i) => i === 0 || p.z >= manifest.parts[i - 1].z));
@@ -79,33 +79,6 @@ for (const p of manifest.parts) {
   check(`${p.name}: both PNGs exist at ${p.w}x${p.h}`,
     rgba && grey && rgba.width === p.w && rgba.height === p.h && grey.width === p.w && grey.height === p.h,
     `${rgba ? `${rgba.width}x${rgba.height}` : 'no png'}, margin ${grey ? `${grey.width}x${grey.height}` : 'none'}`);
-}
-
-// --- a hood behind each head ------------------------------------------------
-for (const [hoodName, headName, behind, hair] of [['hood', 'head', 'wrap', 'tufts'], ['hoodOn', 'headOn', 'wrap', 'tuftsOn']]) {
-  const hood = byName[hoodName];
-  const over = byName[headName];
-  const hp = PNG.sync.read(readFileSync(join(DIR, hood.png)));
-  const hm = PNG.sync.read(readFileSync(join(DIR, over.marginPng)));
-  const op = PNG.sync.read(readFileSync(join(DIR, over.png)));
-  let drawn = 0;
-  let outsideHead = 0;
-  let colours = new Set();
-  let headReal = 0;
-  for (let i = 0; i < hood.w * hood.h; i++) {
-    if (op.data[i * 4 + 3] > 0 && hm.data[i * 4] === 0) headReal++;
-    if (hp.data[i * 4 + 3] === 0) continue;
-    drawn++;
-    if (op.data[i * 4 + 3] === 0) outsideHead++;
-    colours.add(hp.data.slice(i * 4, i * 4 + 3).join(','));
-  }
-  check(`${hoodName} is the ${headName}'s footprint in one colour, behind it and its hair, in front of the ${behind}`,
-    hood.x === over.x && hood.y === over.y && hood.w === over.w && hood.h === over.h
-      && outsideHead === 0 && drawn > headReal * 0.6 && colours.size === 1
-      && byName[behind].z < hood.z && hood.z < byName[hair].z && byName[hair].z < over.z
-      && hood.joint === 'hips' && hood.flags.follow === 'none' && !hood.flags.shadow
-      && hood.flags.face === over.flags.face && (hood.place == null) === (over.place == null),
-    `${drawn}px of the head's ${headReal}, ${outsideHead} outside it, colour ${[...colours][0]}, z ${hood.z}`);
 }
 
 // --- the PNGs put the drawing back together ---------------------------------

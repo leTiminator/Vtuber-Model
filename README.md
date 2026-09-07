@@ -203,10 +203,9 @@ camera ─> FaceTracker / PoseTracker ─> Rig ─> Parts2D ─> canvas
   breathing, idle sway and auto-blink.
 - **`scripts/bake/`** — the cut. Run once by `npm run bake`, in headless
   Chromium: it finds the head, neck and eyes in the drawing, cuts it into
-  parts by connectivity and colour, paints an invented margin under every
-  seam, puts a flat hood behind each head (fifteen parts in all), traces the
-  scarf's centreline into sixteen bones, repairs the head-on drawing's
-  keyed-out eyes and cuts that too, and writes
+  thirteen parts by connectivity and colour, paints an invented margin under
+  every seam, traces the scarf's centreline into sixteen bones, repairs the
+  head-on drawing's keyed-out eyes and cuts that too, and writes
   `public/model/ninja/`: a PNG and a margin PNG per part and a manifest that
   says how they fit.
 - **`src/avatars/parts/`** — the renderer. It loads the manifest and draws the
@@ -292,7 +291,7 @@ a real face in front of a real camera.
   about that drawing — a scarf whose colour separates the head from the body,
   gloves that are the scarf's colour but not joined to it. Other artwork is
   out of scope for now: the bake would run, but it may hand you one big part
-  instead of fifteen.
+  instead of thirteen.
 - Arm tracking needs your shoulders in frame. Hips are not required — it falls
   back to measuring against the screen when you are sitting at a desk.
 - Winks need good light; they are linked by default because half-detected

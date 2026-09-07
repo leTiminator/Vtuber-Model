@@ -23,8 +23,8 @@
       "pivotY": 0.702,
       "waistY": 0.789
     },
-    "note": "5 pieces, 616px repaired, scaled 1.25x",
-    "pieces": 5,
+    "note": "4 pieces, 616px repaired, scaled 1.25x",
+    "pieces": 4,
     "scale": 1.253333,
     "sockets": [
       {
@@ -236,84 +236,6 @@
     },
     {
       "eyeL": [
-        0.712737,
-        0.468596,
-        0.16038,
-        0.097558
-      ],
-      "eyeR": [
-        0.944116,
-        0.440866,
-        0.046727,
-        0.088404
-      ],
-      "farJoint": null,
-      "flags": {
-        "eyes": false,
-        "face": null,
-        "far": false,
-        "follow": "none",
-        "shadow": true,
-        "skinned": false
-      },
-      "grid": 1,
-      "h": 290,
-      "inset": 28,
-      "joint": "hips",
-      "lidFill": 0.646542,
-      "marginPng": "wrap.margin.png",
-      "name": "wrap",
-      "onChain": null,
-      "pivot": null,
-      "pixels": 23247,
-      "place": null,
-      "png": "wrap.png",
-      "w": 299,
-      "x": 225,
-      "y": 232,
-      "z": 5
-    },
-    {
-      "eyeL": [
-        0.468277,
-        0.704479,
-        0.20581,
-        0.11595
-      ],
-      "eyeR": [
-        0.765196,
-        0.671521,
-        0.059963,
-        0.10507
-      ],
-      "farJoint": null,
-      "flags": {
-        "eyes": false,
-        "face": "turned",
-        "far": false,
-        "follow": "none",
-        "shadow": false,
-        "skinned": false
-      },
-      "grid": 1,
-      "h": 244,
-      "inset": 28,
-      "joint": "hips",
-      "lidFill": 0.646542,
-      "marginPng": "hood.margin.png",
-      "name": "hood",
-      "onChain": null,
-      "pivot": null,
-      "pixels": 22137,
-      "place": null,
-      "png": "hood.png",
-      "w": 233,
-      "x": 329,
-      "y": 196,
-      "z": 5.3
-    },
-    {
-      "eyeL": [
         0.772998,
         1.50271,
         0.20581,
@@ -349,52 +271,7 @@
       "w": 233,
       "x": 258,
       "y": 150,
-      "z": 5.4
-    },
-    {
-      "eyeL": [
-        0.334795,
-        0.674326,
-        0.152639,
-        0.13078
-      ],
-      "eyeR": [
-        0.668462,
-        0.673397,
-        0.151179,
-        0.129587
-      ],
-      "farJoint": null,
-      "flags": {
-        "eyes": false,
-        "face": "headOn",
-        "far": false,
-        "follow": "none",
-        "shadow": false,
-        "skinned": false
-      },
-      "grid": 1,
-      "h": 206,
-      "inset": 28,
-      "joint": "hips",
-      "lidFill": 0.628813,
-      "marginPng": "hoodOn.margin.png",
-      "name": "hoodOn",
-      "onChain": null,
-      "pivot": null,
-      "pixels": 14288,
-      "place": {
-        "fromX": 0.516667,
-        "fromY": 0.447619,
-        "k": 1.253333,
-        "toX": 0.707143,
-        "toY": 0.504762
-      },
-      "png": "hoodOn.png",
-      "w": 201,
-      "x": 225,
-      "y": 179,
-      "z": 5.6
+      "z": 4
     },
     {
       "eyeL": [
@@ -439,7 +316,46 @@
       "w": 241,
       "x": 211,
       "y": 124,
-      "z": 5.9
+      "z": 4.5
+    },
+    {
+      "eyeL": [
+        0.712737,
+        0.468596,
+        0.16038,
+        0.097558
+      ],
+      "eyeR": [
+        0.944116,
+        0.440866,
+        0.046727,
+        0.088404
+      ],
+      "farJoint": null,
+      "flags": {
+        "eyes": false,
+        "face": null,
+        "far": false,
+        "follow": "none",
+        "shadow": true,
+        "skinned": false
+      },
+      "grid": 1,
+      "h": 290,
+      "inset": 28,
+      "joint": "hips",
+      "lidFill": 0.646542,
+      "marginPng": "wrap.margin.png",
+      "name": "wrap",
+      "onChain": null,
+      "pivot": null,
+      "pixels": 23247,
+      "place": null,
+      "png": "wrap.png",
+      "w": 299,
+      "x": 225,
+      "y": 232,
+      "z": 5
     },
     {
       "eyeL": [
