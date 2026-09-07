@@ -130,6 +130,22 @@ The production bundle dropped 38 KB.
 
 ## The rig
 
+**2026-09-07 — A body sitting square is not turned by shoulder noise.** The
+turn was `acos(width / restWidth) * sign(depth)`, and both halves misbehave
+exactly where a person at a desk lives. Sitting square puts the ratio at 1.000,
+where acos is vertical, so a fraction of a percent of landmark noise becomes
+degrees; and the bare sign flips whenever the shoulders are level, throwing the
+body from one side to the other — 18 times in the owner's recorded minute. The
+raw turn stepped 7.3° between frames at p95 and 124.6° at worst. Now the width
+must close by 4% before any turn is claimed and reaches full weight 6% later,
+and the depth decides which way round smoothly rather than by its sign. The
+width's own frame-to-frame noise is 0.4% typically and 2.3% at p95, so the
+floor sits above it; 89% of that minute's frames now produce no turn at all.
+The torso is also speed-capped the way the head is, at 4 units a second,
+because the pose model puts out the odd frame with the shoulders somewhere
+else entirely. Measured through the rig, the body's twist steps halved at p95
+and its median step is zero.
+
 **2026-09-07 — Surprise is the mouth, because the brows were not what was
 asked for.** Measured on the owner's recordings, every camera signal for an
 open mouth is dead behind their beard: jawOpen peaks at 0.015 of 1.0,

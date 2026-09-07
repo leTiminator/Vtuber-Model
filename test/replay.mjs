@@ -25,7 +25,7 @@ if (!files.length) {
 }
 
 const settings = await import('../src/core/store.js');
-const { Rig, MAX_HEAD_SLEW, BLINK_RISE, RollingMedian } = await import('../src/tracking/rig.js');
+const { Rig, MAX_HEAD_SLEW, MAX_TORSO_SLEW, BLINK_RISE, RollingMedian } = await import('../src/tracking/rig.js');
 const { calibrate } = await import('../src/tracking/calibrate.js');
 const { FaceLatch, BACK, BACK_AT, CROSS, LEAVE } = await import('../src/avatars/parts/latch.js');
 
@@ -46,6 +46,8 @@ function replay(session) {
   const blink = [];
   const yaw = [];
   const head = [];
+  const torso = [];
+  let worstTorso = 0;
   let prevT = session.samples[0]?.t ?? 0;
   for (const s of session.samples) {
     const dt = clamp(s.t - prevT, 1 / 240, 1 / 15);
@@ -57,8 +59,13 @@ function replay(session) {
       time: s.t * 1000,
     } : null;
     const before = { ...rig.state.head };
+    const beforeTorso = { ...rig.state.torso };
     rig.update(frame, Boolean(s.face), dt);
     rig.updatePose(s.pose ? { joints: s.pose, time: s.t * 1000 } : null, Boolean(s.pose), dt);
+    for (const k of ['turn', 'lean', 'rise']) {
+      worstTorso = Math.max(worstTorso, Math.abs(rig.state.torso[k] - beforeTorso[k]) / dt);
+    }
+    torso.push(Math.abs(rig.state.torso.turn - beforeTorso.turn));
     for (const group of Object.values(rig.state)) {
       if (!group || typeof group !== 'object') continue;
       for (const v of Object.values(group)) {
@@ -78,7 +85,7 @@ function replay(session) {
     }
     head.push({ t: s.t, dt, yaw: rig.state.head.yaw, roll: rig.state.head.roll });
   }
-  return { finite, worstSlew, worstSlewAt, blink, yaw, head };
+  return { finite, worstSlew, worstSlewAt, blink, yaw, head, torso, worstTorso };
 }
 
 /**
@@ -190,6 +197,12 @@ for (const file of files) {
       + `(defaults: median ${quantile(atRest(defaults.blink), 0.5).toFixed(2)}, p90 ${quantile(atRest(defaults.blink), 0.9).toFixed(2)})`);
   const events = blinkEvents(tuned.blink);
   console.log(`       blinks on screen with auto-blink off: ${events} calibrated, ${blinkEvents(defaults.blink)} with defaults`);
+
+  // --- the body ---------------------------------------------------------------
+  // The pose model puts out the odd frame with the shoulders somewhere else
+  // entirely; the body follows at a body's pace or not at all.
+  check('the body never moves faster than a body can', tuned.worstTorso <= MAX_TORSO_SLEW * 1.01,
+    `fastest ${tuned.worstTorso.toFixed(2)} a second, cap ${MAX_TORSO_SLEW}`);
 
   // --- the face latch on these turns ------------------------------------------
   const hold = settings.get('parts.headOnHold');

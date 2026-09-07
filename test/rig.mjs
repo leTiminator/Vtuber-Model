@@ -391,9 +391,12 @@ const runPose = (rig, n, f, has = true) => {
 {
   settings.reset();
   const rig = new Rig();
-  const shoulders = (w) => ({
+  // A turn brings one shoulder nearer as it narrows the pair; the depth is
+  // what says which way round it is, so a narrowing without one is not a turn
+  // anybody could name and is no longer read as one.
+  const shoulders = (w, z = 0) => ({
     joints: {
-      shoulderL: { x: 0.5 - w / 2, y: 0.40, z: 0 }, shoulderR: { x: 0.5 + w / 2, y: 0.40, z: 0 },
+      shoulderL: { x: 0.5 - w / 2, y: 0.40, z: -z }, shoulderR: { x: 0.5 + w / 2, y: 0.40, z },
       elbowL: { x: 0.36, y: 0.58 }, elbowR: { x: 0.64, y: 0.58 },
       wristL: { x: 0.38, y: 0.74 }, wristR: { x: 0.62, y: 0.74 },
       hipL: { x: 0.44, y: 0.78 }, hipR: { x: 0.56, y: 0.78 },
@@ -402,9 +405,9 @@ const runPose = (rig, n, f, has = true) => {
   });
   runPose(rig, 120, shoulders(0.20));
   const rest = rig.state.torso.turn;
-  runPose(rig, 240, shoulders(0.14));
+  runPose(rig, 240, shoulders(0.14, 0.12));
   const turned = rig.state.torso.turn;
-  runPose(rig, 240, shoulders(0.26));
+  runPose(rig, 240, shoulders(0.26, 0.12));
   const leaned = rig.state.torso.turn;
   runPose(rig, 240, shoulders(0.20));
   const back = rig.state.torso.turn;
@@ -675,6 +678,53 @@ const runPose = (rig, n, f, has = true) => {
   settings.set('mouth.source', 'mic');
   check('and the gain at zero turns it off',
     run(off, 120, frame()).expression.surprise === 0);
+}
+
+/* --- a body sitting square is not turned by shoulder noise ---------------- */
+{
+  settings.reset();
+  const rig = new Rig();
+  // Shoulders level and a steady width apart, wobbling as far as real
+  // landmarks do: measured on the owner's recordings, the width moves 0.4% of
+  // itself between frames and 2.3% at the worst twentieth. This is where acos
+  // is vertical and a bare sign of the depth flips, and it used to throw the
+  // body from one side to the other.
+  const shoulders = (n) => {
+    const wobble = ((n % 7) - 3) * 0.0007;     // width by about 2% at its widest
+    const z = ((n % 5) - 2) * 0.004;           // depth crossing zero either way
+    return { joints: {
+      shoulderL: { x: 0.4 + wobble, y: 0.5, z: -z },
+      shoulderR: { x: 0.6 - wobble, y: 0.5, z },
+    }, time: n * 33 };
+  };
+  let worst = 0;
+  for (let i = 0; i < 300; i++) {
+    rig.update(null, false, DT);
+    rig.updatePose(shoulders(i), true, DT);
+    if (i > 60) worst = Math.max(worst, Math.abs(rig.state.torso.turn));
+  }
+  // Not exactly zero: the resting width is whatever the first frame happened
+  // to catch, so noise either side of it can graze the floor. A third of a
+  // degree is nothing on screen; it used to swing through tens of degrees.
+  check('shoulder noise while sitting square does not turn the body', worst < 0.005,
+    `worst turn ${(worst * 180 / Math.PI).toFixed(2)}°`);
+
+  // A real turn closes the shoulders well past the floor and still registers.
+  const turning = new Rig();
+  for (let i = 0; i < 60; i++) {
+    turning.update(null, false, DT);
+    turning.updatePose({ joints: {
+      shoulderL: { x: 0.4, y: 0.5, z: 0 }, shoulderR: { x: 0.6, y: 0.5, z: 0 },
+    }, time: i * 33 }, true, DT);
+  }
+  for (let i = 0; i < 240; i++) {
+    turning.update(null, false, DT);
+    turning.updatePose({ joints: {
+      shoulderL: { x: 0.45, y: 0.5, z: -0.1 }, shoulderR: { x: 0.6, y: 0.5, z: 0.1 },
+    }, time: (60 + i) * 33 }, true, DT);
+  }
+  check('and a real turn of the shoulders still reads as one',
+    Math.abs(turning.state.torso.turn) > 0.15, `turn ${turning.state.torso.turn.toFixed(3)}`);
 }
 
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
