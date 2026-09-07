@@ -57,8 +57,12 @@ const ROLL_AT_NECK = 0.25;
 /* What surprise does with the levers this character has: the visor slits open,
  * the glow flares, and the head pulls back a little. */
 const SURPRISE_WIDE = 0.9;
-const SURPRISE_GLOW = 0.5;
-const SURPRISE_LIFT = 0.018;
+const SURPRISE_GLOW = 0.6;
+const SURPRISE_LIFT = 0.026;
+/* How much bigger the glowing slits grow. u_wide only brightens the glow —
+ * nothing in the shader opens the drawn shard — so the eyes are grown by
+ * scaling their own parts about themselves. */
+const SURPRISE_EYE = 0.42;
 /* The shutter the smear is drawn with. Longer than a frame on purpose: a
  * physically honest 1/60 s smears a couple of pixels and cel art reads nothing
  * from it. Fixed, so the smear looks the same at any frame rate. */
@@ -204,6 +208,18 @@ export class Parts2D {
     this.owned = this.parts;
     this.headOn = this.parts.some((p) => p.name === 'headOn');
     this.ready = this.parts.length > 0;
+  }
+
+  /** A part scaled about its own middle, in the artwork's own square space. */
+  eyeScale(part, k) {
+    const { width, height } = this.imageSize;
+    let cx = (part.x + part.w / 2) / width;
+    let cy = (part.y + part.h / 2) / height;
+    if (part.place) {
+      cx = (cx - part.place.fromX) * part.place.k + part.place.toX;
+      cy = (cy - part.place.fromY) * part.place.k + part.place.toY;
+    }
+    return scaleAbout(k, k, cx, cy);
   }
 
   /** How much of the neck's motion a vertex at (px, py) takes: 1 on the head, 0 on the body. */
@@ -494,6 +510,7 @@ export class Parts2D {
 
     const shadowStrength = store.get('parts.contactShadow');
     const mirror = mirrorAbout(this.headSpan.cx);
+    const startled = clamp(rig.expression?.surprise ?? 0, 0, 1);
 
     const order = this.parts;
 
@@ -507,8 +524,16 @@ export class Parts2D {
       const mirrored = face === 'turned' && this.turnedSide < 0;
       const near = joints[part.joint] ?? IDENTITY;
       const far = joints[part.farJoint ?? part.joint] ?? near;
-      gl.uniformMatrix3fv(L.u_model, false, mirrored ? compose(near, mirror) : near);
-      gl.uniformMatrix3fv(L.u_modelFar, false, mirrored ? compose(far, mirror) : far);
+      /* Surprise grows the eyes about themselves, before whatever moves them. */
+      const pop = part.flags.eyes && startled > 0
+        ? this.eyeScale(part, 1 + SURPRISE_EYE * startled) : null;
+      const placed = (m) => {
+        if (mirrored && pop) return compose(m, mirror, pop);
+        if (mirrored) return compose(m, mirror);
+        return pop ? compose(m, pop) : m;
+      };
+      gl.uniformMatrix3fv(L.u_model, false, placed(near));
+      gl.uniformMatrix3fv(L.u_modelFar, false, placed(far));
       const flipX = mirrored ? -1 : 1;
 
       /* Only the head smears, and only along the way it went. A placed part is

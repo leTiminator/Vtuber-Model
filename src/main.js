@@ -447,7 +447,7 @@ function tickGuide() {
     return;
   }
   const s = g.status(rig.clock);
-  dom.guidePrompt.textContent = `${g.index + 1} of 5 · ${s.prompt}`;
+  dom.guidePrompt.textContent = `${g.index + 1} of ${g.total} · ${s.prompt}`;
   dom.guideCount.textContent = s.secondsLeft > 0 ? `${Math.ceil(s.secondsLeft)}`
     : tracker.hasFace ? 'hold it…' : 'no face in view';
 }

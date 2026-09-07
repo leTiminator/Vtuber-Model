@@ -609,7 +609,7 @@ const runPose = (rig, n, f, has = true) => {
     `at ${guide.step?.key}, left ${guide.turns.left}`);
   feed(head(0.3 + 29 * D, -0.2), 4);
   feed(head(0.3, -0.2 + 20 * D), 4);
-  feed(null, 15);
+  feed(null, 20);
   check('a step nobody performs times out as not measured', guide.done && guide.turns.down === null,
     `done ${guide.done}, down ${guide.turns.down}`);
   const { patch, report, range } = guide.result();
@@ -624,6 +624,26 @@ const runPose = (rig, n, f, has = true) => {
       && JSON.parse(patch['camera.range']).down === null, JSON.stringify(range));
   check('the report names each pose', /Turn: left 35°, right 29°/.test(report[1]) && /down not measured/.test(report[1]),
     report.join(' | '));
+  check('a mouth that never opened sets no surprise range, and says so',
+    patch['face.surpriseAt'] === undefined && /never read as open/.test(report.join(' ')),
+    report.join(' | '));
+
+  // And a mouth held wide open sets the range from what it actually reached.
+  const withMouth = new Guide(0);
+  let mClock = 0;
+  const mFeed = (h, open, seconds) => {
+    for (let i = 0; i < seconds * 30; i++) { mClock += 1 / 30; withMouth.update(h, h && pos, mClock, open); }
+  };
+  mFeed(head(0, 0), 0, 5);
+  mFeed(head(0 - 35 * D, 0), 0, 4);
+  mFeed(head(0 + 35 * D, 0), 0, 4);
+  mFeed(head(0, 20 * D), 0, 4);
+  mFeed(head(0, -20 * D), 0, 4);
+  mFeed(head(0, 0), 0.62, 6);
+  const mouthPatch = withMouth.result().patch;
+  check('a mouth held wide open sets the surprise range from what it reached',
+    Math.abs(mouthPatch['face.surpriseAt'] - 0.31) < 0.011 && Math.abs(mouthPatch['face.surpriseFull'] - 0.56) < 0.011,
+    `at ${mouthPatch['face.surpriseAt']} full ${mouthPatch['face.surpriseFull']}`);
 
   settings.reset();
   settings.set('camera.mirror', true);

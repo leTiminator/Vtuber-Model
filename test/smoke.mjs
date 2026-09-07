@@ -132,7 +132,7 @@ try {
   await page.keyboard.press('g');
   await page.waitForTimeout(300);
   const prompt = await page.locator('#guide-prompt').textContent();
-  const guideOn = await page.locator('#guide').isVisible() && /^1 of 5/.test(prompt);
+  const guideOn = await page.locator('#guide').isVisible() && /^1 of 6/.test(prompt);
   await page.keyboard.press('Escape');
   check('G starts the guided calibration on the stage, and Esc cancels it',
     guideOn && !(await page.locator('#guide').isVisible()), prompt);

@@ -82,8 +82,7 @@ const DEPTH_FADE = 0.06;
  * and a body that followed one of those jumps across the picture. */
 export const MAX_TORSO_SLEW = 4;
 
-/** How wide the mouth goes before surprise starts, and where it is full. */
-const SURPRISE_AT = [0.5, 0.9];
+
 
 /** Seconds at the limit before the pinned warning, and how close to it counts. */
 const PINNED_SECONDS = 3;
@@ -419,7 +418,7 @@ export class Rig {
         : frame.position;
 
       this.collectCalibration(head, pos);
-      this.guide?.update(head, pos, this.clock);
+      this.guide?.update(head, pos, this.clock, s.mouth.open);
       const before = { ...s.head };
       this.applyTracked(shapes, head, pos, dt);
 
@@ -438,7 +437,7 @@ export class Rig {
       s.tracked = true;
       s.confidence = damp(s.confidence, 1, 8, dt);
     } else {
-      this.guide?.update(null, null, this.clock);
+      this.guide?.update(null, null, this.clock, s.mouth.open);
       s.tracked = false;
       s.confidence = damp(s.confidence, 0, 3, dt);
       this.relax(dt);
@@ -628,7 +627,9 @@ export class Rig {
    */
   applyExpression(dt) {
     const open = clamp(this.state.mouth.open, 0, 1);
-    const startled = remap(open, SURPRISE_AT[0], SURPRISE_AT[1], 0, 1);
+    const at = store.get('face.surpriseAt');
+    const full = Math.max(store.get('face.surpriseFull'), at + 0.05);
+    const startled = remap(open, at, full, 0, 1);
     this.state.expression.surprise = this.face.filter('surprise',
       clamp(startled * store.get('face.surpriseGain'), 0, 1), dt);
   }

@@ -54,6 +54,10 @@ export const DEFAULTS = {
 
   /* How readily a surprised face reads as surprised; 0 turns it off. */
   'face.surpriseGain': 1.0,
+  /* How open the mouth is where surprise starts and where it is full. The
+   * guided calibration measures both from a mouth held wide open. */
+  'face.surpriseAt': 0.5,
+  'face.surpriseFull': 0.9,
 
   // --- mouth -----------------------------------------------------------
   'mouth.openGain': 1.5,

@@ -339,9 +339,9 @@ const BUILDERS = {
     button.type = 'button';
     button.addEventListener('click', () => ctx.startGuide());
     const hint = el('div', 'field__hint',
-      'Five prompts on the stage: sit as you stream and look where you usually look, then '
-      + 'turn left, right, up and down as far as you would. Sets where forward is and how '
-      + 'far a turn goes. C sets forward alone.');
+      'Six prompts on the stage: sit as you stream and look where you usually look, turn left, '
+      + 'right, up and down as far as you would, then open your mouth wide. Sets where forward '
+      + 'is, how far a turn goes, and how wide your mouth reads. C sets forward alone.');
     const result = el('div', 'field__hint');
     const undo = el('button', 'btn', 'Undo calibration');
     undo.type = 'button';
