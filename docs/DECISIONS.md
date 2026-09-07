@@ -130,6 +130,36 @@ The production bundle dropped 38 KB.
 
 ## The rig
 
+**2026-09-07 — A body sitting square is not turned by shoulder noise.** The
+turn was `acos(width / restWidth) * sign(depth)`, and both halves misbehave
+exactly where a person at a desk lives. Sitting square puts the ratio at 1.000,
+where acos is vertical, so a fraction of a percent of landmark noise becomes
+degrees; and the bare sign flips whenever the shoulders are level, throwing the
+body from one side to the other — 18 times in the owner's recorded minute. The
+raw turn stepped 7.3° between frames at p95 and 124.6° at worst. Now the width
+must close by 4% before any turn is claimed and reaches full weight 6% later,
+and the depth decides which way round smoothly rather than by its sign. The
+width's own frame-to-frame noise is 0.4% typically and 2.3% at p95, so the
+floor sits above it; 89% of that minute's frames now produce no turn at all.
+The torso is also speed-capped the way the head is, at 4 units a second,
+because the pose model puts out the odd frame with the shoulders somewhere
+else entirely. Measured through the rig, the body's twist steps halved at p95
+and its median step is zero.
+
+**2026-09-07 — Surprise is the mouth, because the brows were not what was
+asked for.** Measured on the owner's recordings, every camera signal for an
+open mouth is dead behind their beard: jawOpen peaks at 0.015 of 1.0,
+mouthFunnel 0.015, mouthLowerDown 0.001, mouthStretch 0.034, and mouthShrugLower
+sits pinned near 1.0, which is the model confused rather than a reading. The
+brows are what that face reports clearly (browInnerUp p95 0.32, browDown p95
+0.26), so surprise was built on them first — and that was the wrong call,
+because the owner had said the mouth. It now reads `mouth.open`, the channel
+the app has already settled from whichever source drives the mouth, so a
+camera that can see a jaw uses the jaw and a microphone covers a beard. It
+starts at half open and is full at nine tenths. The character has a visor and
+no mouth, so surprise shows as the slits opening, the glow flaring and the
+head pulling back.
+
 **2026-09-06 — Smoothing was costing a fifth of every turn.** The one-euro
 filter shipped at 1.2 Hz with a speed coefficient of 0.06. Measured against
 the owner's own recording for rest wobble and a synthetic shake for
@@ -252,6 +282,24 @@ from the neutral, because a pinned model is the one symptom the owner sees as
 "not moving with my head".
 
 ## The renderer
+
+**2026-09-07 — The smear is drawn with a longer shutter than the frame, and
+a turn contributes its own.** The head cutout only slides 7 px across a full
+turn since the slide came down, so a smear derived from how far it travelled
+is a fifth of a pixel and invisible. The head that cutout stands for is really
+turning, so the turn adds the speed a head's surface has at that angular rate,
+its radius times the rate. The shutter is 1/15 s rather than a frame: an
+honest 1/60 s smears a couple of pixels and cel art reads nothing from it.
+Seven taps, averaged with alpha carried through so a transparent texel's
+colour never bleeds into a solid edge, capped at 6% of the picture so a jump
+cannot smear across it. It also covers the moment the drawn face changes over,
+which happens while the head is moving and the smear is strongest.
+
+**2026-09-07 — The window can be turned.** One mat2 on the view, built on the
+CPU with the canvas's own shape folded in and taken back out, so the character
+turns in a circle rather than an ellipse. Identity at zero degrees, so nothing
+moves until it is asked to. Facing the other way mirrors the picture, so the
+angle mirrors with it and the slider still turns the character the way it says.
 
 **2026-09-06 — A sweep across centre brings the face back at once, and the
 side follows the head.** The turned face's side was chosen once, as the

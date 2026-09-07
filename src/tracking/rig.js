@@ -49,6 +49,8 @@ export function emptyRig() {
     },
     mouth: { open: 0, smile: 0, frown: 0, pucker: 0, funnel: 0, wide: 0, press: 0, tongue: 0, shift: 0 },
     cheeks: { puff: 0, squintL: 0, squintR: 0 },
+    /* How surprised the face reads, 0..1, from a mouth held wide open. */
+    expression: { surprise: 0 },
     body: { leanX: 0, leanY: 0, twist: 0, breath: 0, bounce: 0, hairX: 0, hairY: 0 },
     // Arm angles are relative to the torso, not the screen, so leaning does not
     // read as raising. `raise` is how far the wrist is above the shoulder —
@@ -67,6 +69,21 @@ export function emptyRig() {
 
 /** What a head can plausibly be resting at, per axis. */
 export const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
+
+/* A turn read off the shoulders. The width has to close by TURN_FLOOR before
+ * any turn is claimed and reaches full weight TURN_RAMP later; the depth
+ * between the shoulders has to reach DEPTH_FADE before it fully decides which
+ * way round it is. */
+const TURN_FLOOR = 0.04;
+const TURN_RAMP = 0.06;
+const DEPTH_FADE = 0.06;
+/* The fastest a body turns or leans, in units a second. The pose model puts
+ * out the occasional frame where the shoulders are somewhere else entirely,
+ * and a body that followed one of those jumps across the picture. */
+export const MAX_TORSO_SLEW = 4;
+
+/** How wide the mouth goes before surprise starts, and where it is full. */
+const SURPRISE_AT = [0.5, 0.9];
 
 /** Seconds at the limit before the pinned warning, and how close to it counts. */
 const PINNED_SECONDS = 3;
@@ -271,21 +288,34 @@ export class Rig {
     // sitting square is square and leaning in reads as nothing.
     const restWidth = this.torsoNeutral?.width ?? width;
     if (restWidth > 0.02) {
-      // cos of the turn, near enough, and the sign from which shoulder is nearer.
+      // How far the shoulders have closed up, which is the cosine of the turn.
       const closed = clamp(width / restWidth, 0, 1);
-      torsoNow.turn = Math.acos(closed) * Math.sign(depth || 1) * flip;
+      // Sitting square puts that ratio at 1, where acos is vertical: a fraction
+      // of a percent of landmark noise becomes degrees of turn. A small turn
+      // cannot be read off shoulder width at all, so it is not claimed —
+      // TURN_FLOOR of shrinking buys nothing, and the answer ramps in above it.
+      const shrink = remap(1 - closed, TURN_FLOOR, TURN_FLOOR + TURN_RAMP, 0, 1);
+      // Which shoulder is nearer says which way, and it says it weakly when
+      // they are level: a bare sign flips through zero and threw the body from
+      // one side to the other.
+      const facing = clamp(depth / DEPTH_FADE, -1, 1);
+      torsoNow.turn = Math.acos(closed) * shrink * facing * flip;
     }
     if (!this.torsoNeutral) this.torsoNeutral = { ...torsoNow };
     const tn = this.torsoNeutral;
     const tg = store.get('body.shoulderGain');
     const t = this.state.torso;
     t.seen = damp(t.seen, 1, 6, dt);
-    t.turn = this.arms.filter('torsoTurn',
-      clamp((torsoNow.turn - tn.turn) * tg, -1.4, 1.4), dt);
-    t.lean = this.arms.filter('torsoLean',
-      clamp((torsoNow.lean - tn.lean) * 4 * tg * flip, -1.5, 1.5), dt);
-    t.rise = this.arms.filter('torsoRise',
-      clamp((torsoNow.rise - tn.rise) * 4 * tg, -1.5, 1.5), dt);
+    /* Capped the way the head is: a shoulder that teleports for one frame
+     * moves the body at a body's pace or not at all. */
+    const slew = MAX_TORSO_SLEW * dt;
+    const held = (key, value) => {
+      const was = t[key];
+      return clamp(this.arms.filter(key, value, dt), was - slew, was + slew);
+    };
+    t.turn = held('turn', clamp((torsoNow.turn - tn.turn) * tg, -1.4, 1.4));
+    t.lean = held('lean', clamp((torsoNow.lean - tn.lean) * 4 * tg * flip, -1.5, 1.5));
+    t.rise = held('rise', clamp((torsoNow.rise - tn.rise) * 4 * tg, -1.5, 1.5));
 
     const gain = store.get('arms.gain');
     const measured = {};
@@ -415,6 +445,7 @@ export class Rig {
     }
 
     this.applyMouthSource(dt);
+    this.applyExpression(dt);
     this.applyAutoBlink(dt, tracked);
     this.applyBody(dt);
     return s;
@@ -590,6 +621,18 @@ export class Rig {
   }
 
   /** Blend camera-driven jaw with mic loudness, per the user's preference. */
+  /**
+   * Surprise: a mouth held wide open. It reads the mouth the app settled on,
+   * so it follows whichever source drives the mouth — a camera that can see a
+   * jaw, or the microphone where a beard hides one.
+   */
+  applyExpression(dt) {
+    const open = clamp(this.state.mouth.open, 0, 1);
+    const startled = remap(open, SURPRISE_AT[0], SURPRISE_AT[1], 0, 1);
+    this.state.expression.surprise = this.face.filter('surprise',
+      clamp(startled * store.get('face.surpriseGain'), 0, 1), dt);
+  }
+
   applyMouthSource(dt) {
     const source = store.get('mouth.source');
     const cam = this.cameraMouthOpen ?? 0;

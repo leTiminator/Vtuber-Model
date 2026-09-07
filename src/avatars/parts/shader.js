@@ -13,6 +13,10 @@ uniform float u_aspect;  // image width / height
 
 uniform vec2 u_viewScale;
 uniform vec2 u_viewOffset;
+/* Turns the whole picture in the window. Built on the CPU with the canvas's
+ * own shape folded in, so the character turns in a circle rather than an
+ * ellipse; identity when the angle is zero. */
+uniform mat2 u_viewRot;
 
 out vec2 v_uv;
 
@@ -25,7 +29,7 @@ void main() {
   vec2 p = mix(far, near, a_follow);
 
   v_uv = a_uv;
-  vec2 ndc = (p * u_viewScale + u_viewOffset) * 2.0 - 1.0;
+  vec2 ndc = u_viewRot * ((p * u_viewScale + u_viewOffset) * 2.0 - 1.0);
   gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
 }
 `;
@@ -40,6 +44,9 @@ uniform sampler2D u_tex;
 uniform float u_opacity;
 uniform float u_shadow;  // >0: draw this part as a contact shadow instead
 uniform vec2 u_shadowOffset;
+/* How far this part travelled during the frame, in its own texture space, so
+ * a fast turn smears along the way it went. Zero when it is still. */
+uniform vec2 u_smear;
 
 // Eye lids, applied only to the part that carries the eyes.
 uniform float u_eyesEnabled;
@@ -155,22 +162,14 @@ float softAlpha(vec2 uv) {
   return sum / weight;
 }
 
-void main() {
-  vec2 uv = v_uv;
-
-  /* Contact shadow pass. */
-  if (u_shadow > 0.0) {
-    float a = softAlpha(uv - u_shadowOffset);
-    fragColor = vec4(0.0, 0.0, 0.0, a * u_shadow * u_opacity);
-    return;
-  }
-
+/** This part at one point in its travel, lids, glow and all. */
+vec4 shade(vec2 uv) {
   vec4 c = texture(u_tex, uv);
   c.a *= marginCut(uv);
 
   if (u_eyesEnabled > 0.5) {
-    c = lidded(v_uv, u_eyeL, u_blink.x, u_squint.x, c);
-    c = lidded(v_uv, u_eyeR, u_blink.y, u_squint.y, c);
+    c = lidded(uv, u_eyeL, u_blink.x, u_squint.x, c);
+    c = lidded(uv, u_eyeR, u_blink.y, u_squint.y, c);
 
     if (u_glow > 0.0) {
       float pulse = u_glow * u_glowPulse;
@@ -179,7 +178,7 @@ void main() {
       // masked face has no pupil to move, so gaze reads as the light shifting
       // inside the visor — which also cannot tear, the way sliding the shard
       // itself would.
-      vec2 e = toEye(v_uv, u_eyeL);
+      vec2 e = toEye(uv, u_eyeL);
       float lookX = clamp(0.5 + 0.6 * (e.x * u_gaze.x + e.y * u_gaze.y), 0.0, 1.0);
       float bias = mix(0.40, 1.55, lookX);
 
@@ -201,6 +200,35 @@ void main() {
   }
 
   c.a *= u_opacity;
-  fragColor = c;
+  return c;
+}
+
+/* Samples across the travel. Enough to read as movement, few enough that the
+ * eye parts, which are the expensive ones to shade, stay cheap. */
+const int SMEAR_TAPS = 7;
+
+void main() {
+  /* The contact shadow is already a soft blur; smearing it buys nothing. */
+  if (u_shadow > 0.0) {
+    float a = softAlpha(v_uv - u_shadowOffset);
+    fragColor = vec4(0.0, 0.0, 0.0, a * u_shadow * u_opacity);
+    return;
+  }
+
+  if (u_smear == vec2(0.0)) {
+    fragColor = shade(v_uv);
+    return;
+  }
+
+  // Averaged with alpha carried through, so the colour of a transparent texel
+  // never bleeds into the edge of a solid one.
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < SMEAR_TAPS; i++) {
+    float t = float(i) / float(SMEAR_TAPS - 1) - 0.5;
+    vec4 c = shade(v_uv + u_smear * t);
+    sum += vec4(c.rgb * c.a, c.a);
+  }
+  float a = sum.a / float(SMEAR_TAPS);
+  fragColor = vec4(sum.a > 0.0 ? sum.rgb / sum.a : vec3(0.0), a);
 }
 `;

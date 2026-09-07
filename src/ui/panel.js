@@ -54,6 +54,8 @@ export function buildPanel(root, ctx) {
         { type: 'framingHelp' },
         { type: 'fit' },
         { type: 'slider', key: 'stage.zoom', label: 'Size', min: 0.15, max: 6, step: 0.005, format: x },
+        { type: 'slider', key: 'stage.rotate', label: 'Rotate', min: -180, max: 180, step: 1, format: deg,
+          hint: 'Turns the character in the window. The OBS page turns with it.' },
         { type: 'slider', key: 'stage.offsetX', label: 'Across', min: -1.5, max: 1.5, step: 0.002, format: pct },
         { type: 'slider', key: 'stage.offsetY', label: 'Up / down', min: -1.5, max: 1.5, step: 0.002, format: pct },
         { type: 'toggle', key: 'stage.lockFraming', label: 'Lock framing',
@@ -91,9 +93,22 @@ export function buildPanel(root, ctx) {
       ],
     },
     {
+      title: 'Expressions',
+      controls: [
+        { type: 'note', text: 'The face has a visor and no mouth, so an expression shows in the '
+          + 'shape of the slits, the glow, and how the head moves.' },
+        { type: 'slider', key: 'face.surpriseGain', label: 'Surprise', min: 0, max: 2.5, step: 0.05, format: x,
+          hint: 'Open your mouth wide and the eyes open wide, the glow flares and the head pulls '
+            + 'back. It follows whatever Speech is Driven by, so with the microphone it fires on a '
+            + 'loud open-mouthed reaction. 0 turns it off.' },
+      ],
+    },
+    {
       title: 'Speech',
       controls: [
         { type: 'note', text: 'The mouth is under the scarf, so speech lifts the visor glow and bobs the head instead.' },
+        { type: 'microphones' },
+        { type: 'micMeter' },
         { type: 'select', key: 'mouth.source', label: 'Driven by', options: [
           ['camera', 'Camera (your jaw)'],
           ['mic', 'Microphone (loudness)'],
@@ -171,6 +186,9 @@ export function buildPanel(root, ctx) {
           hint: 'How long you must sit square before the face comes back. Turning away is '
             + 'immediate; coming back waits, so a head hovering near the threshold does not flicker.' },
         { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
+        { type: 'slider', key: 'parts.motionBlur', label: 'Motion blur', min: 0, max: 1.5, step: 0.05, format: x,
+          hint: 'Smears the head along the way it is moving, and only while it moves. '
+            + 'It also covers the moment the face changes over on a turn. 0 turns it off.' },
 
         { type: 'heading', label: 'Cloth & hair' },
         { type: 'slider', key: 'warp.clothWeight', label: 'Scarf travel', min: 0, max: 3, step: 0.01, format: x },
@@ -502,6 +520,58 @@ const BUILDERS = {
     return field;
   },
 
+  microphones(_spec, ctx) {
+    if (!ctx.listMics) return null;
+    const field = el('div', 'field');
+    const select = el('select');
+    const refresh = async () => {
+      const mics = await ctx.listMics();
+      select.replaceChildren();
+      const auto = el('option', null, 'Default microphone');
+      auto.value = '';
+      select.append(auto);
+      mics.forEach((m, i) => {
+        const option = el('option', null, m.label || `Microphone ${i + 1}`);
+        option.value = m.deviceId;
+        select.append(option);
+      });
+      select.value = store.get('mouth.deviceId');
+    };
+    select.addEventListener('change', () => ctx.selectMic(select.value));
+    ctx.onMicsChanged?.(refresh);
+    refresh();
+    field.append(labelledRow('Microphone'), select);
+    return field;
+  },
+
+  /** What the microphone hears, against the gate it has to clear to count. */
+  micMeter(_spec, ctx) {
+    if (!ctx.micStatus) return null;
+    const field = el('div', 'field');
+    const bar = el('div', 'meter');
+    const fill = el('div', 'meter__fill');
+    const gate = el('div', 'meter__gate');
+    bar.append(fill, gate);
+    const hint = el('div', 'field__hint');
+    const paint = () => {
+      const s = ctx.micStatus();
+      // The meter's full width is the loudness the mouth counts as wide open.
+      const span = 0.16;
+      fill.style.width = `${Math.min(100, (s.level / span) * 100).toFixed(1)}%`;
+      gate.style.left = `${Math.min(100, (s.gate / span) * 100).toFixed(1)}%`;
+      fill.classList.toggle('meter__fill--live', s.level > s.gate);
+      hint.textContent = s.source === 'camera'
+        ? 'Set Driven by to Microphone or Whichever is stronger to use it.'
+        : s.on
+          ? `Hearing ${(s.level * 100).toFixed(0)}%, gate ${(s.gate * 100).toFixed(0)}% — speech ${(s.open * 100).toFixed(0)}% open.`
+          : 'Microphone not running.';
+    };
+    paint();
+    setInterval(paint, 100);
+    field.append(labelledRow('Level'), bar, hint);
+    return field;
+  },
+
   heading(spec) {
     const node = el('h4', 'group__heading');
     node.textContent = spec.label;
@@ -525,7 +595,8 @@ const BUILDERS = {
       button.type = 'button';
       button.addEventListener('click', () => {
         if (mode === 'reset') {
-          store.patch({ 'stage.zoom': store.DEFAULTS['stage.zoom'], 'stage.offsetX': 0, 'stage.offsetY': 0 });
+          store.patch({ 'stage.zoom': store.DEFAULTS['stage.zoom'], 'stage.offsetX': 0, 'stage.offsetY': 0,
+            'stage.rotate': 0 });
         } else {
           ctx.fitFraming?.(mode);
         }

@@ -230,9 +230,11 @@ async function applyPoseSource() {
 
 async function applyMicSource() {
   const wants = store.get('mouth.source') !== 'camera';
+  const wanted = store.get('mouth.deviceId');
+  if (wants && mic.active && mic.deviceId !== wanted) await mic.stop();
   if (wants && !mic.active) {
     try {
-      await mic.start();
+      await mic.start(wanted);
     } catch (err) {
       setStatus('Microphone blocked — using the camera for speech', 'error');
       store.set('mouth.source', 'camera');
@@ -240,11 +242,13 @@ async function applyMicSource() {
   } else if (!wants && mic.active) {
     await mic.stop();
   }
+  for (const fn of micListeners) fn();
 }
 
 /* ------------------------------------------------------------------ boot */
 
 const cameraListeners = new Set();
+const micListeners = new Set();
 
 /* The guided calibration's state; its functions live further down. */
 let guideBefore = null; // settings before the last guided calibration, for Undo
@@ -262,6 +266,15 @@ buildPanel(dom.panelBody, {
     roll: rig.state.head.roll,
   }),
   listCameras: () => FaceTracker.listCameras(),
+  listMics: () => MicLevel.list(),
+  onMicsChanged: (fn) => micListeners.add(fn),
+  selectMic: async (deviceId) => {
+    store.set('mouth.deviceId', deviceId);
+    await applyMicSource();
+  },
+  /* What the microphone hears right now, beside the gate it has to clear. */
+  micStatus: () => ({ on: mic.active, level: rig.micLevel, gate: store.get('mouth.micGate'),
+    open: rig.state.mouth.open, source: store.get('mouth.source') }),
   onCamerasChanged: (fn) => cameraListeners.add(fn),
   selectCamera: async (deviceId) => {
     store.set('camera.deviceId', deviceId);

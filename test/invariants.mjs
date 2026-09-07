@@ -66,6 +66,17 @@ window.__inv = {
     return { n, cx: n ? sx / n : 0, cy: n ? sy / n : 0, x0, x1,
       left: xs.filter((x) => x < mid).length, right: xs.filter((x) => x > mid).length };
   },
+  // What is drawn, and the box around it.
+  box(img) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, drawn = 0;
+    for (let p = 0; p < img.w * img.h; p++) {
+      if (img.d[p * 4 + 3] < 40) continue;
+      const x = p % img.w, y = (p - x) / img.w;
+      drawn++;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    return { x0, y0, x1, y1, drawn };
+  },
   // Every pixel drawn in A is also drawn in B (A adds no coverage).
   coveredBy(A, B) {
     let stray = 0;
@@ -333,6 +344,62 @@ try {
     near(sides.left.eyes) === 'right' && near(sides.right.eyes) === 'left',
     `turned left ${sides.left.eyes.left}/${sides.left.eyes.right} of the eye span, `
       + `turned right ${sides.right.eyes.left}/${sides.right.eyes.right}`);
+
+  /* --- the smear, and turning the picture -------------------------------- */
+  const motion = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const inv = window.__inv;
+    const emptyRig = t.app().emptyRig;
+    t.resetStore(frozen);
+    const circle = inv.headCircle(a);
+    // Mid-sweep, where the head is moving fastest.
+    const sweeping = (motionBlur) => {
+      t.resetStore({ ...frozen, 'parts.motionBlur': motionBlur, 'parts.headOn': 0 });
+      a.reset();
+      let mid = null;
+      for (let f = 0; f < 20; f++) {
+        const rig = emptyRig();
+        rig.head.yaw = -0.6 + 1.2 * (f / 19);
+        a.render(rig, 1 / 60);
+        if (f === 12) mid = t.read(a);
+      }
+      return mid;
+    };
+    const settled = (motionBlur) => {
+      t.resetStore({ ...frozen, 'parts.motionBlur': motionBlur, 'parts.headOn': 0 });
+      a.reset();
+      t.pose(a, emptyRig, { head: { yaw: 0.3 } }, 30);
+      return t.read(a);
+    };
+    const turned = (rotate) => {
+      t.resetStore({ ...frozen, 'stage.rotate': rotate, 'stage.zoom': 0.5 });
+      a.reset();
+      t.pose(a, emptyRig, {}, 20);
+      return inv.box(t.read(a));
+    };
+    return {
+      moving: inv.diff(sweeping(1.0), sweeping(0), circle, 3),
+      still: inv.diff(settled(1.0), settled(0), circle, 3),
+      upright: turned(0),
+      quarter: turned(90),
+    };
+  }, FROZEN);
+  check('a head sweeping across smears along the way it is going',
+    motion.moving.inside > 200, `${motion.moving.inside} pixels differ inside the head`);
+  check('and a head that has stopped does not smear at all',
+    motion.still.inside + motion.still.outside === 0,
+    `${motion.still.inside + motion.still.outside} pixels differ`);
+  // A quarter turn of the window swaps the picture's width and height and
+  // keeps its area: it turns, rather than stretching or being cropped.
+  const area = (b) => (b.x1 - b.x0) * (b.y1 - b.y0);
+  check('turning the window a quarter turn turns the character, and nothing else',
+    Math.abs((motion.quarter.x1 - motion.quarter.x0) - (motion.upright.y1 - motion.upright.y0)) <= 3
+      && Math.abs((motion.quarter.y1 - motion.quarter.y0) - (motion.upright.x1 - motion.upright.x0)) <= 3
+      && Math.abs(motion.quarter.drawn - motion.upright.drawn) < motion.upright.drawn * 0.03,
+    `upright ${motion.upright.x1 - motion.upright.x0}x${motion.upright.y1 - motion.upright.y0}, `
+      + `turned ${motion.quarter.x1 - motion.quarter.x0}x${motion.quarter.y1 - motion.quarter.y0}, `
+      + `area ${area(motion.upright)} vs ${area(motion.quarter)}, drawn ${motion.upright.drawn} vs ${motion.quarter.drawn}`);
 
   /* --- a turn is continuous, all the way to the limit -------------------- */
   const creep = await page.evaluate((frozen) => {

@@ -117,6 +117,29 @@ body { background: transparent; }
 }
 #first-run strong { color: var(--text); }
 
+.meter {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+.meter__fill {
+  height: 100%;
+  width: 0;
+  background: var(--muted);
+  transition: width 80ms linear;
+}
+.meter__fill--live { background: var(--good); }
+.meter__gate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--warn);
+}
+
 #guide {
   position: absolute;
   inset: 0;

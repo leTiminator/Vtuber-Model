@@ -1,5 +1,5 @@
 /** The layered puppet: the artwork cut into parts, each moving on its own. */
-import { clamp, damp, lerp, makeSpring, smoothstep, spring } from '../../core/math.js';
+import { clamp, damp, DEG, lerp, makeSpring, smoothstep, spring } from '../../core/math.js';
 import * as store from '../../core/store.js';
 import { computeFrame } from '../../core/framing.js';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.js';
@@ -40,10 +40,10 @@ import { loadModel } from './model.js';
 import { FaceLatch } from './latch.js';
 
 const UNIFORMS = [
-  'u_model', 'u_modelFar', 'u_aspect', 'u_viewScale', 'u_viewOffset', 'u_tex', 'u_opacity',
+  'u_model', 'u_modelFar', 'u_aspect', 'u_viewScale', 'u_viewOffset', 'u_viewRot', 'u_tex', 'u_opacity',
   'u_eyesEnabled', 'u_eyeL', 'u_eyeR', 'u_eyeAngle',
   'u_blink', 'u_squint', 'u_wide', 'u_gaze', 'u_glow', 'u_glowPulse', 'u_texel',
-  'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax', 'u_lidFill',
+  'u_shadow', 'u_shadowOffset', 'u_margin', 'u_marginMax', 'u_lidFill', 'u_smear',
 ];
 
 const SPINE_NODES = 16;
@@ -54,6 +54,17 @@ const MARGIN_FULL = 32;
  * pixels below the head's centre, so tilting from it alone swings the head
  * sideways and lifts it clear of the collar. */
 const ROLL_AT_NECK = 0.25;
+/* What surprise does with the levers this character has: the visor slits open,
+ * the glow flares, and the head pulls back a little. */
+const SURPRISE_WIDE = 0.9;
+const SURPRISE_GLOW = 0.5;
+const SURPRISE_LIFT = 0.018;
+/* The shutter the smear is drawn with. Longer than a frame on purpose: a
+ * physically honest 1/60 s smears a couple of pixels and cel art reads nothing
+ * from it. Fixed, so the smear looks the same at any frame rate. */
+const EXPOSURE = 1 / 15;
+/* The most of the picture one frame may smear across. */
+const MAX_SMEAR = 0.06;
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -118,6 +129,7 @@ export class Parts2D {
     this.turnedSide = 1;
     this.headOnPhase = 1;
     this.faceOn = true;
+    this.lastHead = null;
     this.scarf.reset();
     this.inertia.reset();
     this.clothInertia.reset();
@@ -330,6 +342,15 @@ export class Parts2D {
     gl.uniform2f(L.u_viewScale, faced ? -frame.sx : frame.sx, frame.sy);
     gl.uniform2f(L.u_viewOffset, faced ? frame.ox + frame.sx : frame.ox, frame.oy);
     gl.uniform1f(L.u_aspect, this.aspect);
+    // Turning the picture in the window. The canvas's shape goes in and comes
+    // straight back out, so the character turns in a circle; facing the other
+    // way mirrors the picture, so the angle mirrors with it and the slider
+    // still turns the character the way it says.
+    const spin = store.get('stage.rotate') * DEG * (faced ? -1 : 1);
+    const ca = (this.canvas.width || 1) / (this.canvas.height || 1);
+    const cs = Math.cos(spin);
+    const sn = Math.sin(spin);
+    gl.uniformMatrix2fv(L.u_viewRot, false, new Float32Array([cs, sn * ca, -sn / ca, cs]));
 
     // --- head angles, with overshoot -------------------------------------
     const overshoot = store.get('warp.overshoot');
@@ -344,6 +365,28 @@ export class Parts2D {
 
     // --- joints ----------------------------------------------------------
     const joints = this.solveJoints(rig, roll, pitch, yaw, m);
+
+    /* How far the head travelled this frame, for the smear. Taken from the
+     * joint that carries it, so a turn, a nod and a lean all count. */
+    const hx = joints.neck[0] * this.headSpan.cx + joints.neck[3] * this.headSpan.cy + joints.neck[6];
+    const hy = joints.neck[1] * this.headSpan.cx + joints.neck[4] * this.headSpan.cy + joints.neck[7];
+    let smearX = 0;
+    let smearY = 0;
+    const blurAmount = store.get('parts.motionBlur');
+    if (this.lastHead && dt > 0 && blurAmount > 0) {
+      // A turn slides the cutout only a few pixels, but the head it stands for
+      // is really turning: the surface of a head of this radius travels at its
+      // angular speed times that radius, and that is what a turn should smear.
+      const spin = ((yaw - this.lastHead[2]) / dt) * this.headSpan.r;
+      smearX = (((hx - this.lastHead[0]) / dt) + spin) * EXPOSURE * blurAmount;
+      smearY = ((hy - this.lastHead[1]) / dt) * EXPOSURE * blurAmount;
+      const travel = Math.hypot(smearX * this.aspect, smearY);
+      if (travel > MAX_SMEAR) {
+        smearX *= MAX_SMEAR / travel;
+        smearY *= MAX_SMEAR / travel;
+      }
+    }
+    this.lastHead = [hx, hy, yaw];
 
     // --- cloth -----------------------------------------------------------
     const proxyX = m.headX + Math.sin(yaw) * 0.09 + rig.head.x * 0.045;
@@ -419,7 +462,8 @@ export class Parts2D {
     const talk = clamp(rig.mouth?.open ?? 0, 0, 1);
     const flare = clamp(this.inertia.speed * 1.6, 0, 1.4);
     this.glowPulse = damp(this.glowPulse,
-      0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare + TALK_GLOW * talk, 9, dt);
+      0.82 + 0.18 * Math.sin(this.clock * 1.9) + flare + TALK_GLOW * talk
+      + SURPRISE_GLOW * (rig.expression?.surprise ?? 0), 9, dt);
 
     /* Which face: it leaves quickly on a real turn and comes back once the
      * head has sat square (latch.js). A ramp of a fixed length, eased at both
@@ -467,6 +511,17 @@ export class Parts2D {
       gl.uniformMatrix3fv(L.u_modelFar, false, mirrored ? compose(far, mirror) : far);
       const flipX = mirrored ? -1 : 1;
 
+      /* Only the head smears, and only along the way it went. A placed part is
+       * scaled onto the head, so its own texture covers less ground. */
+      if (face && (smearX || smearY)) {
+        const k = part.place ? part.place.k : 1;
+        gl.uniform2f(L.u_smear,
+          (smearX / k) * (this.imageSize.width / part.w) * flipX,
+          (smearY / k) * (this.imageSize.height / part.h));
+      } else {
+        gl.uniform2f(L.u_smear, 0, 0);
+      }
+
       const carriesEyes = part.flags.eyes;
       gl.uniform1f(L.u_eyesEnabled, carriesEyes && store.get('warp.eyesEnabled') ? 1 : 0);
       if (carriesEyes) {
@@ -482,7 +537,8 @@ export class Parts2D {
         const sq = store.get('warp.squint');
         const squint = clamp((right ? rig.eyes.squintR : rig.eyes.squintL) * sq, 0, 1);
         gl.uniform2f(L.u_squint, squint, 0);
-        const wide = right ? rig.eyes.wideR : rig.eyes.wideL;
+        const wide = clamp((right ? rig.eyes.wideR : rig.eyes.wideL)
+          + SURPRISE_WIDE * (rig.expression?.surprise ?? 0), 0, 1);
         gl.uniform2f(L.u_wide, wide, wide);
         const gz = store.get('eyes.gazeGain');
         gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * gz * flipX, -1, 1), clamp(rig.eyes.gazeY * gz, -1, 1));
@@ -586,7 +642,8 @@ export class Parts2D {
      * drawn views carry most of the turn now, so the slide is parallax rather
      * than the whole effect, and a smaller one keeps the head in its collar. */
     const shift = clamp(yaw, -1.2, 1.2) * 0.015 * store.get('warp.turn');
-    const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1);
+    const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1)
+      - SURPRISE_LIFT * clamp(rig.expression?.surprise ?? 0, 0, 1);
     const neck = compose(
       hips,
       translate(IDENTITY, shift, nod + bob),

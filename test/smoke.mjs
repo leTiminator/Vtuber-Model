@@ -31,8 +31,8 @@ try {
 
   // Naming the groups beats counting them: a control that silently dropped out
   // because its setting was renamed shows up as a missing section, not a number.
-  const wanted = ['Camera & tracking', 'Size & position', 'Head', 'Eyes', 'Speech', 'Arms',
-    'Body & scarf', 'Output & OBS', 'Model', 'Hotkeys'];
+  const wanted = ['Camera & tracking', 'Size & position', 'Head', 'Eyes', 'Expressions', 'Speech',
+    'Arms', 'Body & scarf', 'Output & OBS', 'Model', 'Hotkeys'];
   const groups = await page.locator('#panel-body .group > summary').allTextContents();
   check('control panel builds every group',
     wanted.every((title) => groups.includes(title)) && groups.length === wanted.length,
@@ -174,6 +174,10 @@ try {
   // Coming back with a profile saved by an older build: what that build
   // re-tuned comes back at the new default and a neutral set with one press of
   // C is dropped, while the framing and the camera choice are kept.
+  // Let the model finish loading before reloading again: the check above has
+  // just reloaded, and cutting its fetches off mid-flight is a page error.
+  await page.waitForFunction(() => window.__vtuber?.avatars?.parts2d?.ready === true,
+    null, { timeout: 15000 }).catch(() => {});
   await page.evaluate(() => {
     localStorage.setItem('vtuber-model/settings/v4', JSON.stringify({
       'smooth.minCutoff': 1.2,
@@ -203,13 +207,18 @@ try {
   const ticks = await page.evaluate(async () => {
     const { startTicker } = await import('/src/core/ticker.js');
     let n = 0;
+    // Against the clock, not against the sleep it asked for: a loaded machine
+    // hands back a two-second sleep well after two seconds, and dividing by
+    // the two makes a timer keeping its rate look like one running fast.
+    const started = performance.now();
     const t = startTicker(30, () => { n++; });
     await new Promise((r) => setTimeout(r, 2000));
+    const elapsed = (performance.now() - started) / 1000;
     t.stop();
-    return n / 2;
+    return n / elapsed;
   });
   check('the hidden-window ticker fires many times a second off a Worker timer, never more than asked',
-    ticks >= 10 && ticks <= 40, `${ticks} ticks a second over two seconds`);
+    ticks >= 10 && ticks <= 40, `${ticks.toFixed(1)} ticks a second`);
   check('the tracker can run one detection from a timer', await page.evaluate(() =>
     typeof window.__vtuber.tracker.detect === 'function'));
 
