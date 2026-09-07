@@ -49,6 +49,8 @@ export function emptyRig() {
     },
     mouth: { open: 0, smile: 0, frown: 0, pucker: 0, funnel: 0, wide: 0, press: 0, tongue: 0, shift: 0 },
     cheeks: { puff: 0, squintL: 0, squintR: 0 },
+    /* How surprised the face reads, 0..1, from a mouth held wide open. */
+    expression: { surprise: 0 },
     body: { leanX: 0, leanY: 0, twist: 0, breath: 0, bounce: 0, hairX: 0, hairY: 0 },
     // Arm angles are relative to the torso, not the screen, so leaning does not
     // read as raising. `raise` is how far the wrist is above the shoulder —
@@ -67,6 +69,9 @@ export function emptyRig() {
 
 /** What a head can plausibly be resting at, per axis. */
 export const REST_LIMIT = { yaw: 45 * DEG, pitch: 40 * DEG, roll: 30 * DEG };
+
+/** How wide the mouth goes before surprise starts, and where it is full. */
+const SURPRISE_AT = [0.5, 0.9];
 
 /** Seconds at the limit before the pinned warning, and how close to it counts. */
 const PINNED_SECONDS = 3;
@@ -415,6 +420,7 @@ export class Rig {
     }
 
     this.applyMouthSource(dt);
+    this.applyExpression(dt);
     this.applyAutoBlink(dt, tracked);
     this.applyBody(dt);
     return s;
@@ -590,6 +596,18 @@ export class Rig {
   }
 
   /** Blend camera-driven jaw with mic loudness, per the user's preference. */
+  /**
+   * Surprise: a mouth held wide open. It reads the mouth the app settled on,
+   * so it follows whichever source drives the mouth — a camera that can see a
+   * jaw, or the microphone where a beard hides one.
+   */
+  applyExpression(dt) {
+    const open = clamp(this.state.mouth.open, 0, 1);
+    const startled = remap(open, SURPRISE_AT[0], SURPRISE_AT[1], 0, 1);
+    this.state.expression.surprise = this.face.filter('surprise',
+      clamp(startled * store.get('face.surpriseGain'), 0, 1), dt);
+  }
+
   applyMouthSource(dt) {
     const source = store.get('mouth.source');
     const cam = this.cameraMouthOpen ?? 0;

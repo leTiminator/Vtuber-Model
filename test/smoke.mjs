@@ -31,8 +31,8 @@ try {
 
   // Naming the groups beats counting them: a control that silently dropped out
   // because its setting was renamed shows up as a missing section, not a number.
-  const wanted = ['Camera & tracking', 'Size & position', 'Head', 'Eyes', 'Speech', 'Arms',
-    'Body & scarf', 'Output & OBS', 'Model', 'Hotkeys'];
+  const wanted = ['Camera & tracking', 'Size & position', 'Head', 'Eyes', 'Expressions', 'Speech',
+    'Arms', 'Body & scarf', 'Output & OBS', 'Model', 'Hotkeys'];
   const groups = await page.locator('#panel-body .group > summary').allTextContents();
   check('control panel builds every group',
     wanted.every((title) => groups.includes(title)) && groups.length === wanted.length,

@@ -7,6 +7,13 @@
  * or sent anywhere.
  */
 export class MicLevel {
+  /** The microphones this machine has, once permission has exposed their labels. */
+  static async list() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'audioinput');
+  }
+
   constructor() {
     this.ctx = null;
     this.analyser = null;
@@ -14,14 +21,15 @@ export class MicLevel {
     this.buffer = null;
     this.level = 0;
     this.active = false;
+    this.deviceId = '';
   }
 
-  async start() {
+  async start(deviceId = '') {
     if (this.active) return;
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
-      video: false,
-    });
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
+    if (deviceId) audio.deviceId = { exact: deviceId };
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    this.deviceId = deviceId;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.ctx.state === 'suspended') await this.ctx.resume();
 

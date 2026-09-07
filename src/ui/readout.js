@@ -9,6 +9,8 @@ import * as store from '../core/store.js';
 const MACHINE_SET = /^camera\.(deviceId|neutral|range)$/;
 
 export const deg = (rad) => `${rad >= 0 ? '+' : ''}${Math.round((rad * 180) / Math.PI)}°`;
+/** A signed 0..1 channel, as a percentage that keeps its sign. */
+const sign = (v) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}`;
 
 /** The build id Vite stamps in, or "dev" under the dev server. */
 export function buildId(short = false) {
@@ -83,6 +85,8 @@ export function liveLines({ tracker, pose, rig, avatar }) {
     out.push(`seen yaw ${deg(seen.yaw)} pitch ${deg(seen.pitch)} roll ${deg(seen.roll)}`
       + `  →  driven ${deg(s.yaw)} ${deg(s.pitch)} ${deg(s.roll)}`
       + (avatar ? `  ·  face ${faceName(avatar)}` : ''));
+    out.push(`mic ${(rig.micLevel * 100).toFixed(0)}% → mouth ${(rig.state.mouth.open * 100).toFixed(0)}%`
+      + `  ·  surprise ${(rig.state.expression.surprise * 100).toFixed(0)}%`);
   } else {
     out.push('no face in frame');
   }

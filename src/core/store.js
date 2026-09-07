@@ -52,11 +52,15 @@ export const DEFAULTS = {
   'eyes.autoBlink': true, // fire natural blinks when tracking is idle/lost
   'eyes.browGain': 1.3,
 
+  /* How readily a surprised face reads as surprised; 0 turns it off. */
+  'face.surpriseGain': 1.0,
+
   // --- mouth -----------------------------------------------------------
   'mouth.openGain': 1.5,
   'mouth.smileGain': 1.4,
   'mouth.wideGain': 1.2,
   'mouth.source': 'camera', // camera | mic | both
+  'mouth.deviceId': '', // which microphone; empty is the system default
   'mouth.micGain': 1.8,
   'mouth.micGate': 0.012, // RMS below this counts as silence
 
@@ -81,6 +85,7 @@ export const DEFAULTS = {
   'stage.zoom': 0.86,
   // Fractions of the canvas's shorter side, so framing survives a resize and
   // matches between this window and OBS at any resolution.
+  'stage.rotate': 0, // turns the whole picture in the window, in degrees
   'stage.offsetX': 0,
   'stage.offsetY': 0,
   'stage.lockFraming': false,
@@ -108,6 +113,7 @@ export const DEFAULTS = {
   /* How far the head cutout turns as it nods, in radians per radian of pitch. */
   'parts.nodTurn': 0.55,
 
+  'parts.motionBlur': 0.6, // how far a moving head smears, 0 turns it off
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
   'warp.overshoot': 1.0, // head settles rather than stopping dead

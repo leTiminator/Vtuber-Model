@@ -640,5 +640,42 @@ const runPose = (rig, n, f, has = true) => {
   check('coming back inside the limit clears it', pinned.pinnedWarning === '', pinned.pinnedWarning);
 }
 
+/* --- surprise comes from the mouth the app settled on --------------------- */
+{
+  settings.reset();
+  settings.set('mouth.source', 'mic');
+  const rig = new Rig();
+  rig.setMicLevel(0.2);
+  run(rig, 120, frame());
+  const loud = rig.state.expression.surprise;
+  rig.setMicLevel(0);
+  run(rig, 240, frame());
+  const quiet = rig.state.expression.surprise;
+  check('a mouth held wide open reads as surprise', loud > 0.6, `surprise ${loud.toFixed(2)}`);
+  check('and a shut mouth does not', quiet < 0.05, `surprise ${quiet.toFixed(2)}`);
+
+  // The camera drives it the same way where it can see a jaw open.
+  settings.reset();
+  settings.set('mouth.source', 'camera');
+  const seen = new Rig();
+  const open = run(seen, 120, frame({ shapes: { jawOpen: 1 } })).expression.surprise;
+  check('an open jaw the camera can see drives it too', open > 0.6, `surprise ${open.toFixed(2)}`);
+
+  // Nothing to do with the brows: raising them alone must not fire it.
+  settings.reset();
+  const brows = new Rig();
+  const raised = run(brows, 120, frame({ shapes: { browInnerUp: 1, browOuterUpLeft: 1, browOuterUpRight: 1 } }));
+  check('raised eyebrows alone are not surprise', raised.expression.surprise < 0.05,
+    `surprise ${raised.expression.surprise.toFixed(2)}`);
+
+  settings.reset();
+  settings.set('face.surpriseGain', 0);
+  const off = new Rig();
+  off.setMicLevel(0.2);
+  settings.set('mouth.source', 'mic');
+  check('and the gain at zero turns it off',
+    run(off, 120, frame()).expression.surprise === 0);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);
