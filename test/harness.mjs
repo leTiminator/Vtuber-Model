@@ -17,6 +17,7 @@ export const NOISE = /favicon|404|^INFO:|XNNPACK delegate|GL Driver Message|Open
 export const FROZEN = {
   'warp.wind': 0, 'warp.clothWeight': 0, 'warp.tuftWeight': 0, 'warp.overshoot': 0,
   'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0,
+  'arms.float': 0,
   'stage.zoom': 0.9, 'stage.offsetX': 0, 'stage.offsetY': 0,
 };
 

@@ -217,6 +217,17 @@ export class Rig {
    * Fold in upper-body landmarks. Kept separate from the face update because
    * pose runs on a stride and can be switched off entirely.
    */
+  /* Where an untracked arm drifts to: slow, small and out of phase between
+   * the two, so arms nobody can see look afloat rather than pinned. */
+  armFloat(key) {
+    const amount = store.get('arms.float');
+    const off = key === 'left' ? 0 : 2.3;
+    return {
+      upper: Math.sin(this.clock * 0.53 + off) * 0.07 * amount,
+      raise: Math.sin(this.clock * 0.37 + off * 1.4) * 0.05 * amount,
+    };
+  }
+
   updatePose(frame, hasPose, dt) {
     const arms = this.state.arms;
     if (!hasPose || !frame) {
@@ -227,11 +238,12 @@ export class Rig {
       t.rise = damp(t.rise, 0, 3, dt);
       for (const side of ['left', 'right']) {
         const a = arms[side];
+        const drift = this.armFloat(side);
         a.seen = damp(a.seen, 0, 4, dt);
         a.wrist = damp(a.wrist, 0, 4, dt);
-        a.upper = damp(a.upper, 0, 3, dt);
+        a.upper = damp(a.upper, drift.upper, 3, dt);
         a.fore = damp(a.fore, 0, 3, dt);
-        a.raise = damp(a.raise, 0, 3, dt);
+        a.raise = damp(a.raise, drift.raise, 3, dt);
       }
       return;
     }
@@ -322,14 +334,19 @@ export class Rig {
     const solve = (shoulder, elbow, wrist, key) => {
       const a = arms[key];
       if (!shoulder || !elbow) {
-        // Held where it was, not zeroed: a joint at the edge of the frame
-        // comes and goes several times a second, and an arm that answered
-        // each loss by dropping would shake.
+        // Eased toward the float, not dropped: a joint at the edge of the
+        // frame comes and goes several times a second, and an arm that
+        // answered each loss by falling would shake.
+        const drift = this.armFloat(key);
         a.seen = damp(a.seen, 0, 4, dt);
         a.wrist = damp(a.wrist, 0, 4, dt);
+        a.upper = damp(a.upper, drift.upper, 3, dt);
+        a.raise = damp(a.raise, drift.raise, 3, dt);
         return;
       }
-      a.seen = damp(a.seen, 1, 8, dt);
+      // Slow to trust: an elbow that flickers into frame for a frame or two
+      // used to move the arm the whole way on that one look.
+      a.seen = damp(a.seen, 1, 2.5, dt);
       a.wrist = damp(a.wrist, wrist ? 1 : 0, 6, dt);
 
       let ux = elbow.x - shoulder.x;
@@ -365,7 +382,10 @@ export class Rig {
         if (rest.fore == null && fore != null) rest.fore = fore;
         if (rest.raise == null && raise != null) rest.raise = raise;
       }
-      a.upper = (upper - (rest?.upper ?? 0)) * gain;
+      /* Weighted by how sure we are the arm is really there. */
+      const conf = clamp(a.seen, 0, 1);
+      const drift = this.armFloat(key);
+      a.upper = lerp(drift.upper, (upper - (rest?.upper ?? 0)) * gain, conf);
       if (fore != null) a.fore = (fore - (rest?.fore ?? fore)) * gain;
       /* Raise from the wrist while there is one, from the elbow's height when
        * there is not. The two agree at rest by construction and roughly
@@ -375,7 +395,7 @@ export class Rig {
        */
       const fromWrist = raise != null && rest?.raise != null ? (raise - rest.raise) * gain : null;
       const fromElbow = (lift - (rest?.lift ?? lift)) * gain * ELBOW_RAISE;
-      a.raise = damp(a.raise, fromWrist ?? fromElbow, 14, dt);
+      a.raise = damp(a.raise, lerp(drift.raise, fromWrist ?? fromElbow, conf), 14, dt);
     };
 
     solve(shoulderL, elbowL, wristL, 'left');

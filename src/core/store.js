@@ -69,7 +69,9 @@ export const DEFAULTS = {
   'mouth.micGate': 0.012, // RMS below this counts as silence
 
   // --- arms -------------------------------------------------------------
-  'arms.track': true, // a second model; costs roughly a third of a frame
+  /* A second model sharing the GPU with the face; off unless asked for. */
+  'arms.track': false,
+  'arms.float': 1.0, // how much an arm nobody can see drifts on its own
   'arms.gain': 1.0,
   'arms.smooth': 1.0,
 
@@ -120,7 +122,7 @@ export const DEFAULTS = {
   'parts.motionBlur': 0.6, // how far a moving head smears, 0 turns it off
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
-  'warp.overshoot': 1.0, // head settles rather than stopping dead
+  'warp.overshoot': 0.3, // how much of the head's move is follow-through rather than direct
 
   /* How far off the chain cloth still swings with it, in chain links. */
   'parts.clothReach': 2.0,

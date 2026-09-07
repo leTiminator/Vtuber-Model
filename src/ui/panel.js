@@ -124,9 +124,14 @@ export function buildPanel(root, ctx) {
     {
       title: 'Arms',
       controls: [
-        { type: 'note', text: 'Uses a second tracking model, so it only loads while the camera is on. Turn it off if the frame rate suffers.' },
+        { type: 'note', text: 'Off by default: it loads a second tracking model that shares the '
+          + 'graphics card with the face, so the face is tracked less often while it runs, and it '
+          + 'can only say anything while your elbows are inside the frame. Left off, the arms drift '
+          + 'gently on their own.' },
         { type: 'toggle', key: 'arms.track', label: 'Track my arms',
-          hint: 'Picks up raising your hands off the keyboard.' },
+          hint: 'Picks up raising your hands off the keyboard. Costs face-tracking frames.' },
+        { type: 'slider', key: 'arms.float', label: 'Arm drift', min: 0, max: 2, step: 0.05, format: x,
+          hint: 'How much an arm nobody can see moves on its own. 0 holds them still.' },
         { type: 'armStatus' },
         { type: 'slider', key: 'arms.gain', label: 'Arm travel', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'arms.smooth', label: 'Arm steadiness', min: 0.2, max: 4, step: 0.05, format: x,
@@ -185,7 +190,10 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'parts.headOnReturn', label: '— comes back after', min: 0.1, max: 1.5, step: 0.05, format: (v) => `${v.toFixed(2)}s`,
           hint: 'How long you must sit square before the face comes back. Turning away is '
             + 'immediate; coming back waits, so a head hovering near the threshold does not flicker.' },
-        { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'How much of the head\'s move is follow-through rather than going straight there. '
+            + 'All of it is lag: measured, 1.00 takes 100ms to cover most of a step and the default '
+            + '0.30 takes about 45ms, against one frame at 0.' },
         { type: 'slider', key: 'parts.motionBlur', label: 'Motion blur', min: 0, max: 1.5, step: 0.05, format: x,
           hint: 'Smears the head along the way it is moving, and only while it moves. '
             + 'It also covers the moment the face changes over on a turn. 0 turns it off.' },

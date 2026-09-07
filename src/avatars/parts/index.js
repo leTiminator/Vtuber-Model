@@ -63,6 +63,10 @@ const SURPRISE_LIFT = 0.026;
  * nothing in the shader opens the drawn shard — so the eyes are grown by
  * scaling their own parts about themselves. */
 const SURPRISE_EYE = 0.42;
+/* The head's follow-through. Stiff and close to critically damped: the old
+ * pair took 133 ms to cover most of a step, which is more lag than the tracker
+ * and the filter put together. */
+const HEAD_SPRING = [620, 36];
 /* The shutter the smear is drawn with. Longer than a frame on purpose: a
  * physically honest 1/60 s smears a couple of pixels and cel art reads nothing
  * from it. Fixed, so the smear looks the same at any frame rate. */
@@ -372,9 +376,9 @@ export class Parts2D {
     const overshoot = store.get('warp.overshoot');
     const yawTarget = rig.head.yaw * store.get('warp.turn');
     const pitchTarget = rig.head.pitch * store.get('warp.nod');
-    spring(this.springs.yaw, yawTarget, 240, 17, dt);
-    spring(this.springs.pitch, pitchTarget, 240, 17, dt);
-    spring(this.springs.roll, rig.head.roll, 210, 16, dt);
+    spring(this.springs.yaw, yawTarget, HEAD_SPRING[0], HEAD_SPRING[1], dt);
+    spring(this.springs.pitch, pitchTarget, HEAD_SPRING[0], HEAD_SPRING[1], dt);
+    spring(this.springs.roll, rig.head.roll, HEAD_SPRING[0] * 0.88, HEAD_SPRING[1] * 0.94, dt);
     const yaw = lerp(yawTarget, this.springs.yaw.value, overshoot);
     const pitch = lerp(pitchTarget, this.springs.pitch.value, overshoot);
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
