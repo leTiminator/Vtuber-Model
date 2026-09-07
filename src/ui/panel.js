@@ -38,10 +38,14 @@ export function buildPanel(root, ctx) {
           + 'Sitting back from the camera, this is the single biggest thing '
           + 'you can do for tracking quality.' },
         { type: 'toggle', key: 'stage.showPreview', label: 'Show camera preview' },
-        { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 4, step: 0.05, format: hz,
-          hint: 'Lower is calmer when you hold still, but adds lag and shrinks quick turns.' },
-        { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3),
-          hint: 'Higher keeps fast movement lag-free.' },
+        { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 6, step: 0.05, format: hz,
+          hint: 'Lower is calmer when you hold still, but adds lag. Measured against a '
+            + 'recording: the default 3.5 covers a turn in 100ms and leaves a tenth of a '
+            + 'degree of tremor; 2.5 takes 133ms; above 5 the head gets no faster and only '
+            + 'shakes more.' },
+        { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.5, step: 0.005, format: (v) => v.toFixed(3),
+          hint: 'How much the steadiness above is relaxed while you are actually moving. '
+            + 'Higher keeps a fast turn lag-free without shaking a still head.' },
         { type: 'slider', key: 'smooth.expression', label: 'Face response', min: 0.5, max: 6, step: 0.1, format: hz },
         { type: 'guide' },
         { type: 'record' },

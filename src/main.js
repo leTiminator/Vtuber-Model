@@ -93,16 +93,29 @@ let stateSeq = 0;
 store.subscribe(() => { settingsDirty = true; });
 
 let lastFrameTime = performance.now();
+let lastSolveTime = performance.now();
+/* What the three stages are actually managing, for the readout: the camera's
+ * own rate is on the tracker, and these two are the halves of this file. */
+export const rate = { solve: 0, draw: 0 };
+const ema = (was, gap) => (gap > 0 ? (was ? was * 0.9 + (1000 / gap) * 0.1 : 1000 / gap) : was);
 function frame(now) {
   step(now);
   requestAnimationFrame(frame);
 }
-// One step of the pipeline: track, solve, draw, send. Driven by the animation
-// frame while the window is visible and by a Worker timer while it is hidden,
-// when animation frames and video frame callbacks slow to about one a second.
-function step(now) {
-  const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
-  lastFrameTime = now;
+
+/**
+ * Solve the pose the camera just delivered. Driven by the tracker's own frame
+ * callback, so a detection becomes movement where it lands rather than waiting
+ * for the next animation frame, and the filters see the interval the camera
+ * actually delivered. Feeding them the animation frame's interval instead
+ * hands a 30 Hz camera on a 60 Hz screen the same sample twice, and the second
+ * one has no movement in it, which drops the one-euro filter back to its floor
+ * and smooths hardest exactly where a turn is fastest.
+ */
+function solve(now) {
+  const dt = Math.min((now - lastSolveTime) / 1000, 0.1);
+  rate.solve = ema(rate.solve, now - lastSolveTime);
+  lastSolveTime = now;
 
   if (mic.active) rig.setMicLevel(mic.sample());
   rig.update(tracker.frame, tracker.hasFace, dt);
@@ -110,15 +123,28 @@ function step(now) {
   if (pose.enabled && tracker.running) pose.detect(tracker.video, now);
   rig.updatePose(pose.frame, pose.enabled && pose.hasPose, dt);
   recorder.capture(tracker.frame, tracker.hasFace, pose.frame, pose.enabled && pose.hasPose);
-  avatar.render(rig.state, dt);
 
   // Only when somebody is drawing it. A kilobyte a frame is nothing over
   // loopback, but sending it to no one is still sending it.
+  if (link.wanted) link.send({ t: 'state', seq: ++stateSeq, at: now, state: rig.state });
+}
+tracker.onFrame = (_frame, _hasFace, now) => solve(now);
+
+// Draw the state we have, at the screen's rate. With no camera running there
+// is nothing to drive a solve, so the animation frame does that too: the model
+// still breathes, blinks and settles.
+function step(now) {
+  if (!tracker.running) solve(now);
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+  rate.draw = ema(rate.draw, now - lastFrameTime);
+  lastFrameTime = now;
+
+  avatar.render(rig.state, dt);
+
   if (link.wanted && settingsDirty) {
     settingsDirty = false;
     link.send({ t: 'settings', values: store.snapshot() });
   }
-  if (link.wanted) link.send({ t: 'state', seq: ++stateSeq, at: now, state: rig.state });
 
   /* The readout stays up while the camera runs, which is the whole point. */
   if (!selfcheckDue) selfcheckDue = now + 1000;
@@ -383,7 +409,7 @@ let selfcheckDue = 0;
 let selfcheckOff = false;
 function runSelfCheck() {
   if (!selfcheckEl || selfcheckOff) return;
-  const r = readoutText({ avatar, rig, tracker, pose });
+  const r = readoutText({ avatar, rig, tracker, pose, rate });
   if (!r) { selfcheckEl.hidden = true; selfcheckDue = performance.now() + 700; return; }
   selfcheckEl.classList.toggle('selfcheck--torn', r.torn);
   selfcheckEl.textContent = r.text;

@@ -747,5 +747,48 @@ const runPose = (rig, n, f, has = true) => {
     Math.abs(turning.state.torso.turn) > 0.15, `turn ${turning.state.torso.turn.toFixed(3)}`);
 }
 
+/* --- how long the rig takes to get there ---------------------------------
+ * A step, driven at the rate a real camera delivers, measured in milliseconds
+ * rather than described. The bars are loose on purpose: this is here to catch
+ * a change that doubles the lag, not to pin today's number.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  const hz = 30;
+  const dt = 1 / hz;
+  const still = frame();
+  for (let i = 0; i < 90; i++) rig.update(still, true, dt);
+  const target = 30 * Math.PI / 180;
+  const moved = frame({ head: { yaw: target } });
+  const trace = [];
+  for (let i = 0; i < 90; i++) trace.push(rig.update(moved, true, dt).head.yaw);
+  const settled = trace[trace.length - 1];
+  const reach = (f) => {
+    for (let i = 0; i < trace.length; i++) if (Math.abs(trace[i]) >= Math.abs(settled) * f) return (i + 1) * dt * 1000;
+    return Infinity;
+  };
+  const t63 = reach(0.63);
+  const t90 = reach(0.9);
+  check('the head covers most of a step inside a seventh of a second', t63 <= 140,
+    `63% after ${t63.toFixed(0)}ms, 90% after ${t90.toFixed(0)}ms, at ${hz}Hz`);
+  check('and nearly all of it inside a third', t90 <= 320, `90% after ${t90.toFixed(0)}ms`);
+
+  /* The filter must not be slower when the samples arrive faster: that is the
+   * signature of a dt taken from something other than the camera. */
+  const fast = new Rig();
+  const fdt = 1 / 60;
+  for (let i = 0; i < 180; i++) fast.update(still, true, fdt);
+  const ftrace = [];
+  for (let i = 0; i < 180; i++) ftrace.push(fast.update(moved, true, fdt).head.yaw);
+  const fsettled = ftrace[ftrace.length - 1];
+  let f63 = Infinity;
+  for (let i = 0; i < ftrace.length; i++) {
+    if (Math.abs(ftrace[i]) >= Math.abs(fsettled) * 0.63) { f63 = (i + 1) * fdt * 1000; break; }
+  }
+  check('a faster camera is not a slower head', f63 <= t63 + 10,
+    `${f63.toFixed(0)}ms at 60Hz against ${t63.toFixed(0)}ms at 30Hz`);
+}
+
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);
 process.exit(failures ? 1 : 0);

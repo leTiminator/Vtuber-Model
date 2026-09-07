@@ -487,8 +487,11 @@ export class Parts2D {
 
     /* Which face: it leaves quickly on a real turn and comes back once the
      * head has sat square (latch.js). A ramp of a fixed length, eased at both
-     * ends, then carries the change — not a decay. */
-    const squareOn = this.latch.update(yaw, dt,
+     * ends, then carries the change — not a decay.
+     *
+     * On the angle the rig asked for, not the one the spring has reached, so
+     * the swap does not wait out the follow-through on top of its own timing. */
+    const squareOn = this.latch.update(yawTarget, dt,
       store.get('parts.headOnHold'), store.get('parts.headOnReturn'));
     /* The turned face has two sides: the drawing looks to the right, and a
      * turn to the left shows its mirror image. The side follows the head
@@ -496,7 +499,7 @@ export class Parts2D {
      * side the head is on. A sweep across centre is quicker than the ramp, so
      * the head-on face arrives finished rather than starting to arrive. */
     if (this.latch.crossed) this.headOnPhase = 1;
-    if (squareOn) this.turnedSide = yaw < 0 ? -1 : 1;
+    if (squareOn) this.turnedSide = yawTarget < 0 ? -1 : 1;
     const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
     this.headOnPhase = clamp(this.headOnPhase + (squareOn ? step : -step), 0, 1);
     // A saved value from when this was a slider reads as on above a half.
@@ -621,8 +624,9 @@ export class Parts2D {
       const span = Math.max(this.spineSpan || 0, 1e-4);
       // How far past the ends of the chain cloth still follows it, in links.
       const far = Math.max(clamp(store.get('parts.clothReach'), 0.6, 60), 0.6);
+      const nodes = this.boneNodes();
       for (let v = 0, b = 0; v < live.length; v += 2, b += 3) {
-        const f = spineFrame(this.boneNodes(), binds[b], skew);
+        const f = spineFrame(nodes, binds[b], skew);
         const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
         const oy = f.ny * binds[b + 1] + f.ty * binds[b + 2];
         /* Only cloth the chain runs through is carried by it. */
@@ -904,23 +908,33 @@ function linkProgram(gl, vertexSource, fragmentSource) {
  * The frame of the centreline at a given distance along it: a point, and the
  * tangent and normal there.
  */
+/* Written into and handed back rather than built fresh: this runs once per
+ * cloth vertex per frame, and both callers are done with it before the next. */
+const FRAME = { hx: 0, hy: 0, tx: 0, ty: 0, nx: 0, ny: 0 };
+
 function spineFrame(nodes, s, aspect) {
   const skew = aspect || 1;
-  const f = clamp(s, 0, 1) * (nodes.length - 1);
-  const i = Math.min(Math.floor(f), nodes.length - 1);
-  const j = Math.min(i + 1, nodes.length - 1);
+  const last = nodes.length - 1;
+  const f = clamp(s, 0, 1) * last;
+  const i = Math.min(Math.floor(f), last);
+  const j = Math.min(i + 1, last);
   const t = f - i;
 
-  const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-  const here = lerp2(nodes[i], nodes[j], t);
-  const prev = lerp2(nodes[Math.max(i - 1, 0)], nodes[i], t);
-  const next = lerp2(nodes[j], nodes[Math.min(j + 1, nodes.length - 1)], t);
+  const a = nodes[i], b = nodes[j];
+  const p = nodes[Math.max(i - 1, 0)], q = nodes[Math.min(j + 1, last)];
+  const prevX = p[0] + (a[0] - p[0]) * t;
+  const prevY = p[1] + (a[1] - p[1]) * t;
+  const nextX = b[0] + (q[0] - b[0]) * t;
+  const nextY = b[1] + (q[1] - b[1]) * t;
 
-  let tx = (next[0] - prev[0]) * skew + 1e-6;
-  let ty = next[1] - prev[1];
+  let tx = (nextX - prevX) * skew + 1e-6;
+  let ty = nextY - prevY;
   const len = Math.hypot(tx, ty) || 1e-9;
   tx /= len; ty /= len;
-  return { hx: here[0], hy: here[1], tx, ty, nx: -ty, ny: tx };
+  FRAME.hx = a[0] + (b[0] - a[0]) * t;
+  FRAME.hy = a[1] + (b[1] - a[1]) * t;
+  FRAME.tx = tx; FRAME.ty = ty; FRAME.nx = -ty; FRAME.ny = tx;
+  return FRAME;
 }
 
 /**

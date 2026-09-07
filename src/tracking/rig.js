@@ -464,7 +464,7 @@ export class Rig {
     }
 
     this.applyMouthSource(dt);
-    this.applyExpression(dt);
+    this.applyExpression();
     this.applyAutoBlink(dt, tracked);
     this.applyBody(dt);
     return s;
@@ -645,13 +645,14 @@ export class Rig {
    * so it follows whichever source drives the mouth — a camera that can see a
    * jaw, or the microphone where a beard hides one.
    */
-  applyExpression(dt) {
+  applyExpression() {
     const open = clamp(this.state.mouth.open, 0, 1);
     const at = store.get('face.surpriseAt');
     const full = Math.max(store.get('face.surpriseFull'), at + 0.05);
     const startled = remap(open, at, full, 0, 1);
-    this.state.expression.surprise = this.face.filter('surprise',
-      clamp(startled * store.get('face.surpriseGain'), 0, 1), dt);
+    // Not filtered again: the mouth it reads was already smoothed, and a
+    // second pass over a smooth signal buys nothing but another 65ms of it.
+    this.state.expression.surprise = clamp(startled * store.get('face.surpriseGain'), 0, 1);
   }
 
   applyMouthSource(dt) {

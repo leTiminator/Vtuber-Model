@@ -190,12 +190,17 @@ try {
   await page.reload({ waitUntil: 'load' });
   const migrated = await page.evaluate(() => {
     const s = window.__vtuber.store;
+    // Against the defaults this build actually ships, not numbers typed in
+    // here: what is being checked is that a retuned key comes back at the
+    // current default, whatever that is.
     return { cutoff: s.get('smooth.minCutoff'), beta: s.get('smooth.beta'),
+      wantCutoff: s.DEFAULTS['smooth.minCutoff'], wantBeta: s.DEFAULTS['smooth.beta'],
       neutral: s.get('camera.neutral'), zoom: s.get('stage.zoom'), mouth: s.get('mouth.source') };
   });
   check('an older profile takes the new tuning and keeps what is personal',
-    migrated.cutoff === 2.5 && migrated.beta === 0.2 && migrated.neutral === ''
-      && migrated.zoom === 1.35 && migrated.mouth === 'mic',
+    migrated.cutoff === migrated.wantCutoff && migrated.cutoff !== 1.2
+      && migrated.beta === migrated.wantBeta && migrated.beta !== 0.06
+      && migrated.neutral === '' && migrated.zoom === 1.35 && migrated.mouth === 'mic',
     JSON.stringify(migrated));
 
   // The hidden-window ticker: a Worker timer that keeps firing without animation

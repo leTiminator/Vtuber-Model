@@ -74,7 +74,7 @@ export function neutralLine(rig) {
 }
 
 /** Raw angles beside driven ones, the face zoom, and what the pose model sees. */
-export function liveLines({ tracker, pose, rig, avatar }) {
+export function liveLines({ tracker, pose, rig, avatar, rate }) {
   if (!tracker.running) return [];
   const out = [];
   const head = tracker.frame?.head;
@@ -89,6 +89,13 @@ export function liveLines({ tracker, pose, rig, avatar }) {
       + `  ·  surprise ${(rig.state.expression.surprise * 100).toFixed(0)}%`);
   } else {
     out.push('no face in frame');
+  }
+  /* Where the frames are going. The camera's rate, the rig's, and the
+   * screen's: whichever is lowest is the one worth arguing with. */
+  if (rate && tracker.running) {
+    out.push(`pipeline: camera ${tracker.fps.toFixed(0)}/s`
+      + ` · solving ${rate.solve.toFixed(0)}/s`
+      + ` · drawing ${rate.draw.toFixed(0)}/s`);
   }
   const a = rig.state.arms;
   const z = tracker.crop;
@@ -129,7 +136,7 @@ export function liveLines({ tracker, pose, rig, avatar }) {
  * The whole readout, or null when the renderer has nothing to report yet.
  * @returns {{text: string, torn: boolean} | null}
  */
-export function readoutText({ avatar, rig, tracker, pose }) {
+export function readoutText({ avatar, rig, tracker, pose, rate }) {
   const r = avatar.selfCheck();
   if (!r) return null;
   const torn = r.pieces !== 1;
@@ -139,7 +146,7 @@ export function readoutText({ avatar, rig, tracker, pose }) {
     neutralLine(rig) + (rig.neutralWarning ? `\n  ⚠ ${rig.neutralWarning}` : ''),
     r.drawn,
     r.headOn ? `head-on: ${r.headOn}` : null,
-    ...liveLines({ tracker, pose, rig, avatar }),
+    ...liveLines({ tracker, pose, rig, avatar, rate }),
     changedSettings({ shortKeys: true }),
   ].filter(Boolean).join('\n');
   return { text, torn };
