@@ -299,7 +299,20 @@ try {
       a.render(at(f < 3 ? 20 : 0), 1 / 60);
       if (a.faceOn !== last) { flick++; last = a.faceOn; }
     }
-    return { chat, turn, shake: seen, step: { left, back, flick } };
+
+    /* Turn one way, settle the other: the moment the side changes is the
+     * moment the head, the hair and both eyes mirror, so it has to happen
+     * behind the head-on face. */
+    t.resetStore(frozen);
+    a.reset();
+    let bare = 0;
+    let side = a.turnedSide;
+    for (let f = 0; f < 60; f++) a.render(at(30), 1 / 60);
+    for (let f = 0; f < 150; f++) {
+      a.render(at(-3), 1 / 60);
+      if (a.turnedSide !== side) { if (!a.faceOn) bare++; side = a.turnedSide; }
+    }
+    return { chat, turn, shake: seen, step: { left, back, flick }, bare };
   }, FROZEN);
   check('ordinary talking never changes the face', latch.chat.changes === 0 && latch.chat.faceOn,
     `${latch.chat.changes} changes`);
@@ -315,6 +328,8 @@ try {
     `head-on ${latch.shake.headOn}, left ${latch.shake.left}, right ${latch.shake.right} frames of 150`);
   check('and the turned face never looks the way the head is not', latch.shake.wrongWay === 0,
     `${latch.shake.wrongWay} frames facing the wrong way`);
+  check('the face never changes sides in plain view', latch.bare === 0,
+    `${latch.bare} side changes with the turned face on screen`);
 
   /* --- the turned face has two sides ------------------------------------- */
   const sides = await page.evaluate((frozen) => {
