@@ -30,7 +30,7 @@ os.makedirs(OUT, exist_ok=True)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-STEP = 4          # pixels per grid quad: 1373x1145 -> about 343x286
+STEP = 2          # pixels per grid quad: fine enough to keep hair spikes and scarf tips
 HEIGHT = 5.0      # world height of the figure
 DEPTH = 0.62      # world depth at the thickest point of the body
 BACK = 0.55       # the back is shallower than the front
@@ -123,8 +123,10 @@ bm.to_mesh(me)
 bm.free()
 for p in me.polygons:
     p.use_smooth = True
-sub = ob.modifiers.new('sub', 'SUBSURF')
-sub.levels = sub.render_levels = 1
+# No subdivision. It rounds the silhouette off, and a silhouette traced from the
+# drawing is the entire point: it ate the hair spikes and the scarf's tapering
+# tips, which reads as the figure being swollen even though the proportions
+# measure correct.
 
 # The drawing is the surface. Emission, so the artist's own shading is what
 # shows rather than being lit a second time.
@@ -134,7 +136,7 @@ nt = mat.node_tree
 nt.nodes.clear()
 tex = nt.nodes.new('ShaderNodeTexImage')
 tex.image = img
-tex.interpolation = 'Closest' if STEP <= 2 else 'Linear'
+tex.interpolation = 'Linear'
 emit = nt.nodes.new('ShaderNodeEmission')
 out = nt.nodes.new('ShaderNodeOutputMaterial')
 trans = nt.nodes.new('ShaderNodeBsdfTransparent')
@@ -155,18 +157,25 @@ world.node_tree.nodes['Background'].inputs['Color'].default_value = (0.10, 0.105
 scene.render.engine = 'CYCLES'
 scene.cycles.samples = 8
 scene.cycles.use_denoising = False
-scene.render.resolution_x, scene.render.resolution_y = 700, 780
+# Match the drawing's own aspect, or the scarf tails run off the sides and the
+# silhouette being compared is a cropped one.
+scene.render.resolution_x, scene.render.resolution_y = W // 2, H // 2
 scene.view_settings.view_transform = 'Standard'
 
 import math
 for name, deg in (('a00', 0), ('a20', 20), ('a40', 40), ('a90', 90)):
     cd = bpy.data.cameras.new(name)
-    cd.lens = 75
+    # Orthographic on purpose. A relief seen through a lens magnifies whatever
+    # bulges toward it, so the head and torso — the thickest, most inflated
+    # parts — grow against the flat scarf tails, and the traced silhouette stops
+    # matching the drawing it was traced from.
+    cd.type = 'ORTHO'
+    cd.ortho_scale = HEIGHT * (W / H) * 1.04
     cam = bpy.data.objects.new(name, cd)
     scene.collection.objects.link(cam)
     t = math.radians(deg)
     d = 13.0
-    cam.location = (math.sin(t) * d, -math.cos(t) * d, 0.2)
+    cam.location = (math.sin(t) * d, -math.cos(t) * d, 0.0)
     cam.rotation_euler = (Vector((0, 0, 0.0)) - Vector(cam.location)).to_track_quat('-Z', 'Y').to_euler()
     scene.camera = cam
     scene.render.filepath = os.path.join(OUT, f'{name}.png')
