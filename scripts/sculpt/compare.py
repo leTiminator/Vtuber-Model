@@ -3,87 +3,49 @@ Compares a rendered turnaround against the drawing it was sculpted from.
 
     python3 scripts/sculpt/compare.py <render-dir> [overlay.png]
 
-Two numbers, because the model has two ways to be wrong.
+Three measurements, because a model can be wrong in three ways and the first of
+them was the only one being watched.
 
 Silhouette agreement is whether the front view still is the drawing: the
 rendered outline against the artwork's alpha, as intersection over union, each
 normalised by its own bounding box so framing cannot flatter it.
 
-Face drift is whether it survives being turned. The visor's centre is measured
-against the hood's, as a percentage of figure height, at every angle. A real
-head carries its face around with it and the number stays put; a picture
-painted on a bulge lets the face slide across the skull, which is what the
-distance-transform relief did.
+Interior agreement is whether it is the drawing *inside* the outline. A part
+carved far too deep leaves the outline untouched and moves everything within it,
+so a check that sees only the edge reports green on exactly the fault being
+reported. Each part is found by colour in the render and in the drawing, and
+compared on its own.
+
+Slide is how far each part's paint travels across the figure when the model
+turns, which is the fault being reported: a face on a bulge swims across the
+skull instead of turning with it. The cameras are orthographic and orbit the
+origin, so paint at horizontal offset x and depth y lands at x*cos(t) +
+y*sin(t); comparing two views gives both the slide and the depth implied by it.
+
+That implied depth is smaller than the height field's, and legitimately so. The
+solid is symmetric about its mid-plane and both faces carry the same texture, so
+near the outline a turn brings the far side's copy of a part into view moving the
+other way. What this measures is the motion of the paint actually on screen,
+which is what the eye is judging.
 """
 import os
 import sys
-import struct
-import zlib
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from png import read_png, write_png                         # noqa: E402
+from segment import NAMES, classify, rules                  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ART = os.path.join(ROOT, 'public', 'art', 'views', 'pose-front-arms-out-full.png')
+DATA = os.path.join(ROOT, 'scripts', 'sculpt', 'out')
 RENDERS = sys.argv[1]
 OVERLAY = sys.argv[2] if len(sys.argv) > 2 else None
 
-
-def read_png(path):
-    data = open(path, 'rb').read()
-    pos, idat, w, h, ctype = 8, b'', 0, 0, 6
-    while pos < len(data):
-        ln = struct.unpack('>I', data[pos:pos + 4])[0]
-        typ = data[pos + 4:pos + 8]
-        body = data[pos + 8:pos + 8 + ln]
-        if typ == b'IHDR':
-            w, h, _, ctype = struct.unpack('>IIBB', body[:10])
-        elif typ == b'IDAT':
-            idat += body
-        pos += 12 + ln
-    chan = {0: 1, 2: 3, 4: 2, 6: 4}[ctype]
-    raw = zlib.decompress(idat)
-    stride = w * chan
-    out = np.zeros((h, stride), dtype=np.uint8)
-    prev = np.zeros(stride, dtype=np.int32)
-    p = 0
-    for y in range(h):
-        ft = raw[p]; p += 1
-        line = np.frombuffer(raw[p:p + stride], dtype=np.uint8).astype(np.int32); p += stride
-        if ft == 1:
-            for i in range(chan, stride):
-                line[i] = (line[i] + line[i - chan]) & 255
-        elif ft == 2:
-            line = (line + prev) & 255
-        elif ft == 3:
-            for i in range(stride):
-                a = line[i - chan] if i >= chan else 0
-                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
-        elif ft == 4:
-            for i in range(stride):
-                a = line[i - chan] if i >= chan else 0
-                c = prev[i - chan] if i >= chan else 0
-                b = prev[i]
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (line[i] + pr) & 255
-        out[y] = line.astype(np.uint8)
-        prev = line
-    return out.reshape(h, w, chan)
-
-
-def write_png(path, rgb):
-    h, w, _ = rgb.shape
-    raw = b''.join(b'\x00' + rgb[y].tobytes() for y in range(h))
-    def chunk(t, d):
-        c = struct.pack('>I', len(d)) + t + d
-        return c + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-    hdr = struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)
-    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', hdr)
-                           + chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
-
-
 BG = np.array([89, 91, 97])
+# build.py frames the figure with a 4% margin at half the drawing's resolution.
+DRAWING_PX = 2.08
 
 
 def silhouette(img, is_render):
@@ -97,37 +59,28 @@ def bbox(m):
     return xs.min(), ys.min(), xs.max(), ys.max()
 
 
-def normalise(m, n=520):
-    x0, y0, x1, y1 = bbox(m)
+def normalise(a, box, n=520):
+    """Resample onto a common grid so two images of different size compare."""
+    x0, y0, x1, y1 = box
     gy = (y0 + np.round(np.linspace(0, 1, n) * (y1 - y0))).astype(int)
     gx = (x0 + np.round(np.linspace(0, 1, n) * (x1 - x0))).astype(int)
-    return m[np.ix_(gy, gx)]
+    return a[np.ix_(gy, gx)]
 
 
-def landmarks(img, sil):
-    """Hood and visor centroids, and the figure height, in pixels."""
-    r, g, b = (img[:, :, i].astype(np.int32) for i in range(3))
-    mx, mn = np.maximum(np.maximum(r, g), b), np.minimum(np.minimum(r, g), b)
-    visor = sil & (b > r + 16) & (b > 95) & (b < 205)
-    hood = sil & ((mx - mn) < 24) & (mx > 60) & (mx < 130)
-    x0, y0, x1, y1 = bbox(sil)
-    out = {'H': y1 - y0 + 1}
-    for name, m in (('visor', visor), ('hood', hood)):
-        ys, xs = np.nonzero(m)
-        out[name] = (xs.mean(), ys.mean()) if len(xs) else None
-    return out
+def centroid(m):
+    ys, xs = np.nonzero(m)
+    return (xs.mean(), ys.mean()) if len(xs) else None
 
 
 art = read_png(ART)
 art_sil = silhouette(art, False)
 
 print('silhouette against the drawing')
-front = os.path.join(RENDERS, 'a00.png')
-rimg = read_png(front)
+rimg = read_png(os.path.join(RENDERS, 'a00.png'))
 rsil = silhouette(rimg, True)
-a, b = normalise(rsil), normalise(art_sil)
-iou = (a & b).sum() / (a | b).sum()
-print(f'  {100 * iou:.2f}% IoU   (missing {int((b & ~a).sum())} px, extra {int((a & ~b).sum())} px of {a.size})')
+a, b = normalise(rsil, bbox(rsil)), normalise(art_sil, bbox(art_sil))
+print(f'  {100 * (a & b).sum() / (a | b).sum():.2f}% IoU   '
+      f'(missing {int((b & ~a).sum())} px, extra {int((a & ~b).sum())} px of {a.size})')
 
 if OVERLAY:
     ov = np.full(a.shape + (3,), 20, dtype=np.uint8)
@@ -137,19 +90,60 @@ if OVERLAY:
     write_png(OVERLAY, ov)
     print(f'  overlay written to {OVERLAY} (grey agree, green drawing only, pink model only)')
 
-print('face drift as the model turns — visor centre against hood centre, % of figure height')
-base = None
-for name in sorted(os.listdir(RENDERS)):
-    if not name.startswith('a') or not name.endswith('.png'):
+print('interior against the drawing, part by part')
+art_lbl, _ = classify(art)
+ren_lbl, _ = classify(rimg, sil=rsil)
+al = normalise(art_lbl, bbox(art_sil))
+rl = normalise(ren_lbl, bbox(rsil))
+for i, name in enumerate(NAMES, 1):
+    am, rm = al == i, rl == i
+    if am.sum() < 200:
         continue
-    img = read_png(os.path.join(RENDERS, name))
-    sil = silhouette(img, True)
-    lm = landmarks(img, sil)
-    if not lm['visor'] or not lm['hood']:
-        print(f'  {name}: no face visible')
+    iou = (am & rm).sum() / max((am | rm).sum(), 1)
+    ca, cr = centroid(am), centroid(rm)
+    off = np.hypot(cr[0] - ca[0], cr[1] - ca[1]) if ca and cr else float('nan')
+    print(f'  {name:6} {100 * iou:6.2f}% IoU   centre off by {off:5.1f} px of 520')
+
+print('how far each part slides when the model turns')
+
+
+def part_centres(name):
+    """Where each part's paint is, from the raw colour tests: the fill in classify()
+    follows the silhouette rather than the texture, and would hide the very motion
+    this measures."""
+    path = os.path.join(RENDERS, f'{name}.png')
+    if not os.path.exists(path):
+        return None
+    img = read_png(path)
+    raw, _, _ = rules(img, sil=silhouette(img, True))
+    return {i: centroid(raw[n]) for i, n in enumerate(NAMES, 1)}, img.shape[1]
+
+
+front = part_centres('a00')
+for turned, deg in (('a20', 20), ('a40', 40)):
+    got = part_centres(turned)
+    if front is None or got is None:
         continue
-    dx = (lm['visor'][0] - lm['hood'][0]) / lm['H'] * 100
-    dy = (lm['visor'][1] - lm['hood'][1]) / lm['H'] * 100
-    if base is None:
-        base = (dx, dy)
-    print(f'  {name}: across {dx:+.2f}%  down {dy:+.2f}%   drift from front {abs(dx - base[0]):.2f}%')
+    t = np.radians(deg)
+    print(f'  at {deg} degrees')
+    for i, name in enumerate(NAMES, 1):
+        c0, ct = front[0][i], got[0][i]
+        if c0 is None or ct is None:
+            continue
+        x = (c0[0] - front[1] / 2) * DRAWING_PX
+        sx = (ct[0] - got[1] / 2) * DRAWING_PX
+        y = (sx - x * np.cos(t)) / np.sin(t)
+        print(f'    {name:6} slides {abs(y) * np.sin(t):5.0f} px, as paint {abs(y):5.0f} px proud would')
+
+height_path = os.path.join(DATA, 'height.npy')
+label_path = os.path.join(DATA, 'labels.npy')
+if os.path.exists(height_path) and os.path.exists(label_path):
+    height, labels = np.load(height_path), np.load(label_path)
+    # Whatever depth.py wrote last, which is only these renders' own field when
+    # nothing has been re-carved since.
+    print(f'  for comparison, the height field now in {os.path.relpath(DATA, ROOT)}')
+    for i, name in enumerate(NAMES, 1):
+        m = labels == i
+        if m.sum() < 200:
+            continue
+        print(f'    {name:6} {height[m].mean():5.0f} px proud on average, {height[m].max():5.0f} px at the deepest')

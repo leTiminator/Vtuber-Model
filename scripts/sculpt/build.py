@@ -1,13 +1,14 @@
 """
-Builds the solid from the medial sphere packing and renders a turnaround.
+Extrudes the height field into a solid and renders a turnaround.
 
     python3 scripts/sculpt/build.py <out-dir> [z-scale]
 
-medial.py writes a half-thickness at every pixel — the union of the maximal
-spheres that tile the drawing. The surface is that height above the mid-plane
-and its mirror below, so the model is a closed solid whose orthographic front
-silhouette is the drawing, and whose round regions are genuinely round rather
-than an arbitrary bulge.
+depth.py writes a half-thickness at every pixel. The surface is that height
+above the mid-plane and its mirror below, so the model is a closed solid whose
+orthographic front silhouette is the drawing.
+
+STEP thins the grid (1 is a vertex per drawing pixel), DECIMATE sets the export
+ratio; the silhouette is measured on the renders, before the decimation runs.
 """
 import math
 import os
