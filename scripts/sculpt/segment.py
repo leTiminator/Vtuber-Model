@@ -82,3 +82,27 @@ def head_of(lbl):
     if not sizes:
         return np.zeros(lbl.shape, dtype=bool)
     return comp == max(sizes, key=sizes.get)
+
+
+def body_of(lbl, sil, head, open_radius=48):
+    """The torso: the chunky piece under the head, once thin cloth is opened away.
+
+    The chest in this drawing is the red tunic, which shares a colour class with
+    the ribbons streaming off it. Thickness tells them apart -- the tunic is a
+    wide mass under the chin, the ribbons are not.
+    """
+    hy, hx = np.nonzero(head)
+    chin, cx = hy.max(), (hx.min() + hx.max()) / 2
+    rr = np.arange(-open_radius, open_radius + 1)
+    disc = (rr[:, None] ** 2 + rr[None, :] ** 2) <= open_radius ** 2
+    core = ndimage.binary_opening(sil & ~head, structure=disc)
+    comp, n = ndimage.label(core, structure=np.ones((3, 3)))
+    below = np.zeros(lbl.shape, dtype=bool)
+    below[chin:, int(cx) - 40:int(cx) + 40] = True
+    ids = set(comp[core & below].ravel()) - {0}
+    if not ids:
+        return np.zeros(lbl.shape, dtype=bool)
+    keep = max(ids, key=lambda i: int(((comp == i) & below).sum()))
+    torso = (comp == keep).copy()
+    torso[:chin, :] = False
+    return torso

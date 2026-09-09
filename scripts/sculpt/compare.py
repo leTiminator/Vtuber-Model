@@ -29,6 +29,7 @@ other way. What this measures is the motion of the paint actually on screen,
 which is what the eye is judging.
 """
 import os
+import re
 import sys
 
 import numpy as np
@@ -44,6 +45,9 @@ RENDERS = sys.argv[1]
 OVERLAY = sys.argv[2] if len(sys.argv) > 2 else None
 
 BG = np.array([89, 91, 97])
+ANGLES = sorted(int(m.group(1)) for m in
+                (re.fullmatch(r'a(\d+)\.png', n) for n in os.listdir(RENDERS)) if m)
+FRONT = f'a{min(ANGLES):03d}.png' if ANGLES else 'a000.png'
 # build.py frames the figure with a 4% margin at half the drawing's resolution.
 DRAWING_PX = 2.08
 
@@ -76,7 +80,7 @@ art = read_png(ART)
 art_sil = silhouette(art, False)
 
 print('silhouette against the drawing')
-rimg = read_png(os.path.join(RENDERS, 'a00.png'))
+rimg = read_png(os.path.join(RENDERS, FRONT))
 rsil = silhouette(rimg, True)
 a, b = normalise(rsil, bbox(rsil)), normalise(art_sil, bbox(art_sil))
 print(f'  {100 * (a & b).sum() / (a | b).sum():.2f}% IoU   '
@@ -107,11 +111,11 @@ for i, name in enumerate(NAMES, 1):
 print('how far each part slides when the model turns')
 
 
-def part_centres(name):
+def part_centres(deg):
     """Where each part's paint is, from the raw colour tests: the fill in classify()
     follows the silhouette rather than the texture, and would hide the very motion
     this measures."""
-    path = os.path.join(RENDERS, f'{name}.png')
+    path = os.path.join(RENDERS, f'a{deg:03d}.png')
     if not os.path.exists(path):
         return None
     img = read_png(path)
@@ -119,9 +123,11 @@ def part_centres(name):
     return {i: centroid(raw[n]) for i, n in enumerate(NAMES, 1)}, img.shape[1]
 
 
-front = part_centres('a00')
-for turned, deg in (('a20', 20), ('a40', 40)):
-    got = part_centres(turned)
+# Only while the front of the figure is still facing the camera: past about 60
+# degrees the paint being tracked is leaving the screen, and past 90 it is gone.
+front = part_centres(min(ANGLES) if ANGLES else 0)
+for deg in [d for d in ANGLES if 0 < d < 75]:
+    got = part_centres(deg)
     if front is None or got is None:
         continue
     t = np.radians(deg)
