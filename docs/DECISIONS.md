@@ -467,9 +467,29 @@ threshold, where nothing is moving and the pulse is the only smear that can
 appear, blur on and blur off differ one frame after the change and are identical
 thirty frames after.
 
-Not done, and why: the four frontal pieces share one `place` fit (k 1.2533), and
-their centres move 49–79px at the changeover. Fitting each piece to its own box
-would close that, but it would also force the frontal drawing's hair into the
-turned drawing's box, and I cannot separate "the drawings genuinely differ" from
-"the registration is wrong" without the owner looking at it. Registration is
-where this project has burned rounds; it wants its own commit and a person's eye.
+## 2026-09-10 — The changeover jump is the drawings differing, not the registration
+
+The four frontal pieces share one `place` fit (k 1.2533) taken from the head, and
+their centres move 49–79px at the changeover. That looked like a registration
+error worth chasing. Measured against the head in each piece's *own* drawing —
+`place` is a uniform scale, so these ratios are scale-invariant and say nothing
+about the fit — it is not:
+
+| piece | size vs its own head | position vs its own head |
+| --- | --- | --- |
+| tufts | +19.9% wide, +22.5% tall | moves +0.335 of a head across |
+| eyeNear | −9.5% wide, +11.1% tall | moves −0.140 across |
+| eyeFar | **+21.0% wide**, +11.0% tall | moves −0.132 across |
+
+Every one of those is what the two views should differ by. The hair sits off to
+one side of a three-quarter head and centred on a frontal one, which is the
++0.335. Both eyes move the same way and by the same amount as the pair comes
+square. And `eyeFar` is 21% wider frontally because in the turned drawing it is
+the *far* eye and foreshortened — the drawings are simply correct.
+
+So fitting each piece to its own box would not close a gap; it would force the
+frontal hair into the turned hair's off-centre position and squashed
+proportions, and un-foreshorten nothing. The registration stays as it is. The
+instant of change is covered rather than removed — see the smear pulse above —
+and the only thing that would actually shrink the jump is a third head drawn at
+about 20°.

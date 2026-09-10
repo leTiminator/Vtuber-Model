@@ -45,7 +45,9 @@ Done and live (`main` deploys to `https://letiminator.github.io/Vtuber-Model/`):
   you face the camera, with its keyed-out eyes repaired on the way in. Eyes
   with lids, glow, gaze and blink; contact shadows; invented margins under
   every seam. Hair that lags. Breathing and idle sway. Speech lifts the visor
-  glow and bobs the head.
+  glow and bobs the head. Small movements get more than their share of the
+  head's travel, so a few degrees of shake reads without the extreme moving,
+  and the face changing hands blurs itself.
 - **The scarf** — a chain of rigid links rooted on the shoulder. It bends and
   it does not stretch: 5% at worst held, against 116%; one piece at every
   extreme. The lag down the ribbon is the chain-like movement that was asked
@@ -134,6 +136,16 @@ becomes a swap plus a half-state rather than an erase, and reads as a lid.
 A nod is a rigid turn of the cutout, which is a cheat that works up to about
 thirty degrees. A frontal head drawn looking up and one looking down would
 make it a swap between real views. Low priority until everything above holds.
+
+### 6. A head drawn at about twenty degrees
+
+The only thing that shrinks the jump when the face changes hands. Measured
+against the head in each drawing, the two heads differ by what two real views
+of a head differ by — the hair sits a third of a head further across on the
+frontal one, and the far eye is 21% wider because it is no longer the far eye
+(`docs/DECISIONS.md`). Nothing in code closes that without distorting one
+drawing into the other; a third view halves it. The changeover is covered by
+its own blur in the meantime.
 
 ## What is deliberately not on this list
 
