@@ -493,3 +493,26 @@ proportions, and un-foreshorten nothing. The registration stays as it is. The
 instant of change is covered rather than removed — see the smear pulse above —
 and the only thing that would actually shrink the jump is a third head drawn at
 about 20°.
+
+## 2026-09-10 — The drawing buffer is not kept
+
+`preserveDrawingBuffer: true` was on the shared WebGL2 context, so both pages —
+including the OBS one — asked the browser to keep a copy of the framebuffer
+after every presented frame. Nothing in the app read it. It was there so three
+checks could grab the canvas from a later turn than the one that drew it, which
+is the kind of setting `CLAUDE.md` forbids: it existed for the tests.
+
+Gone. The two smoke checks screenshot the composited canvas instead, the way the
+`composited-on-white` golden already does, and the output check renders and
+reads in one turn.
+
+The screenshots need the page's furniture hidden first. Left up, the readout,
+the status pill and the frame counter sit inside the canvas box and change on
+their own — with them visible, "idle avatar renders pixels" passed with the
+canvas set to `visibility: hidden`. Both checks were falsified before being
+believed: hidden canvas gives 0 painted, and a stopped render loop gives 0
+moved against 1350 with it running.
+
+Not measured here: the saving is a full-framebuffer copy per page per frame, and
+SwiftShader in CI does not model what that costs a real GPU. It is a cost with
+no reader either way.

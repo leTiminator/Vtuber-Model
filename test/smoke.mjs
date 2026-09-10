@@ -5,7 +5,7 @@
  */
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { OUT, boot } from './harness.mjs';
+import { OUT, boot, decodePng } from './harness.mjs';
 
 const results = [];
 let failures = 0;
@@ -75,28 +75,41 @@ try {
   check('G with the camera off asks for the camera, and Esc dismisses it',
     guideOff && !(await page.locator('#guide').isVisible()));
 
+  /* The compositor's copy, not the GL buffer's: the drawing buffer is not kept
+   * after a frame is presented, and keeping it would cost every viewer and
+   * every OBS frame a copy. The page's furniture goes first — left up, the
+   * readout and pill sit inside the canvas box and change on their own, and
+   * both checks below pass with the avatar hidden. */
+  const OVERLAYS = ['hud', 'selfcheck', 'first-run', 'camera-preview', 'panel', 'status', 'guide'];
+  const overlays = (display) => page.evaluate(([ids, d]) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = d;
+    }
+  }, [OVERLAYS, display]);
+  const stage = await page.locator('#avatar-host canvas').boundingBox();
+  await overlays('none');
+  const shot = async () => decodePng(await page.screenshot({ clip: stage }));
+
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
-  const idlePixels = await page.evaluate(() => {
-    const c = document.querySelector('#avatar-host canvas');
-    const { data } = readCanvas(c);
-    let painted = 0;
-    for (let i = 3; i < data.length; i += 4 * 97) if (data[i] > 8) painted++;
-    return painted;
-  });
-  check('idle avatar renders pixels', idlePixels > 200, `${idlePixels} sampled opaque pixels`);
+  const first = await shot();
+  const bg = first.d.slice(0, 3);
+  let painted = 0;
+  for (let i = 0; i < first.d.length; i += 4 * 97) {
+    if (Math.abs(first.d[i] - bg[0]) > 8 || Math.abs(first.d[i + 1] - bg[1]) > 8
+      || Math.abs(first.d[i + 2] - bg[2]) > 8) painted++;
+  }
+  check('idle avatar renders pixels', painted > 200, `${painted} sampled pixels differ from the background`);
 
   // Scarf physics must actually move between frames.
-  const moved = await page.evaluate(async () => {
-    const c = document.querySelector('#avatar-host canvas');
-    const grab = () => readCanvas(c).data;
-    const before = grab().slice();
-    await new Promise((r) => setTimeout(r, 700));
-    const after = grab();
-    let diff = 0;
-    for (let i = 0; i < after.length; i += 4 * 53) if (Math.abs(after[i] - before[i]) > 6) diff++;
-    return diff;
-  });
+  await page.waitForTimeout(700);
+  const second = await shot();
+  let moved = 0;
+  for (let i = 0; i < second.d.length; i += 4 * 53) {
+    if (Math.abs(second.d[i] - first.d[i]) > 6) moved++;
+  }
   check('avatar animates while idle', moved > 20, `${moved} changed samples`);
+  await overlays('');
 
   // The setup readout has to be on screen before the camera, because that is
   // the only moment anyone can read it.

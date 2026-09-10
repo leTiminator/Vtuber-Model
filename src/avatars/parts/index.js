@@ -164,7 +164,6 @@ export class Parts2D {
       alpha: true,
       premultipliedAlpha: true,
       antialias: true,
-      preserveDrawingBuffer: true,
     });
     if (!gl) {
       this.onStatus('This browser has no WebGL2, which this mode needs.');

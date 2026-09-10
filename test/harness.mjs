@@ -165,15 +165,6 @@ window.__t = {
     return a;
   },
 };
-// The smoke suite reads whichever kind of canvas the backend made.
-window.readCanvas = (c) => {
-  const two = c.getContext('2d');
-  if (two) return two.getImageData(0, 0, c.width, c.height);
-  const gl = c.getContext('webgl2') || c.getContext('webgl');
-  const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-  gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
-  return { data };
-};
 `;
 
 const READY = () => Boolean(window.__vtuber?.avatars?.parts2d?.ready

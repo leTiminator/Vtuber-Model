@@ -71,16 +71,23 @@ try {
     `tracker ${pair.tracker.toFixed(4)}, output ${pair.output.toFixed(4)}`);
   const bytes = await tracker.evaluate(() => JSON.stringify({ t: 'state', seq: 1, at: 0, state: window.__vtuber.rig.state }).length);
   check('a state message is small', bytes < 2048, `${bytes} bytes`);
-  check('the output page is drawing something',
-    await output.evaluate(() => {
-      const gl = window.__vtuberOutput.avatar.gl;
-      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
-      const d = new Uint8Array(w * h * 4);
-      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
-      let n = 0;
-      for (let i = 3; i < d.length; i += 4) if (d[i] > 24) n++;
-      return n > 2000;
-    }), 'opaque pixels on the output canvas');
+  // Rendered and read in one turn, because the drawing buffer is not kept once
+  // a frame is presented and an OBS page must not pay to keep it.
+  const drawn = await output.evaluate(() => {
+    const o = window.__vtuberOutput;
+    const rig = o.seen().latest;
+    if (!rig) return -1;
+    o.avatar.render(rig, 1 / 60);
+    const gl = o.avatar.gl;
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    const d = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, d);
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 24) n++;
+    return n;
+  });
+  check('the output page is drawing something', drawn > 2000,
+    drawn < 0 ? 'no state has reached the output page' : `${drawn} opaque pixels on the output canvas`);
 
   // --- the OBS page reporting back ------------------------------------------
   await output.evaluate(() => window.__vtuberOutput.link.send({ t: 'status', text: 'test: the stage cannot draw' }));
