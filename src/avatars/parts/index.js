@@ -67,6 +67,12 @@ const SURPRISE_EYE = 0.42;
  * pair took 133 ms to cover most of a step, which is more lag than the tracker
  * and the filter put together. */
 const HEAD_SPRING = [620, 36];
+
+/* How far a turn slides the head, and how far a nod raises it, as a fraction of
+ * the stage. Pitch also rotates the cutout; yaw has only this, which is why it
+ * is no longer the quarter of the nod's that it was. */
+const TURN_SLIDE = 0.030;
+const NOD_RISE = 0.055;
 /* The shutter the smear is drawn with. Longer than a frame on purpose: a
  * physically honest 1/60 s smears a couple of pixels and cel art reads nothing
  * from it. Fixed, so the smear looks the same at any frame rate. */
@@ -114,6 +120,7 @@ export class Parts2D {
     this.latch = new FaceLatch();
     this.turnedSide = 1;
     this.headOnPhase = 1;
+    this.gazeLead = 0;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
   }
@@ -136,6 +143,7 @@ export class Parts2D {
     this.latch.reset();
     this.turnedSide = 1;
     this.headOnPhase = 1;
+    this.gazeLead = 0;
     this.faceOn = true;
     this.lastHead = null;
     this.scarf.reset();
@@ -387,8 +395,17 @@ export class Parts2D {
     const pitch = lerp(pitchTarget, this.springs.pitch.value, overshoot);
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
 
+    /* What the drawing shows, which is not the angle the head is at: small
+     * movements get more than their share of the travel. The latch above still
+     * sees the real angle, so the changeover stays where the slider says. */
+    const limit = Math.max(store.get('head.limitDeg') * DEG, 1e-3);
+    const gamma = store.get('head.response');
+    const yawShown = respond(yaw, limit, gamma);
+    const pitchShown = respond(pitch, limit, gamma);
+    this.gazeLead = clamp(yawShown / limit, -1, 1) * store.get('head.gazeLead');
+
     // --- joints ----------------------------------------------------------
-    const joints = this.solveJoints(rig, roll, pitch, yaw, m);
+    const joints = this.solveJoints(rig, roll, pitchShown, yawShown, m);
 
     /* How far the head travelled this frame, for the smear. Taken from the
      * joint that carries it, so a turn, a nod and a lean all count. */
@@ -581,7 +598,10 @@ export class Parts2D {
           + SURPRISE_WIDE * (rig.expression?.surprise ?? 0), 0, 1);
         gl.uniform2f(L.u_wide, wide, wide);
         // The gain is the rig's; applying it again here would square the slider.
-        gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * flipX, -1, 1), clamp(rig.eyes.gazeY, -1, 1));
+        // The turn's lead rides along: a yaw slides the head without rotating
+        // it, so the light in the visor is what a small turn has to show.
+        gl.uniform2f(L.u_gaze, clamp((rig.eyes.gazeX + this.gazeLead) * flipX, -1, 1),
+          clamp(rig.eyes.gazeY, -1, 1));
         gl.uniform1f(L.u_glow, store.get('warp.eyeGlow'));
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
@@ -677,12 +697,12 @@ export class Parts2D {
       scaleAbout(1, 1 + breath, m.pivotX, m.pivotY),
     );
     /* Nodding turns the head cutout, rather than bending the drawing on it. */
-    const nod = clamp(-pitch, -1.2, 1.2) * 0.055 * store.get('warp.nod');
+    const nod = clamp(-pitch, -1.2, 1.2) * NOD_RISE * store.get('warp.nod');
     const tilt = clamp(-pitch, -1.2, 1.2) * store.get('parts.nodTurn');
     /* Turning left and right slides the head instead of bending it. The
      * drawn views carry most of the turn now, so the slide is parallax rather
      * than the whole effect, and a smaller one keeps the head in its collar. */
-    const shift = clamp(yaw, -1.2, 1.2) * 0.015 * store.get('warp.turn');
+    const shift = clamp(yaw, -1.2, 1.2) * TURN_SLIDE * store.get('warp.turn');
     const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1)
       - SURPRISE_LIFT * clamp(rig.expression?.surprise ?? 0, 0, 1);
     const neck = compose(
@@ -829,6 +849,15 @@ export class Parts2D {
 
 /* ------------------------------------------------------------- transforms */
 // Column-major 3x3, matching WebGL's uniformMatrix3fv layout.
+
+/* Spends more of the head's travel near the middle, leaving the extreme exactly
+ * where it was: at gamma 1 this is a straight line, and below 1 a fifth of the
+ * range covers rather more than a fifth of the distance. */
+function respond(a, limit, gamma) {
+  if (!(gamma < 1) || !(limit > 0)) return a;
+  const t = Math.min(Math.abs(a) / limit, 1);
+  return Math.sign(a) * (t ** gamma) * limit;
+}
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 

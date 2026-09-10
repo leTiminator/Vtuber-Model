@@ -77,6 +77,10 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'head.rollGain', label: 'Tilt', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.positionGain', label: 'Lean / move', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.limitDeg', label: 'Range limit', min: 10, max: 80, step: 1, format: deg },
+        { type: 'slider', key: 'head.response', label: 'Small movements', min: 0.35, max: 1, step: 0.01, format: x,
+          hint: 'Lower makes a small turn show more without moving the extreme. A 5° turn slides the drawing 1.7px at 1, and 3.5px at 0.65 — the same as a 5° nod.' },
+        { type: 'slider', key: 'head.gazeLead', label: '— light follows the turn', min: 0, max: 1.5, step: 0.05, format: x,
+          hint: 'A turn has no rotation to show, only a slide, so it moves the light inside the visor as well.' },
         { type: 'slider', key: 'head.rollLimitDeg', label: 'Tilt limit', min: 5, max: 60, step: 1, format: deg,
           hint: 'How far the head may tilt. Past about 25° it turns inside its collar.' },
       ],
@@ -189,7 +193,9 @@ export function buildPanel(root, ctx) {
           format: (v) => `${Math.round(v * 57 / store.get('head.yawGain'))}°`,
           hint: 'How far you can turn before the face gives way to the drawn three-quarter '
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
-            + 'so talking does not walk the eyes across the visor.' },
+            + 'so talking does not walk the eyes across the visor. Narrowing it costs no extra '
+            + 'changes of face: measured on the recordings, 13° spends 38% of the time frontal '
+            + 'and 8° spends 20%, both swapping about 30 times a minute.' },
         { type: 'slider', key: 'parts.headOnTime', label: '— changes after', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
         { type: 'slider', key: 'parts.headOnReturn', label: '— comes back after', min: 0.1, max: 1.5, step: 0.05, format: (v) => `${v.toFixed(2)}s`,
           hint: 'How long you must sit square before the face comes back. Turning away is '

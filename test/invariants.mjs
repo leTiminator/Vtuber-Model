@@ -452,6 +452,31 @@ try {
       `largest step ${c.max.toFixed(1)}px against a median of ${c.median.toFixed(1)}px per 2 degrees`);
   }
 
+  /* --- a small shake is visible without being exaggerated ---------------- */
+  const shake = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const emptyRig = t.app().emptyRig;
+    const at = (deg, response) => {
+      t.resetStore({ ...frozen, 'stage.zoom': 0.6, 'parts.headOn': 0, 'head.response': response });
+      a.reset();
+      const rig = emptyRig();
+      rig.head.yaw = deg * Math.PI / 180;
+      for (let f = 0; f < 20; f++) a.render(rig, 1 / 60);
+      return t.stats(t.read(a));
+    };
+    const out = {};
+    for (const response of [1, 0.65]) {
+      const l = at(-5, response);
+      const r = at(5, response);
+      out[response === 1 ? 'flat' : 'curved'] = Math.hypot(r.cx - l.cx, r.cy - l.cy);
+    }
+    return out;
+  }, FROZEN);
+  check('a five degree shake moves the drawing further than a flat response does',
+    shake.curved > shake.flat * 1.5,
+    `${shake.curved.toFixed(2)}px across the shake, against ${shake.flat.toFixed(2)}px flat`);
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('invariants run completed', false, err.stack);

@@ -417,3 +417,38 @@ runtime lookup could apply to half a feature: the mirror was gated on its
 setting, its slide on its latch. Twenty-three store keys, two abandoned
 renderers, the artwork flow and the expression channel are gone rather than
 switched off; git history keeps them.
+
+## 2026-09-10 — A small movement has to move the drawing
+
+Measured on the 630px artwork at the shipped gains, yaw got a quarter of pitch's
+travel and got it only as a slide: `nod = clamp(-pitch) * 0.055` plus a rotation,
+against `shift = clamp(yaw) * 0.015` and nothing else. A 5° shake left and right
+moved the drawing 0.82px; the same nod moved it 3.48px and rotated it 3.2°. That
+asymmetry is why a subtle shake had to be exaggerated to register.
+
+`head.response` shapes the head's own travel — `sign(a)·|a/limit|^g·limit` at
+g 0.65 — so small angles get more than their share and the limit does not move.
+The turn's slide doubled to 0.030, bounded by the one-piece invariant rather
+than by taste. `head.gazeLead` carries the light in the visor with the turn,
+because a yaw slides the head without rotating it.
+
+    degrees   3      5      10     42
+    before    0.49   0.82   1.65   6.93   px
+    after     2.49   3.47   5.45   13.85  px
+
+The face latch reads the unshaped angle, so the changeover stays at the angle
+the slider names.
+
+## 2026-09-10 — The middle face window is shorter
+
+`parts.headOnHold` 0.26 → 0.16 (13° → 8° of real turn). Driven through both
+recordings, narrowing it costs no extra changes of face — 26 to 31 a minute
+across the whole range, flat within noise — while time spent on the frontal
+face drops from 38% to 20%. Longest turned view is unchanged at 15.2s.
+
+| hold | real° | time frontal | changes/min |
+| --- | --- | --- | --- |
+| 0.26 | 13.0° | 38% / 9% | 28 / 31 |
+| 0.16 | 8.0° | 20% / 6% | 26 / 33 |
+| 0.09 | 4.5° | 12% / 3% | 26 / 35 |
+| 0.06 | 3.0° | 6% / 3% | 31 / 33 |
