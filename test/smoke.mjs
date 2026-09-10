@@ -128,9 +128,15 @@ try {
     await page.locator('#selfcheck').isVisible(),
     'visible while tracking');
 
-  // With the camera running, G starts the five prompts on the stage.
+  // With the camera running, G starts the five prompts on the stage. The guard
+  // reads tracker.running, which goes true at its own moment rather than with
+  // the status pill: wait for the precondition instead of racing it.
+  await page.waitForFunction(() => window.__vtuber?.tracker?.running === true,
+    null, { timeout: 30000 });
   await page.keyboard.press('g');
-  await page.waitForTimeout(300);
+  await page.waitForFunction(
+    () => /^1 of 6/.test(document.getElementById('guide-prompt')?.textContent ?? ''),
+    null, { timeout: 5000 }).catch(() => {});
   const prompt = await page.locator('#guide-prompt').textContent();
   const guideOn = await page.locator('#guide').isVisible() && /^1 of 6/.test(prompt);
   await page.keyboard.press('Escape');
