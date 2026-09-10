@@ -79,6 +79,12 @@ const NOD_RISE = 0.055;
 const EXPOSURE = 1 / 15;
 /* The most of the picture one frame may smear across. */
 const MAX_SMEAR = 0.06;
+
+/* The face changes hands on an angle, not on a speed, so a slow turn used to
+ * swap with no motion for the smear to cover. This is the blur the changeover
+ * gives itself, and how long it takes to fade. */
+const SWAP_SMEAR = 0.026;
+const SWAP_FADE = 0.11;
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -121,6 +127,7 @@ export class Parts2D {
     this.turnedSide = 1;
     this.headOnPhase = 1;
     this.gazeLead = 0;
+    this.swapPulse = 0;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
   }
@@ -144,6 +151,7 @@ export class Parts2D {
     this.turnedSide = 1;
     this.headOnPhase = 1;
     this.gazeLead = 0;
+    this.swapPulse = 0;
     this.faceOn = true;
     this.lastHead = null;
     this.scarf.reset();
@@ -421,12 +429,14 @@ export class Parts2D {
       const spin = ((yaw - this.lastHead[2]) / dt) * this.headSpan.r;
       smearX = (((hx - this.lastHead[0]) / dt) + spin) * EXPOSURE * blurAmount;
       smearY = ((hy - this.lastHead[1]) / dt) * EXPOSURE * blurAmount;
+      if (this.swapPulse > 0) smearX += this.turnedSide * SWAP_SMEAR * this.swapPulse;
       const travel = Math.hypot(smearX * this.aspect, smearY);
       if (travel > MAX_SMEAR) {
         smearX *= MAX_SMEAR / travel;
         smearY *= MAX_SMEAR / travel;
       }
     }
+    this.swapPulse = Math.max(0, this.swapPulse - dt / SWAP_FADE);
     this.lastHead = [hx, hy, yaw];
 
     // --- cloth -----------------------------------------------------------
@@ -522,6 +532,7 @@ export class Parts2D {
     // A saved value from when this was a slider reads as on above a half.
     const headOnT = this.headOn && Number(store.get('parts.headOn')) >= 0.5
       ? smoothstep(this.headOnPhase) : 0;
+    if (this.faceOn !== (headOnT >= 0.5)) this.swapPulse = 1;
     /* The face changes hands rather than fading, for the same reason the
      * mirror does: two copies of hard-edged line art laid over each other are
      * legible as two, and these are two different drawings of a hood, not one

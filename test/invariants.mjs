@@ -477,6 +477,37 @@ try {
     shake.curved > shake.flat * 1.5,
     `${shake.curved.toFixed(2)}px across the shake, against ${shake.flat.toFixed(2)}px flat`);
 
+  /* --- the changeover gives itself the blur that covers it --------------- */
+  const swap = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const emptyRig = t.app().emptyRig;
+    // Held at one angle past the threshold, so nothing is moving and the only
+    // smear that can appear is the one the swap makes for itself.
+    const run = (blur, after) => {
+      t.resetStore({ ...frozen, 'stage.zoom': 0.6, 'parts.motionBlur': blur });
+      a.reset();
+      const rig = emptyRig();
+      rig.head.yaw = 0.44;
+      let changed = -1;
+      for (let f = 0; f < 60; f++) {
+        a.render(rig, 1 / 60);
+        if (changed < 0 && !a.faceOn) changed = f;
+        if (changed >= 0 && f === changed + after) return t.read(a);
+      }
+      return t.read(a);
+    };
+    const diff = (x, y) => {
+      let n = 0;
+      for (let i = 0; i < x.d.length; i += 4) if (Math.abs(x.d[i + 3] - y.d[i + 3]) > 16) n++;
+      return n;
+    };
+    return { just: diff(run(0, 1), run(1, 1)), later: diff(run(0, 30), run(1, 30)) };
+  }, FROZEN);
+  check('the face changing hands smears, and the smear fades',
+    swap.just > 0 && swap.later === 0,
+    `${swap.just} pixels differ one frame after the change, ${swap.later} thirty frames after`);
+
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {
   check('invariants run completed', false, err.stack);

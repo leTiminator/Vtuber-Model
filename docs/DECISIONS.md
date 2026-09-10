@@ -452,3 +452,24 @@ face drops from 38% to 20%. Longest turned view is unchanged at 15.2s.
 | 0.16 | 8.0° | 20% / 6% | 26 / 33 |
 | 0.09 | 4.5° | 12% / 3% | 26 / 35 |
 | 0.06 | 3.0° | 6% / 3% | 31 / 33 |
+
+## 2026-09-10 — The changeover gives itself the blur that covers it
+
+The docs claimed the motion smear hid the face changing hands. It did not: the
+latch fires on an angle, not on a speed, so a slow turn crossed the threshold
+with almost nothing moving and swapped in the clear. The swap now sets a pulse
+of its own — 0.026 of the picture, fading over 0.11s, in the direction of the
+turn — added to the smear it would otherwise have had. It rides the existing
+`parts.motionBlur` slider, so turning blur off turns it off too.
+
+Guarded as a differential rather than a pixel count: held at one angle past the
+threshold, where nothing is moving and the pulse is the only smear that can
+appear, blur on and blur off differ one frame after the change and are identical
+thirty frames after.
+
+Not done, and why: the four frontal pieces share one `place` fit (k 1.2533), and
+their centres move 49–79px at the changeover. Fitting each piece to its own box
+would close that, but it would also force the frontal drawing's hair into the
+turned drawing's box, and I cannot separate "the drawings genuinely differ" from
+"the registration is wrong" without the owner looking at it. Registration is
+where this project has burned rounds; it wants its own commit and a person's eye.
