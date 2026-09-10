@@ -299,7 +299,20 @@ try {
       a.render(at(f < 3 ? 20 : 0), 1 / 60);
       if (a.faceOn !== last) { flick++; last = a.faceOn; }
     }
-    return { chat, turn, shake: seen, step: { left, back, flick } };
+
+    /* Turn one way, settle the other: the moment the side changes is the
+     * moment the head, the hair and both eyes mirror, so it has to happen
+     * behind the head-on face. */
+    t.resetStore(frozen);
+    a.reset();
+    let bare = 0;
+    let side = a.turnedSide;
+    for (let f = 0; f < 60; f++) a.render(at(30), 1 / 60);
+    for (let f = 0; f < 150; f++) {
+      a.render(at(-3), 1 / 60);
+      if (a.turnedSide !== side) { if (!a.faceOn) bare++; side = a.turnedSide; }
+    }
+    return { chat, turn, shake: seen, step: { left, back, flick }, bare };
   }, FROZEN);
   check('ordinary talking never changes the face', latch.chat.changes === 0 && latch.chat.faceOn,
     `${latch.chat.changes} changes`);
@@ -315,6 +328,8 @@ try {
     `head-on ${latch.shake.headOn}, left ${latch.shake.left}, right ${latch.shake.right} frames of 150`);
   check('and the turned face never looks the way the head is not', latch.shake.wrongWay === 0,
     `${latch.shake.wrongWay} frames facing the wrong way`);
+  check('the face never changes sides in plain view', latch.bare === 0,
+    `${latch.bare} side changes with the turned face on screen`);
 
   /* --- the turned face has two sides ------------------------------------- */
   const sides = await page.evaluate((frozen) => {
@@ -436,6 +451,62 @@ try {
       c.max <= c.median * 4 + 1,
       `largest step ${c.max.toFixed(1)}px against a median of ${c.median.toFixed(1)}px per 2 degrees`);
   }
+
+  /* --- a small shake is visible without being exaggerated ---------------- */
+  const shake = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const emptyRig = t.app().emptyRig;
+    const at = (deg, response) => {
+      t.resetStore({ ...frozen, 'stage.zoom': 0.6, 'parts.headOn': 0, 'head.response': response });
+      a.reset();
+      const rig = emptyRig();
+      rig.head.yaw = deg * Math.PI / 180;
+      for (let f = 0; f < 20; f++) a.render(rig, 1 / 60);
+      return t.stats(t.read(a));
+    };
+    const out = {};
+    for (const response of [1, 0.65]) {
+      const l = at(-5, response);
+      const r = at(5, response);
+      out[response === 1 ? 'flat' : 'curved'] = Math.hypot(r.cx - l.cx, r.cy - l.cy);
+    }
+    return out;
+  }, FROZEN);
+  check('a five degree shake moves the drawing further than a flat response does',
+    shake.curved > shake.flat * 1.5,
+    `${shake.curved.toFixed(2)}px across the shake, against ${shake.flat.toFixed(2)}px flat`);
+
+  /* --- the changeover gives itself the blur that covers it --------------- */
+  const swap = await page.evaluate((frozen) => {
+    const t = window.__t;
+    const a = window.__a;
+    const emptyRig = t.app().emptyRig;
+    // Held at one angle past the threshold, so nothing is moving and the only
+    // smear that can appear is the one the swap makes for itself.
+    const run = (blur, after) => {
+      t.resetStore({ ...frozen, 'stage.zoom': 0.6, 'parts.motionBlur': blur });
+      a.reset();
+      const rig = emptyRig();
+      rig.head.yaw = 0.44;
+      let changed = -1;
+      for (let f = 0; f < 60; f++) {
+        a.render(rig, 1 / 60);
+        if (changed < 0 && !a.faceOn) changed = f;
+        if (changed >= 0 && f === changed + after) return t.read(a);
+      }
+      return t.read(a);
+    };
+    const diff = (x, y) => {
+      let n = 0;
+      for (let i = 0; i < x.d.length; i += 4) if (Math.abs(x.d[i + 3] - y.d[i + 3]) > 16) n++;
+      return n;
+    };
+    return { just: diff(run(0, 1), run(1, 1)), later: diff(run(0, 30), run(1, 30)) };
+  }, FROZEN);
+  check('the face changing hands smears, and the smear fades',
+    swap.just > 0 && swap.later === 0,
+    `${swap.just} pixels differ one frame after the change, ${swap.later} thirty frames after`);
 
   check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (err) {

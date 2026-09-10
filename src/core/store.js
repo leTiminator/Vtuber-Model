@@ -25,8 +25,8 @@ export const DEFAULTS = {
   'camera.range': '',
 
   // --- smoothing -------------------------------------------------------
-  'smooth.minCutoff': 2.5, // Hz — lower is steadier, laggier
-  'smooth.beta': 0.2, // speed coefficient — higher is snappier
+  'smooth.minCutoff': 3.5, // Hz — lower is steadier, laggier
+  'smooth.beta': 0.3, // speed coefficient — higher is snappier
   'smooth.expression': 2.4, // separate, faster cutoff for face shapes
 
   // --- head ------------------------------------------------------------
@@ -41,6 +41,10 @@ export const DEFAULTS = {
    * fixed in code — see PITCH_SIGN in rig.js.
    */
   'head.flipNod': false,
+  /* Share of the head's travel spent near the middle; 1 is a straight line. */
+  'head.response': 0.65,
+  /* How far a turn carries the light inside the visor, against a full gaze. */
+  'head.gazeLead': 0.55,
 
   // --- eyes ------------------------------------------------------------
   'eyes.blinkGain': 1.35,
@@ -54,6 +58,10 @@ export const DEFAULTS = {
 
   /* How readily a surprised face reads as surprised; 0 turns it off. */
   'face.surpriseGain': 1.0,
+  /* How open the mouth is where surprise starts and where it is full. The
+   * guided calibration measures both from a mouth held wide open. */
+  'face.surpriseAt': 0.5,
+  'face.surpriseFull': 0.9,
 
   // --- mouth -----------------------------------------------------------
   'mouth.openGain': 1.5,
@@ -65,7 +73,9 @@ export const DEFAULTS = {
   'mouth.micGate': 0.012, // RMS below this counts as silence
 
   // --- arms -------------------------------------------------------------
-  'arms.track': true, // a second model; costs roughly a third of a frame
+  /* A second model sharing the GPU with the face; off unless asked for. */
+  'arms.track': false,
+  'arms.float': 1.0, // how much an arm nobody can see drifts on its own
   'arms.gain': 1.0,
   'arms.smooth': 1.0,
 
@@ -93,13 +103,12 @@ export const DEFAULTS = {
 
   // --- the parts model ------------------------------------------------
   'warp.eyesEnabled': true,
-  // Depth between the layers: a soft dark shape laid behind each part so the
-  // scarf reads as sitting in front of the arm rather than printed on it.
+  // A soft dark shape behind each part, so the scarf sits in front of the arm.
   'parts.contactShadow': 0.34,
   /* Whether the head-on drawing shows while the head is square to the camera. */
   'parts.headOn': true,
   /* How far the head can turn before the head-on face starts giving way. */
-  'parts.headOnHold': 0.26,
+  'parts.headOnHold': 0.16,
   /* How long the head sits square before the head-on face comes back, in seconds. */
   'parts.headOnReturn': 0.35,
   /* How long the latch waits before the face actually changes, in seconds. */
@@ -116,7 +125,7 @@ export const DEFAULTS = {
   'parts.motionBlur': 0.6, // how far a moving head smears, 0 turns it off
   'warp.turn': 1.0, // how far the head rotates on its cylinder
   'warp.nod': 1.0,
-  'warp.overshoot': 1.0, // head settles rather than stopping dead
+  'warp.overshoot': 0.3, // how much of the head's move is follow-through rather than direct
 
   /* How far off the chain cloth still swings with it, in chain links. */
   'parts.clothReach': 2.0,
@@ -148,9 +157,8 @@ function load() {
     for (const k of Object.keys(DEFAULTS)) {
       if (k in saved && !retuned.has(k)) state[k] = saved[k];
     }
-    // A neutral pose captured before the guided calibration is a guess made
-    // with one press of C; dropping it lets the camera set one on the next
-    // start rather than leaving the model turned to its limit.
+    // A neutral captured before the guided calibration is one press of C, so it
+    // goes: better a fresh one than a model turned to its limit.
     if (from < 2 && state['camera.neutral']) {
       let guided = false;
       try { guided = JSON.parse(state['camera.neutral']).from === 'guided'; } catch { guided = false; }

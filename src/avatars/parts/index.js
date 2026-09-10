@@ -57,14 +57,34 @@ const ROLL_AT_NECK = 0.25;
 /* What surprise does with the levers this character has: the visor slits open,
  * the glow flares, and the head pulls back a little. */
 const SURPRISE_WIDE = 0.9;
-const SURPRISE_GLOW = 0.5;
-const SURPRISE_LIFT = 0.018;
+const SURPRISE_GLOW = 0.6;
+const SURPRISE_LIFT = 0.026;
+/* How much bigger the glowing slits grow. u_wide only brightens the glow —
+ * nothing in the shader opens the drawn shard — so the eyes are grown by
+ * scaling their own parts about themselves. */
+const SURPRISE_EYE = 0.42;
+/* The head's follow-through. Stiff and close to critically damped: the old
+ * pair took 133 ms to cover most of a step, which is more lag than the tracker
+ * and the filter put together. */
+const HEAD_SPRING = [620, 36];
+
+/* How far a turn slides the head, and how far a nod raises it, as a fraction of
+ * the stage. Pitch also rotates the cutout; yaw has only this, which is why it
+ * is no longer the quarter of the nod's that it was. */
+const TURN_SLIDE = 0.030;
+const NOD_RISE = 0.055;
 /* The shutter the smear is drawn with. Longer than a frame on purpose: a
  * physically honest 1/60 s smears a couple of pixels and cel art reads nothing
  * from it. Fixed, so the smear looks the same at any frame rate. */
 const EXPOSURE = 1 / 15;
 /* The most of the picture one frame may smear across. */
 const MAX_SMEAR = 0.06;
+
+/* The face changes hands on an angle, not on a speed, so a slow turn used to
+ * swap with no motion for the smear to cover. This is the blur the changeover
+ * gives itself, and how long it takes to fade. */
+const SWAP_SMEAR = 0.026;
+const SWAP_FADE = 0.11;
 /* How hard the head's inertia and the idle wind drive the chain, in the
  * chain's own units. Both were re-found by measurement when the chain became
  * rigid links: it settles at drive/bend rather than drive/rest, so the old
@@ -106,6 +126,8 @@ export class Parts2D {
     this.latch = new FaceLatch();
     this.turnedSide = 1;
     this.headOnPhase = 1;
+    this.gazeLead = 0;
+    this.swapPulse = 0;
     this.bones = new Float32Array(SPINE_NODES * 2);
 
   }
@@ -128,6 +150,8 @@ export class Parts2D {
     this.latch.reset();
     this.turnedSide = 1;
     this.headOnPhase = 1;
+    this.gazeLead = 0;
+    this.swapPulse = 0;
     this.faceOn = true;
     this.lastHead = null;
     this.scarf.reset();
@@ -140,7 +164,6 @@ export class Parts2D {
       alpha: true,
       premultipliedAlpha: true,
       antialias: true,
-      preserveDrawingBuffer: true,
     });
     if (!gl) {
       this.onStatus('This browser has no WebGL2, which this mode needs.');
@@ -189,6 +212,10 @@ export class Parts2D {
     this.spine = model.spine ? { nodes: model.spine.nodes } : null;
     this.spineSpan = model.spine?.span ?? 0;
     this.headOnNote = model.headOn?.note ?? 'no drawing';
+    /* The frontal drawing's lids lie flat; the three-quarter drawing's sweep
+     * at 32°. The sockets were measured in each drawing's own frame, so each
+     * has to be read back in it. */
+    this.headOnEyeAngle = model.headOn?.markers?.eyeAngle ?? null;
     this.scarf.reset();
     this.scarf.hasRest = false;
     if (this.spine?.nodes?.length > 1) this.scarf.setRest(this.spine.nodes, this.aspect);
@@ -204,6 +231,18 @@ export class Parts2D {
     this.owned = this.parts;
     this.headOn = this.parts.some((p) => p.name === 'headOn');
     this.ready = this.parts.length > 0;
+  }
+
+  /** A part scaled about its own middle, in the artwork's own square space. */
+  eyeScale(part, k) {
+    const { width, height } = this.imageSize;
+    let cx = (part.x + part.w / 2) / width;
+    let cy = (part.y + part.h / 2) / height;
+    if (part.place) {
+      cx = (cx - part.place.fromX) * part.place.k + part.place.toX;
+      cy = (cy - part.place.fromY) * part.place.k + part.place.toY;
+    }
+    return scaleAbout(k, k, cx, cy);
   }
 
   /** How much of the neck's motion a vertex at (px, py) takes: 1 on the head, 0 on the body. */
@@ -356,15 +395,24 @@ export class Parts2D {
     const overshoot = store.get('warp.overshoot');
     const yawTarget = rig.head.yaw * store.get('warp.turn');
     const pitchTarget = rig.head.pitch * store.get('warp.nod');
-    spring(this.springs.yaw, yawTarget, 240, 17, dt);
-    spring(this.springs.pitch, pitchTarget, 240, 17, dt);
-    spring(this.springs.roll, rig.head.roll, 210, 16, dt);
+    spring(this.springs.yaw, yawTarget, HEAD_SPRING[0], HEAD_SPRING[1], dt);
+    spring(this.springs.pitch, pitchTarget, HEAD_SPRING[0], HEAD_SPRING[1], dt);
+    spring(this.springs.roll, rig.head.roll, HEAD_SPRING[0] * 0.88, HEAD_SPRING[1] * 0.94, dt);
     const yaw = lerp(yawTarget, this.springs.yaw.value, overshoot);
     const pitch = lerp(pitchTarget, this.springs.pitch.value, overshoot);
     const roll = lerp(rig.head.roll, this.springs.roll.value, overshoot);
 
+    /* What the drawing shows, which is not the angle the head is at: small
+     * movements get more than their share of the travel. The latch above still
+     * sees the real angle, so the changeover stays where the slider says. */
+    const limit = Math.max(store.get('head.limitDeg') * DEG, 1e-3);
+    const gamma = store.get('head.response');
+    const yawShown = respond(yaw, limit, gamma);
+    const pitchShown = respond(pitch, limit, gamma);
+    this.gazeLead = clamp(yawShown / limit, -1, 1) * store.get('head.gazeLead');
+
     // --- joints ----------------------------------------------------------
-    const joints = this.solveJoints(rig, roll, pitch, yaw, m);
+    const joints = this.solveJoints(rig, roll, pitchShown, yawShown, m);
 
     /* How far the head travelled this frame, for the smear. Taken from the
      * joint that carries it, so a turn, a nod and a lean all count. */
@@ -380,12 +428,14 @@ export class Parts2D {
       const spin = ((yaw - this.lastHead[2]) / dt) * this.headSpan.r;
       smearX = (((hx - this.lastHead[0]) / dt) + spin) * EXPOSURE * blurAmount;
       smearY = ((hy - this.lastHead[1]) / dt) * EXPOSURE * blurAmount;
+      if (this.swapPulse > 0) smearX += this.turnedSide * SWAP_SMEAR * this.swapPulse;
       const travel = Math.hypot(smearX * this.aspect, smearY);
       if (travel > MAX_SMEAR) {
         smearX *= MAX_SMEAR / travel;
         smearY *= MAX_SMEAR / travel;
       }
     }
+    this.swapPulse = Math.max(0, this.swapPulse - dt / SWAP_FADE);
     this.lastHead = [hx, hy, yaw];
 
     // --- cloth -----------------------------------------------------------
@@ -467,21 +517,21 @@ export class Parts2D {
 
     /* Which face: it leaves quickly on a real turn and comes back once the
      * head has sat square (latch.js). A ramp of a fixed length, eased at both
-     * ends, then carries the change — not a decay. */
-    const squareOn = this.latch.update(yaw, dt,
+     * ends, then carries the change — not a decay.
+     *
+     * On the angle the rig asked for, not the one the spring has reached, so
+     * the swap does not wait out the follow-through on top of its own timing. */
+    const squareOn = this.latch.update(yawTarget, dt,
       store.get('parts.headOnHold'), store.get('parts.headOnReturn'));
-    /* The turned face has two sides: the drawing looks to the right, and a
-     * turn to the left shows its mirror image. The side follows the head
-     * while the head-on face hides it, so the view is always the one for the
-     * side the head is on. A sweep across centre is quicker than the ramp, so
-     * the head-on face arrives finished rather than starting to arrive. */
+    /* A sweep across centre is quicker than the ramp, so the head-on face
+     * arrives finished rather than starting to arrive. */
     if (this.latch.crossed) this.headOnPhase = 1;
-    if (squareOn) this.turnedSide = yaw < 0 ? -1 : 1;
     const step = dt / clamp(store.get('parts.headOnTime'), 0.02, 2);
     this.headOnPhase = clamp(this.headOnPhase + (squareOn ? step : -step), 0, 1);
     // A saved value from when this was a slider reads as on above a half.
     const headOnT = this.headOn && Number(store.get('parts.headOn')) >= 0.5
       ? smoothstep(this.headOnPhase) : 0;
+    if (this.faceOn !== (headOnT >= 0.5)) this.swapPulse = 1;
     /* The face changes hands rather than fading, for the same reason the
      * mirror does: two copies of hard-edged line art laid over each other are
      * legible as two, and these are two different drawings of a hood, not one
@@ -492,8 +542,16 @@ export class Parts2D {
     this.faceOn = headOnT >= 0.5;
     const faceOn = this.faceOn;
 
+    /* The turned face has two sides: the drawing looks to the right, and a
+     * turn to the left shows its mirror image. The side changes only while
+     * the head-on face is actually covering it — on the latch, the face is
+     * still the turned one for the first half of the ramp, and changing sides
+     * there mirrors the head, hair and both eyes in full view. */
+    if (squareOn && faceOn) this.turnedSide = yawTarget < 0 ? -1 : 1;
+
     const shadowStrength = store.get('parts.contactShadow');
     const mirror = mirrorAbout(this.headSpan.cx);
+    const startled = clamp(rig.expression?.surprise ?? 0, 0, 1);
 
     const order = this.parts;
 
@@ -507,8 +565,16 @@ export class Parts2D {
       const mirrored = face === 'turned' && this.turnedSide < 0;
       const near = joints[part.joint] ?? IDENTITY;
       const far = joints[part.farJoint ?? part.joint] ?? near;
-      gl.uniformMatrix3fv(L.u_model, false, mirrored ? compose(near, mirror) : near);
-      gl.uniformMatrix3fv(L.u_modelFar, false, mirrored ? compose(far, mirror) : far);
+      /* Surprise grows the eyes about themselves, before whatever moves them. */
+      const pop = part.flags.eyes && startled > 0
+        ? this.eyeScale(part, 1 + SURPRISE_EYE * startled) : null;
+      const placed = (m) => {
+        if (mirrored && pop) return compose(m, mirror, pop);
+        if (mirrored) return compose(m, mirror);
+        return pop ? compose(m, pop) : m;
+      };
+      gl.uniformMatrix3fv(L.u_model, false, placed(near));
+      gl.uniformMatrix3fv(L.u_modelFar, false, placed(far));
       const flipX = mirrored ? -1 : 1;
 
       /* Only the head smears, and only along the way it went. A placed part is
@@ -529,7 +595,8 @@ export class Parts2D {
         const right = part.flags.far !== mirrored;
         gl.uniform4fv(L.u_eyeL, part.eyeL);
         gl.uniform4fv(L.u_eyeR, part.eyeR);
-        gl.uniform1f(L.u_eyeAngle, m.eyeAngle);
+        gl.uniform1f(L.u_eyeAngle, part.flags.face === 'headOn' && this.headOnEyeAngle != null
+          ? this.headOnEyeAngle : m.eyeAngle);
         gl.uniform1f(L.u_lidFill, part.lidFill ?? 1);
         // No lid colour: the lid erases this layer and the visor behind shows
         // through, so there is nothing to match a sampled tone against.
@@ -540,8 +607,11 @@ export class Parts2D {
         const wide = clamp((right ? rig.eyes.wideR : rig.eyes.wideL)
           + SURPRISE_WIDE * (rig.expression?.surprise ?? 0), 0, 1);
         gl.uniform2f(L.u_wide, wide, wide);
-        const gz = store.get('eyes.gazeGain');
-        gl.uniform2f(L.u_gaze, clamp(rig.eyes.gazeX * gz * flipX, -1, 1), clamp(rig.eyes.gazeY * gz, -1, 1));
+        // The gain is the rig's; applying it again here would square the slider.
+        // The turn's lead rides along: a yaw slides the head without rotating
+        // it, so the light in the visor is what a small turn has to show.
+        gl.uniform2f(L.u_gaze, clamp((rig.eyes.gazeX + this.gazeLead) * flipX, -1, 1),
+          clamp(rig.eyes.gazeY, -1, 1));
         gl.uniform1f(L.u_glow, store.get('warp.eyeGlow'));
         gl.uniform1f(L.u_glowPulse, this.glowPulse);
       }
@@ -592,8 +662,9 @@ export class Parts2D {
       const span = Math.max(this.spineSpan || 0, 1e-4);
       // How far past the ends of the chain cloth still follows it, in links.
       const far = Math.max(clamp(store.get('parts.clothReach'), 0.6, 60), 0.6);
+      const nodes = this.boneNodes();
       for (let v = 0, b = 0; v < live.length; v += 2, b += 3) {
-        const f = spineFrame(this.boneNodes(), binds[b], skew);
+        const f = spineFrame(nodes, binds[b], skew);
         const ox = frameNormalX(f) * binds[b + 1] + f.tx * binds[b + 2];
         const oy = f.ny * binds[b + 1] + f.ty * binds[b + 2];
         /* Only cloth the chain runs through is carried by it. */
@@ -636,12 +707,12 @@ export class Parts2D {
       scaleAbout(1, 1 + breath, m.pivotX, m.pivotY),
     );
     /* Nodding turns the head cutout, rather than bending the drawing on it. */
-    const nod = clamp(-pitch, -1.2, 1.2) * 0.055 * store.get('warp.nod');
+    const nod = clamp(-pitch, -1.2, 1.2) * NOD_RISE * store.get('warp.nod');
     const tilt = clamp(-pitch, -1.2, 1.2) * store.get('parts.nodTurn');
     /* Turning left and right slides the head instead of bending it. The
      * drawn views carry most of the turn now, so the slide is parallax rather
      * than the whole effect, and a smaller one keeps the head in its collar. */
-    const shift = clamp(yaw, -1.2, 1.2) * 0.015 * store.get('warp.turn');
+    const shift = clamp(yaw, -1.2, 1.2) * TURN_SLIDE * store.get('warp.turn');
     const bob = TALK_BOB * clamp(rig.mouth?.open ?? 0, 0, 1)
       - SURPRISE_LIFT * clamp(rig.expression?.surprise ?? 0, 0, 1);
     const neck = compose(
@@ -789,6 +860,15 @@ export class Parts2D {
 /* ------------------------------------------------------------- transforms */
 // Column-major 3x3, matching WebGL's uniformMatrix3fv layout.
 
+/* Spends more of the head's travel near the middle, leaving the extreme exactly
+ * where it was: at gamma 1 this is a straight line, and below 1 a fifth of the
+ * range covers rather more than a fifth of the distance. */
+function respond(a, limit, gamma) {
+  if (!(gamma < 1) || !(limit > 0)) return a;
+  const t = Math.min(Math.abs(a) / limit, 1);
+  return Math.sign(a) * (t ** gamma) * limit;
+}
+
 const IDENTITY = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
 function multiply(a, b) {
@@ -875,23 +955,33 @@ function linkProgram(gl, vertexSource, fragmentSource) {
  * The frame of the centreline at a given distance along it: a point, and the
  * tangent and normal there.
  */
+/* Written into and handed back rather than built fresh: this runs once per
+ * cloth vertex per frame, and both callers are done with it before the next. */
+const FRAME = { hx: 0, hy: 0, tx: 0, ty: 0, nx: 0, ny: 0 };
+
 function spineFrame(nodes, s, aspect) {
   const skew = aspect || 1;
-  const f = clamp(s, 0, 1) * (nodes.length - 1);
-  const i = Math.min(Math.floor(f), nodes.length - 1);
-  const j = Math.min(i + 1, nodes.length - 1);
+  const last = nodes.length - 1;
+  const f = clamp(s, 0, 1) * last;
+  const i = Math.min(Math.floor(f), last);
+  const j = Math.min(i + 1, last);
   const t = f - i;
 
-  const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-  const here = lerp2(nodes[i], nodes[j], t);
-  const prev = lerp2(nodes[Math.max(i - 1, 0)], nodes[i], t);
-  const next = lerp2(nodes[j], nodes[Math.min(j + 1, nodes.length - 1)], t);
+  const a = nodes[i], b = nodes[j];
+  const p = nodes[Math.max(i - 1, 0)], q = nodes[Math.min(j + 1, last)];
+  const prevX = p[0] + (a[0] - p[0]) * t;
+  const prevY = p[1] + (a[1] - p[1]) * t;
+  const nextX = b[0] + (q[0] - b[0]) * t;
+  const nextY = b[1] + (q[1] - b[1]) * t;
 
-  let tx = (next[0] - prev[0]) * skew + 1e-6;
-  let ty = next[1] - prev[1];
+  let tx = (nextX - prevX) * skew + 1e-6;
+  let ty = nextY - prevY;
   const len = Math.hypot(tx, ty) || 1e-9;
   tx /= len; ty /= len;
-  return { hx: here[0], hy: here[1], tx, ty, nx: -ty, ny: tx };
+  FRAME.hx = a[0] + (b[0] - a[0]) * t;
+  FRAME.hy = a[1] + (b[1] - a[1]) * t;
+  FRAME.tx = tx; FRAME.ty = ty; FRAME.nx = -ty; FRAME.ny = tx;
+  return FRAME;
 }
 
 /**

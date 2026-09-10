@@ -179,6 +179,8 @@ settings** writes a JSON file worth keeping once you have it dialled in.
 | Winks when you didn't wink | Turn on **Blink both eyes together** |
 | Head sits turned or tilted at rest | Press **G** and follow the prompts, or **C** sitting the way you stream. It counts down three seconds so you can look where you mean to — forward is wherever you are looking when it captures, and the readout (`D`) says how far that is from the camera |
 | Movement feels stiff | Raise the **Head** gains |
+| A small head shake barely shows | Lower **Head → Small movements**. At 1 a 5° turn slides the drawing 1.7px; at the default 0.65 it slides 3.5px, the same as a 5° nod, and the full-turn extreme does not move |
+| The frontal face holds on too long when you turn | Lower **Head → — hold it until**. Narrowing it costs no extra changes of face: at 13° the frontal face shows 38% of the time, at 8° it shows 20%, both swapping about 30 times a minute |
 | It moves the wrong way | Toggle **Mirror me** (`M`) |
 | Speech is unreliable in low light | Set **Speech → Driven by** to `Microphone` |
 | Background noise triggers the mouth | Raise **Mic noise gate** |

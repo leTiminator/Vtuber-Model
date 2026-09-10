@@ -17,6 +17,7 @@ export const NOISE = /favicon|404|^INFO:|XNNPACK delegate|GL Driver Message|Open
 export const FROZEN = {
   'warp.wind': 0, 'warp.clothWeight': 0, 'warp.tuftWeight': 0, 'warp.overshoot': 0,
   'body.breathAmount': 0, 'body.swayAmount': 0, 'body.hairPhysics': 0,
+  'arms.float': 0,
   'stage.zoom': 0.9, 'stage.offsetX': 0, 'stage.offsetY': 0,
 };
 
@@ -163,15 +164,6 @@ window.__t = {
     a.resize(size, size, 1);
     return a;
   },
-};
-// The smoke suite reads whichever kind of canvas the backend made.
-window.readCanvas = (c) => {
-  const two = c.getContext('2d');
-  if (two) return two.getImageData(0, 0, c.width, c.height);
-  const gl = c.getContext('webgl2') || c.getContext('webgl');
-  const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-  gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
-  return { data };
 };
 `;
 

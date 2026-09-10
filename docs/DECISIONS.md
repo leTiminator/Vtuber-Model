@@ -417,3 +417,102 @@ runtime lookup could apply to half a feature: the mirror was gated on its
 setting, its slide on its latch. Twenty-three store keys, two abandoned
 renderers, the artwork flow and the expression channel are gone rather than
 switched off; git history keeps them.
+
+## 2026-09-10 — A small movement has to move the drawing
+
+Measured on the 630px artwork at the shipped gains, yaw got a quarter of pitch's
+travel and got it only as a slide: `nod = clamp(-pitch) * 0.055` plus a rotation,
+against `shift = clamp(yaw) * 0.015` and nothing else. A 5° shake left and right
+moved the drawing 0.82px; the same nod moved it 3.48px and rotated it 3.2°. That
+asymmetry is why a subtle shake had to be exaggerated to register.
+
+`head.response` shapes the head's own travel — `sign(a)·|a/limit|^g·limit` at
+g 0.65 — so small angles get more than their share and the limit does not move.
+The turn's slide doubled to 0.030, bounded by the one-piece invariant rather
+than by taste. `head.gazeLead` carries the light in the visor with the turn,
+because a yaw slides the head without rotating it.
+
+    degrees   3      5      10     42
+    before    0.49   0.82   1.65   6.93   px
+    after     2.49   3.47   5.45   13.85  px
+
+The face latch reads the unshaped angle, so the changeover stays at the angle
+the slider names.
+
+## 2026-09-10 — The middle face window is shorter
+
+`parts.headOnHold` 0.26 → 0.16 (13° → 8° of real turn). Driven through both
+recordings, narrowing it costs no extra changes of face — 26 to 31 a minute
+across the whole range, flat within noise — while time spent on the frontal
+face drops from 38% to 20%. Longest turned view is unchanged at 15.2s.
+
+| hold | real° | time frontal | changes/min |
+| --- | --- | --- | --- |
+| 0.26 | 13.0° | 38% / 9% | 28 / 31 |
+| 0.16 | 8.0° | 20% / 6% | 26 / 33 |
+| 0.09 | 4.5° | 12% / 3% | 26 / 35 |
+| 0.06 | 3.0° | 6% / 3% | 31 / 33 |
+
+## 2026-09-10 — The changeover gives itself the blur that covers it
+
+The docs claimed the motion smear hid the face changing hands. It did not: the
+latch fires on an angle, not on a speed, so a slow turn crossed the threshold
+with almost nothing moving and swapped in the clear. The swap now sets a pulse
+of its own — 0.026 of the picture, fading over 0.11s, in the direction of the
+turn — added to the smear it would otherwise have had. It rides the existing
+`parts.motionBlur` slider, so turning blur off turns it off too.
+
+Guarded as a differential rather than a pixel count: held at one angle past the
+threshold, where nothing is moving and the pulse is the only smear that can
+appear, blur on and blur off differ one frame after the change and are identical
+thirty frames after.
+
+## 2026-09-10 — The changeover jump is the drawings differing, not the registration
+
+The four frontal pieces share one `place` fit (k 1.2533) taken from the head, and
+their centres move 49–79px at the changeover. That looked like a registration
+error worth chasing. Measured against the head in each piece's *own* drawing —
+`place` is a uniform scale, so these ratios are scale-invariant and say nothing
+about the fit — it is not:
+
+| piece | size vs its own head | position vs its own head |
+| --- | --- | --- |
+| tufts | +19.9% wide, +22.5% tall | moves +0.335 of a head across |
+| eyeNear | −9.5% wide, +11.1% tall | moves −0.140 across |
+| eyeFar | **+21.0% wide**, +11.0% tall | moves −0.132 across |
+
+Every one of those is what the two views should differ by. The hair sits off to
+one side of a three-quarter head and centred on a frontal one, which is the
++0.335. Both eyes move the same way and by the same amount as the pair comes
+square. And `eyeFar` is 21% wider frontally because in the turned drawing it is
+the *far* eye and foreshortened — the drawings are simply correct.
+
+So fitting each piece to its own box would not close a gap; it would force the
+frontal hair into the turned hair's off-centre position and squashed
+proportions, and un-foreshorten nothing. The registration stays as it is. The
+instant of change is covered rather than removed — see the smear pulse above —
+and the only thing that would actually shrink the jump is a third head drawn at
+about 20°.
+
+## 2026-09-10 — The drawing buffer is not kept
+
+`preserveDrawingBuffer: true` was on the shared WebGL2 context, so both pages —
+including the OBS one — asked the browser to keep a copy of the framebuffer
+after every presented frame. Nothing in the app read it. It was there so three
+checks could grab the canvas from a later turn than the one that drew it, which
+is the kind of setting `CLAUDE.md` forbids: it existed for the tests.
+
+Gone. The two smoke checks screenshot the composited canvas instead, the way the
+`composited-on-white` golden already does, and the output check renders and
+reads in one turn.
+
+The screenshots need the page's furniture hidden first. Left up, the readout,
+the status pill and the frame counter sit inside the canvas box and change on
+their own — with them visible, "idle avatar renders pixels" passed with the
+canvas set to `visibility: hidden`. Both checks were falsified before being
+believed: hidden canvas gives 0 painted, and a stopped render loop gives 0
+moved against 1350 with it running.
+
+Not measured here: the saving is a full-framebuffer copy per page per frame, and
+SwiftShader in CI does not model what that costs a real GPU. It is a cost with
+no reader either way.

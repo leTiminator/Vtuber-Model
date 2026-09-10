@@ -81,7 +81,7 @@ export class FaceTracker {
       : { facingMode: { ideal: 'user' } };
     const attempts = [
       { ...base, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
-      { ...base, width: { ideal: 640 }, height: { ideal: 480 } },
+      { ...base, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } },
       deviceId ? base : true,
     ];
 
@@ -198,7 +198,6 @@ export class FaceTracker {
 
       this.hasFace = true;
       this.frame = { shapes: raw, head, position, landmarks: marks, time: now };
-      this.onFrame(this.frame);
     } else {
       if (this.hasFace) this.lostSince = now;
       this.hasFace = false;
@@ -207,6 +206,9 @@ export class FaceTracker {
       this.missed = (this.missed ?? 0) + 1;
       if (this.missed > 8) this.crop = null;
     }
+    // Whether or not there was a face: a lost frame is news too, and the rig
+    // eases the head out on the same clock it was driven by.
+    this.onFrame(this.frame, this.hasFace, now);
   }
 
   /** The cropped frame to hand the model, or null for the whole thing. */

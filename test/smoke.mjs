@@ -5,7 +5,7 @@
  */
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { OUT, boot } from './harness.mjs';
+import { OUT, boot, decodePng } from './harness.mjs';
 
 const results = [];
 let failures = 0;
@@ -75,28 +75,41 @@ try {
   check('G with the camera off asks for the camera, and Esc dismisses it',
     guideOff && !(await page.locator('#guide').isVisible()));
 
+  /* The compositor's copy, not the GL buffer's: the drawing buffer is not kept
+   * after a frame is presented, and keeping it would cost every viewer and
+   * every OBS frame a copy. The page's furniture goes first — left up, the
+   * readout and pill sit inside the canvas box and change on their own, and
+   * both checks below pass with the avatar hidden. */
+  const OVERLAYS = ['hud', 'selfcheck', 'first-run', 'camera-preview', 'panel', 'status', 'guide'];
+  const overlays = (display) => page.evaluate(([ids, d]) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = d;
+    }
+  }, [OVERLAYS, display]);
+  const stage = await page.locator('#avatar-host canvas').boundingBox();
+  await overlays('none');
+  const shot = async () => decodePng(await page.screenshot({ clip: stage }));
+
   // The idle avatar should already be drawing (breathing, scarf, auto-blink).
-  const idlePixels = await page.evaluate(() => {
-    const c = document.querySelector('#avatar-host canvas');
-    const { data } = readCanvas(c);
-    let painted = 0;
-    for (let i = 3; i < data.length; i += 4 * 97) if (data[i] > 8) painted++;
-    return painted;
-  });
-  check('idle avatar renders pixels', idlePixels > 200, `${idlePixels} sampled opaque pixels`);
+  const first = await shot();
+  const bg = first.d.slice(0, 3);
+  let painted = 0;
+  for (let i = 0; i < first.d.length; i += 4 * 97) {
+    if (Math.abs(first.d[i] - bg[0]) > 8 || Math.abs(first.d[i + 1] - bg[1]) > 8
+      || Math.abs(first.d[i + 2] - bg[2]) > 8) painted++;
+  }
+  check('idle avatar renders pixels', painted > 200, `${painted} sampled pixels differ from the background`);
 
   // Scarf physics must actually move between frames.
-  const moved = await page.evaluate(async () => {
-    const c = document.querySelector('#avatar-host canvas');
-    const grab = () => readCanvas(c).data;
-    const before = grab().slice();
-    await new Promise((r) => setTimeout(r, 700));
-    const after = grab();
-    let diff = 0;
-    for (let i = 0; i < after.length; i += 4 * 53) if (Math.abs(after[i] - before[i]) > 6) diff++;
-    return diff;
-  });
+  await page.waitForTimeout(700);
+  const second = await shot();
+  let moved = 0;
+  for (let i = 0; i < second.d.length; i += 4 * 53) {
+    if (Math.abs(second.d[i] - first.d[i]) > 6) moved++;
+  }
   check('avatar animates while idle', moved > 20, `${moved} changed samples`);
+  await overlays('');
 
   // The setup readout has to be on screen before the camera, because that is
   // the only moment anyone can read it.
@@ -128,11 +141,17 @@ try {
     await page.locator('#selfcheck').isVisible(),
     'visible while tracking');
 
-  // With the camera running, G starts the five prompts on the stage.
+  // With the camera running, G starts the five prompts on the stage. The guard
+  // reads tracker.running, which goes true at its own moment rather than with
+  // the status pill: wait for the precondition instead of racing it.
+  await page.waitForFunction(() => window.__vtuber?.tracker?.running === true,
+    null, { timeout: 30000 });
   await page.keyboard.press('g');
-  await page.waitForTimeout(300);
+  await page.waitForFunction(
+    () => /^1 of 6/.test(document.getElementById('guide-prompt')?.textContent ?? ''),
+    null, { timeout: 5000 }).catch(() => {});
   const prompt = await page.locator('#guide-prompt').textContent();
-  const guideOn = await page.locator('#guide').isVisible() && /^1 of 5/.test(prompt);
+  const guideOn = await page.locator('#guide').isVisible() && /^1 of 6/.test(prompt);
   await page.keyboard.press('Escape');
   check('G starts the guided calibration on the stage, and Esc cancels it',
     guideOn && !(await page.locator('#guide').isVisible()), prompt);
@@ -190,12 +209,17 @@ try {
   await page.reload({ waitUntil: 'load' });
   const migrated = await page.evaluate(() => {
     const s = window.__vtuber.store;
+    // Against the defaults this build actually ships, not numbers typed in
+    // here: what is being checked is that a retuned key comes back at the
+    // current default, whatever that is.
     return { cutoff: s.get('smooth.minCutoff'), beta: s.get('smooth.beta'),
+      wantCutoff: s.DEFAULTS['smooth.minCutoff'], wantBeta: s.DEFAULTS['smooth.beta'],
       neutral: s.get('camera.neutral'), zoom: s.get('stage.zoom'), mouth: s.get('mouth.source') };
   });
   check('an older profile takes the new tuning and keeps what is personal',
-    migrated.cutoff === 2.5 && migrated.beta === 0.2 && migrated.neutral === ''
-      && migrated.zoom === 1.35 && migrated.mouth === 'mic',
+    migrated.cutoff === migrated.wantCutoff && migrated.cutoff !== 1.2
+      && migrated.beta === migrated.wantBeta && migrated.beta !== 0.06
+      && migrated.neutral === '' && migrated.zoom === 1.35 && migrated.mouth === 'mic',
     JSON.stringify(migrated));
 
   // The hidden-window ticker: a Worker timer that keeps firing without animation

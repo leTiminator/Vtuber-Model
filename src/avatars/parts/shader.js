@@ -163,7 +163,7 @@ float softAlpha(vec2 uv) {
 }
 
 /** This part at one point in its travel, lids, glow and all. */
-vec4 shade(vec2 uv) {
+vec4 shade(vec2 uv, float spillAt) {
   vec4 c = texture(u_tex, uv);
   c.a *= marginCut(uv);
 
@@ -191,7 +191,7 @@ vec4 shade(vec2 uv) {
       c.rgb += vec3(0.42, 0.66, 1.0) * core * c.a * pulse * bias * open * 1.4;
 
       // Outside it: the halo spilling onto the visor behind.
-      float spill = halo(uv) * (1.0 - c.a);
+      float spill = spillAt * (1.0 - c.a);
       vec3 lightColour = vec3(0.62, 0.80, 1.0);
       float lit = spill * pulse * bias * open * 2.1;
       c.rgb = mix(c.rgb, lightColour, clamp(lit / max(lit + c.a, 1e-4), 0.0, 1.0));
@@ -215,8 +215,14 @@ void main() {
     return;
   }
 
+  /* The halo is a wide blur of the slit — 24 taps, and by far the most
+     expensive thing on the eye parts. It is sampled once here and carried
+     through every smear tap: a soft glow smeared against itself is the same
+     soft glow, and the slit's own core still travels. */
+  float spill = u_glow > 0.0 && u_eyesEnabled > 0.5 ? halo(v_uv) : 0.0;
+
   if (u_smear == vec2(0.0)) {
-    fragColor = shade(v_uv);
+    fragColor = shade(v_uv, spill);
     return;
   }
 
@@ -225,7 +231,7 @@ void main() {
   vec4 sum = vec4(0.0);
   for (int i = 0; i < SMEAR_TAPS; i++) {
     float t = float(i) / float(SMEAR_TAPS - 1) - 0.5;
-    vec4 c = shade(v_uv + u_smear * t);
+    vec4 c = shade(v_uv + u_smear * t, spill);
     sum += vec4(c.rgb * c.a, c.a);
   }
   float a = sum.a / float(SMEAR_TAPS);

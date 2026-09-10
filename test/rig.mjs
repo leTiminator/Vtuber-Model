@@ -609,7 +609,7 @@ const runPose = (rig, n, f, has = true) => {
     `at ${guide.step?.key}, left ${guide.turns.left}`);
   feed(head(0.3 + 29 * D, -0.2), 4);
   feed(head(0.3, -0.2 + 20 * D), 4);
-  feed(null, 15);
+  feed(null, 20);
   check('a step nobody performs times out as not measured', guide.done && guide.turns.down === null,
     `done ${guide.done}, down ${guide.turns.down}`);
   const { patch, report, range } = guide.result();
@@ -624,6 +624,26 @@ const runPose = (rig, n, f, has = true) => {
       && JSON.parse(patch['camera.range']).down === null, JSON.stringify(range));
   check('the report names each pose', /Turn: left 35°, right 29°/.test(report[1]) && /down not measured/.test(report[1]),
     report.join(' | '));
+  check('a mouth that never opened sets no surprise range, and says so',
+    patch['face.surpriseAt'] === undefined && /never read as open/.test(report.join(' ')),
+    report.join(' | '));
+
+  // And a mouth held wide open sets the range from what it actually reached.
+  const withMouth = new Guide(0);
+  let mClock = 0;
+  const mFeed = (h, open, seconds) => {
+    for (let i = 0; i < seconds * 30; i++) { mClock += 1 / 30; withMouth.update(h, h && pos, mClock, open); }
+  };
+  mFeed(head(0, 0), 0, 5);
+  mFeed(head(0 - 35 * D, 0), 0, 4);
+  mFeed(head(0 + 35 * D, 0), 0, 4);
+  mFeed(head(0, 20 * D), 0, 4);
+  mFeed(head(0, -20 * D), 0, 4);
+  mFeed(head(0, 0), 0.62, 6);
+  const mouthPatch = withMouth.result().patch;
+  check('a mouth held wide open sets the surprise range from what it reached',
+    Math.abs(mouthPatch['face.surpriseAt'] - 0.31) < 0.011 && Math.abs(mouthPatch['face.surpriseFull'] - 0.56) < 0.011,
+    `at ${mouthPatch['face.surpriseAt']} full ${mouthPatch['face.surpriseFull']}`);
 
   settings.reset();
   settings.set('camera.mirror', true);
@@ -725,6 +745,49 @@ const runPose = (rig, n, f, has = true) => {
   }
   check('and a real turn of the shoulders still reads as one',
     Math.abs(turning.state.torso.turn) > 0.15, `turn ${turning.state.torso.turn.toFixed(3)}`);
+}
+
+/* --- how long the rig takes to get there ---------------------------------
+ * A step, driven at the rate a real camera delivers, measured in milliseconds
+ * rather than described. The bars are loose on purpose: this is here to catch
+ * a change that doubles the lag, not to pin today's number.
+ */
+{
+  settings.reset();
+  const rig = new Rig();
+  const hz = 30;
+  const dt = 1 / hz;
+  const still = frame();
+  for (let i = 0; i < 90; i++) rig.update(still, true, dt);
+  const target = 30 * Math.PI / 180;
+  const moved = frame({ head: { yaw: target } });
+  const trace = [];
+  for (let i = 0; i < 90; i++) trace.push(rig.update(moved, true, dt).head.yaw);
+  const settled = trace[trace.length - 1];
+  const reach = (f) => {
+    for (let i = 0; i < trace.length; i++) if (Math.abs(trace[i]) >= Math.abs(settled) * f) return (i + 1) * dt * 1000;
+    return Infinity;
+  };
+  const t63 = reach(0.63);
+  const t90 = reach(0.9);
+  check('the head covers most of a step inside a seventh of a second', t63 <= 140,
+    `63% after ${t63.toFixed(0)}ms, 90% after ${t90.toFixed(0)}ms, at ${hz}Hz`);
+  check('and nearly all of it inside a third', t90 <= 320, `90% after ${t90.toFixed(0)}ms`);
+
+  /* The filter must not be slower when the samples arrive faster: that is the
+   * signature of a dt taken from something other than the camera. */
+  const fast = new Rig();
+  const fdt = 1 / 60;
+  for (let i = 0; i < 180; i++) fast.update(still, true, fdt);
+  const ftrace = [];
+  for (let i = 0; i < 180; i++) ftrace.push(fast.update(moved, true, fdt).head.yaw);
+  const fsettled = ftrace[ftrace.length - 1];
+  let f63 = Infinity;
+  for (let i = 0; i < ftrace.length; i++) {
+    if (Math.abs(ftrace[i]) >= Math.abs(fsettled) * 0.63) { f63 = (i + 1) * fdt * 1000; break; }
+  }
+  check('a faster camera is not a slower head', f63 <= t63 + 10,
+    `${f63.toFixed(0)}ms at 60Hz against ${t63.toFixed(0)}ms at 30Hz`);
 }
 
 console.log(`\n${failures ? `${failures} failing` : 'all checks passed'}`);

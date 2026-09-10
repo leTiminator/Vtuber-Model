@@ -38,10 +38,14 @@ export function buildPanel(root, ctx) {
           + 'Sitting back from the camera, this is the single biggest thing '
           + 'you can do for tracking quality.' },
         { type: 'toggle', key: 'stage.showPreview', label: 'Show camera preview' },
-        { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 4, step: 0.05, format: hz,
-          hint: 'Lower is calmer when you hold still, but adds lag and shrinks quick turns.' },
-        { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.3, step: 0.005, format: (v) => v.toFixed(3),
-          hint: 'Higher keeps fast movement lag-free.' },
+        { type: 'slider', key: 'smooth.minCutoff', label: 'Steadiness', min: 0.3, max: 6, step: 0.05, format: hz,
+          hint: 'Lower is calmer when you hold still, but adds lag. Measured against a '
+            + 'recording: the default 3.5 covers a turn in 100ms and leaves a tenth of a '
+            + 'degree of tremor; 2.5 takes 133ms; above 5 the head gets no faster and only '
+            + 'shakes more.' },
+        { type: 'slider', key: 'smooth.beta', label: 'Snappiness', min: 0, max: 0.5, step: 0.005, format: (v) => v.toFixed(3),
+          hint: 'How much the steadiness above is relaxed while you are actually moving. '
+            + 'Higher keeps a fast turn lag-free without shaking a still head.' },
         { type: 'slider', key: 'smooth.expression', label: 'Face response', min: 0.5, max: 6, step: 0.1, format: hz },
         { type: 'guide' },
         { type: 'record' },
@@ -73,6 +77,10 @@ export function buildPanel(root, ctx) {
         { type: 'slider', key: 'head.rollGain', label: 'Tilt', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.positionGain', label: 'Lean / move', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'head.limitDeg', label: 'Range limit', min: 10, max: 80, step: 1, format: deg },
+        { type: 'slider', key: 'head.response', label: 'Small movements', min: 0.35, max: 1, step: 0.01, format: x,
+          hint: 'Lower makes a small turn show more without moving the extreme. A 5° turn slides the drawing 1.7px at 1, and 3.5px at 0.65 — the same as a 5° nod.' },
+        { type: 'slider', key: 'head.gazeLead', label: '— light follows the turn', min: 0, max: 1.5, step: 0.05, format: x,
+          hint: 'A turn has no rotation to show, only a slide, so it moves the light inside the visor as well.' },
         { type: 'slider', key: 'head.rollLimitDeg', label: 'Tilt limit', min: 5, max: 60, step: 1, format: deg,
           hint: 'How far the head may tilt. Past about 25° it turns inside its collar.' },
       ],
@@ -124,9 +132,14 @@ export function buildPanel(root, ctx) {
     {
       title: 'Arms',
       controls: [
-        { type: 'note', text: 'Uses a second tracking model, so it only loads while the camera is on. Turn it off if the frame rate suffers.' },
+        { type: 'note', text: 'Off by default: it loads a second tracking model that shares the '
+          + 'graphics card with the face, so the face is tracked less often while it runs, and it '
+          + 'can only say anything while your elbows are inside the frame. Left off, the arms drift '
+          + 'gently on their own.' },
         { type: 'toggle', key: 'arms.track', label: 'Track my arms',
-          hint: 'Picks up raising your hands off the keyboard.' },
+          hint: 'Picks up raising your hands off the keyboard. Costs face-tracking frames.' },
+        { type: 'slider', key: 'arms.float', label: 'Arm drift', min: 0, max: 2, step: 0.05, format: x,
+          hint: 'How much an arm nobody can see moves on its own. 0 holds them still.' },
         { type: 'armStatus' },
         { type: 'slider', key: 'arms.gain', label: 'Arm travel', min: 0, max: 3, step: 0.05, format: x },
         { type: 'slider', key: 'arms.smooth', label: 'Arm steadiness', min: 0.2, max: 4, step: 0.05, format: x,
@@ -180,12 +193,17 @@ export function buildPanel(root, ctx) {
           format: (v) => `${Math.round(v * 57 / store.get('head.yawGain'))}°`,
           hint: 'How far you can turn before the face gives way to the drawn three-quarter '
             + 'one. It holds until then and changes once, rather than sliding the whole way, '
-            + 'so talking does not walk the eyes across the visor.' },
+            + 'so talking does not walk the eyes across the visor. Narrowing it costs no extra '
+            + 'changes of face: measured on the recordings, 13° spends 38% of the time frontal '
+            + 'and 8° spends 20%, both swapping about 30 times a minute.' },
         { type: 'slider', key: 'parts.headOnTime', label: '— changes after', min: 0.04, max: 0.6, step: 0.01, format: (v) => `${Math.round(v * 1000)}ms` },
         { type: 'slider', key: 'parts.headOnReturn', label: '— comes back after', min: 0.1, max: 1.5, step: 0.05, format: (v) => `${v.toFixed(2)}s`,
           hint: 'How long you must sit square before the face comes back. Turning away is '
             + 'immediate; coming back waits, so a head hovering near the threshold does not flicker.' },
-        { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x },
+        { type: 'slider', key: 'warp.overshoot', label: 'Overshoot', min: 0, max: 1, step: 0.01, format: x,
+          hint: 'How much of the head\'s move is follow-through rather than going straight there. '
+            + 'All of it is lag: measured, 1.00 takes 100ms to cover most of a step and the default '
+            + '0.30 takes about 45ms, against one frame at 0.' },
         { type: 'slider', key: 'parts.motionBlur', label: 'Motion blur', min: 0, max: 1.5, step: 0.05, format: x,
           hint: 'Smears the head along the way it is moving, and only while it moves. '
             + 'It also covers the moment the face changes over on a turn. 0 turns it off.' },
@@ -339,9 +357,9 @@ const BUILDERS = {
     button.type = 'button';
     button.addEventListener('click', () => ctx.startGuide());
     const hint = el('div', 'field__hint',
-      'Five prompts on the stage: sit as you stream and look where you usually look, then '
-      + 'turn left, right, up and down as far as you would. Sets where forward is and how '
-      + 'far a turn goes. C sets forward alone.');
+      'Six prompts on the stage: sit as you stream and look where you usually look, turn left, '
+      + 'right, up and down as far as you would, then open your mouth wide. Sets where forward '
+      + 'is, how far a turn goes, and how wide your mouth reads. C sets forward alone.');
     const result = el('div', 'field__hint');
     const undo = el('button', 'btn', 'Undo calibration');
     undo.type = 'button';

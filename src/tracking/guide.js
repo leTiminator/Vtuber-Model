@@ -16,7 +16,11 @@ export const STEPS = [
   { key: 'right', arm: 1.5, timeout: 12, axis: 'yaw', prompt: 'Now to the RIGHT. Hold it there.' },
   { key: 'up', arm: 1.5, timeout: 12, axis: 'pitch', prompt: 'Look UP. Hold it there.' },
   { key: 'down', arm: 1.5, timeout: 12, axis: 'pitch', prompt: 'Look DOWN. Hold it there.' },
+  { key: 'mouth', arm: 2, hold: 2.5, timeout: 15,
+    prompt: 'Now open your mouth WIDE, as if something surprised you. Hold it open.' },
 ];
+/** Below this the mouth never read as open at all, and nothing is set from it. */
+export const MOUTH_FLOOR = 0.12;
 /** A turn smaller than this is not a turn, and the step keeps waiting. */
 export const MIN_TURN = 8 * DEG;
 /** Where a comfortable extreme lands on the model: a turn, and a nod. */
@@ -31,12 +35,18 @@ export class Guide {
     this.capture = new PoseCapture();
     this.neutral = null;
     this.turns = {};
+    this.mouthPeak = 0;
     this.done = false;
     this.cancelled = false;
   }
 
   get step() {
     return STEPS[this.index] ?? null;
+  }
+
+  /** How many prompts there are, for "3 of 6". */
+  get total() {
+    return STEPS.length;
   }
 
   /** What to show: the prompt, the seconds before sampling starts, and whether it is over. */
@@ -58,12 +68,19 @@ export class Guide {
   }
 
   /** Feed one frame; `head` and `pos` are null when there is no face. */
-  update(head, pos, clock) {
+  update(head, pos, clock, mouthOpen = 0) {
     const step = this.step;
     if (!step || this.done) return;
     const armAt = this.stepStart + step.arm;
     if (clock < armAt) return;
     const late = clock - armAt > step.timeout;
+    if (step.key === 'mouth') {
+      // The widest it got, however the mouth is being driven: a camera that
+      // can see a jaw, or a microphone where a beard hides one.
+      this.mouthPeak = Math.max(this.mouthPeak, mouthOpen);
+      if (clock - armAt >= step.hold || late) this.advance(clock);
+      return;
+    }
     const got = head && pos ? this.capture.push(head, pos) : null;
     if (step.key === 'neutral') {
       if (!got || (!got.steady && !late)) return;
@@ -103,6 +120,18 @@ export class Guide {
     const report = [`Neutral pose: yaw ${deg(this.neutral.yaw)} pitch ${deg(this.neutral.pitch)} roll ${deg(this.neutral.roll)}.`];
     const turned = (k) => (range[k] == null ? 'not measured' : `${range[k]}°`);
     report.push(`Turn: left ${turned('left')}, right ${turned('right')}. Nod: up ${turned('up')}, down ${turned('down')}.`);
+    if (this.mouthPeak >= MOUTH_FLOOR) {
+      // Surprise starts halfway to the widest it saw and is full just under it,
+      // so the face the owner actually pulls reaches the top of the range.
+      patch['face.surpriseAt'] = Math.round(this.mouthPeak * 0.5 * 100) / 100;
+      patch['face.surpriseFull'] = Math.round(this.mouthPeak * 0.9 * 100) / 100;
+      report.push(`Surprise: your mouth opened to ${Math.round(this.mouthPeak * 100)}%, so it `
+        + `starts at ${Math.round(patch['face.surpriseAt'] * 100)}% and is full at `
+        + `${Math.round(patch['face.surpriseFull'] * 100)}%.`);
+    } else {
+      report.push('Surprise: your mouth never read as open. With a beard the camera cannot see '
+        + 'a jaw — set Speech → Driven by to Microphone and run this again.');
+    }
     const yaw = extent('left', 'right');
     if (yaw > 0) {
       patch['head.yawGain'] = Math.round(clamp(TARGET_YAW / yaw, ...GAIN_RANGE) * 100) / 100;

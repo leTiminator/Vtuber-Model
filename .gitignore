@@ -19,3 +19,8 @@ test/fixtures/sessions/
 # Evidence written by failing checks. The goldens themselves, in test/golden/,
 # are committed; the /*.png rule above is root-only and does not touch them.
 test/out/
+
+# What the sculpt scripts derive from the drawing. `python3 scripts/sculpt/depth.py`
+# rebuilds it; the drawing is the source, these are megabytes of cache.
+__pycache__/
+scripts/sculpt/out/
